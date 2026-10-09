@@ -243,6 +243,18 @@ class RecordingStore:
         return [FileInfo(path=p.relative_to(d).as_posix(), bytes=p.stat().st_size)
                 for p in sorted(d.rglob("*")) if p.is_file() and not p.name.startswith(".")]
 
+    def series(self, rec_id: str, stream: str, max_points: int | None = None) -> dict[str, list]:
+        """imu / orientation as columns ({"t_ms": [...], "ax": [...]}), thinned to at most max_points rows."""
+        if stream not in ("imu", "orientation"):
+            raise NotFound(stream)
+        path = self.dir(rec_id) / f"{stream}.parquet"
+        if not path.is_file():
+            raise NotFound(f"{rec_id}/{stream}")
+        t = pq.read_table(path)
+        if max_points and t.num_rows > max_points:
+            t = t.take(list(range(0, t.num_rows, -(-t.num_rows // max_points))))
+        return t.to_pydict()
+
     def file(self, rec_id: str, rel: str) -> Path:
         d = self.dir(rec_id).resolve()
         p = (d / rel).resolve()

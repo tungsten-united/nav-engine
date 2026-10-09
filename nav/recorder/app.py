@@ -8,7 +8,7 @@ import hashlib
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from nav import config
@@ -138,15 +138,33 @@ def create_app(store: RecordingStore | None = None) -> FastAPI:
     def file(rec_id: str, path: str) -> FileResponse:
         return FileResponse(store.file(rec_id, path))
 
+    @app.get(f"{api}/recordings/{{rec_id}}/series/{{stream}}")
+    def series(rec_id: str, stream: str, max_points: int = Query(20000, ge=100)) -> dict[str, list]:
+        """imu or orientation samples as columns, for plotting (the parquet files hold everything)."""
+        return store.series(rec_id, stream, max_points)
+
+    def page(folder: Path, assets: tuple[str, ...]) -> HTMLResponse:
+        # Cache-bust assets by content hash: Cloudflare forces a 4 h browser TTL on .js/.css, the page itself isn't cached.
+        html = (folder / "index.html").read_text()
+        for name in assets:
+            digest = hashlib.sha256((folder / name).read_bytes()).hexdigest()[:10]
+            html = html.replace(f'"{name}"', f'"{name}?v={digest}"')
+        return HTMLResponse(html)
+
     @app.get("/", include_in_schema=False)
     @app.get("/index.html", include_in_schema=False)
     def index() -> HTMLResponse:
-        # Cache-bust assets by content hash: Cloudflare forces a 4 h browser TTL on .js/.css, the page itself isn't cached.
-        html = (WEB_DIR / "index.html").read_text()
-        for name in ("app.js", "style.css"):
-            digest = hashlib.sha256((WEB_DIR / name).read_bytes()).hexdigest()[:10]
-            html = html.replace(f'"{name}"', f'"{name}?v={digest}"')
-        return HTMLResponse(html)
+        return page(WEB_DIR, ("app.js", "style.css"))
+
+    @app.get("/dash", include_in_schema=False)
+    def dash_redirect() -> RedirectResponse:
+        return RedirectResponse("/dash/")
+
+    @app.get("/dash/", include_in_schema=False)
+    @app.get("/dash/index.html", include_in_schema=False)
+    def dash() -> HTMLResponse:
+        """Recordings dashboard: browse places and walks, play video with tags/voice/sensors on one timeline."""
+        return page(WEB_DIR / "dash", ("dash.js", "dash.css"))
 
     app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
     return app

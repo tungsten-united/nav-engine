@@ -71,6 +71,12 @@ read/write access:
 `gcloud storage buckets add-iam-policy-binding gs://tungsten-united-nav-recordings --member user:<email> --role roles/storage.objectAdmin`
 (use `roles/storage.objectViewer` for read-only).
 
+### Dashboard
+**https://helium-nav.oscarmartinez.dev/dash/** (same Cloudflare Access login) lists the recordings grouped by place.
+Opening one (`/dash/#<rec_id>`) shows its details, the video, and its tags, voice notes, steps, acceleration,
+rotation, heading and live speed on one timeline. Click the timeline, a chart or a note to jump the video there;
+voice notes play along with the video. Drag on a chart to zoom, double-click to reset.
+
 ### API (`/api/v1`, OpenAPI at `/docs`)
 | method | path | |
 |---|---|---|
@@ -83,7 +89,8 @@ read/write access:
 | PUT | `/recordings/{id}/voice/{clip}?t_start_ms&t_end_ms` | audio clip (Content-Type = its mime) |
 | POST | `/recordings/{id}/finish` | `FinishRequest` (what the phone sent) → finalizes in background |
 | POST | `/recordings/{id}/finalize?wait=true` | rebuild outputs |
-| GET | `/recordings/{id}/files[/{path}]` | list / download any file |
+| GET | `/recordings/{id}/files[/{path}]` | list / download any file (Range requests work, for video seeking) |
+| GET | `/recordings/{id}/series/{imu,orientation}?max_points` | samples as JSON columns, for plotting |
 
 From another worker:
 ```sh

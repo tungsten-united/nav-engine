@@ -106,6 +106,12 @@ def test_full_recording(client, webm, tmp_path):
     # complete recordings are read-only
     assert client.put(f"{API}/recordings/{rec_id}/video/9", content=b"x").status_code == 409
 
+    series = client.get(f"{API}/recordings/{rec_id}/series/imu").json()
+    assert len(series["t_ms"]) == 180 and series["ay"][0] == 9.8 and series["lax"][0] is None
+    thin = client.get(f"{API}/recordings/{rec_id}/series/orientation", params={"max_points": 100}).json()
+    assert 90 <= len(thin["t_ms"]) <= 100 and thin["absolute"][0] is True
+    assert client.get(f"{API}/recordings/{rec_id}/series/manifest").status_code == 404
+
     listed = client.get(f"{API}/recordings").json()
     assert [s["rec_id"] for s in listed] == [rec_id] and listed[0]["counts"]["marks"] == 3
 
@@ -149,6 +155,14 @@ def test_web_app_served(client):
     assert r.status_code == 200 and "Nav Recorder" in r.text
     assert client.get("/app.js").status_code == 200
     assert client.get(f"{API}/health").json() == {"ok": True, "schema_version": 1}
+
+
+def test_dashboard_served(client):
+    assert client.get("/dash", follow_redirects=False).headers["location"] == "/dash/"
+    page = client.get("/dash/")
+    assert page.status_code == 200 and "Nav Recordings" in page.text
+    assert 'src="dash.js?v=' in page.text and 'href="dash.css?v=' in page.text
+    assert client.get("/dash/dash.js").status_code == 200
 
 
 def test_assets_are_not_cached(client):
