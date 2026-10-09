@@ -154,4 +154,7 @@ def test_web_app_served(client):
 def test_assets_are_not_cached(client):
     # Cloudflare edge-caches .js/.css unless told otherwise
     assert client.get("/app.js").headers["cache-control"] == "no-cache"
+    page = client.get("/")
+    assert page.headers["cache-control"] == "no-cache"
+    assert 'src="app.js?v=' in page.text and 'href="style.css?v=' in page.text
     assert client.get(f"{API}/health").headers["cache-control"] == "no-store"
