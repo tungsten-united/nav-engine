@@ -1,0 +1,325 @@
+"""Map pipeline for one place: prepare every walk -> select candidates -> LLM draft -> checked, enriched PlaceMap.
+
+    prepare (cached per recording)   frames at 1 fps (sharpest per second), motion, voice transcripts, embeddings
+    select                           quality filter, keyframes per walk, fold look-alikes across walks
+    LLM                              Claude Code job (nav/mapping/llm.py) -> MapDraft
+    finish                           check ids, attach evidence (recording + time + image), dead-reckoned
+                                     positions aligned through shared nodes, measured walking distances
+"""
+
+import json
+import logging
+import shutil
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+import numpy as np
+
+from nav.mapping.motion import angle_diff
+from nav.mapping.prepare import Prepared, prepare
+from nav.mapping.select import SelectParams, cap_groups, group_frames, mark_usable, select_in_recording
+from nav.schemas.map import (
+    BuildInfo,
+    Candidate,
+    CandidateSet,
+    Evidence,
+    MapDraft,
+    Motion,
+    PlaceEdge,
+    PlaceMap,
+    PlaceNode,
+    Point,
+    RecordingInfo,
+    TimelineStep,
+    Track,
+    View,
+    slugify,
+)
+from nav.schemas.recording import Manifest
+
+log = logging.getLogger(__name__)
+PIPELINE_VERSION = "mvp-1"
+USABLE_STATUS = ("complete", "incomplete")
+VISIT_S = 15  # views of a node within this long of each other are one visit
+
+
+@dataclass
+class BuildResult:
+    build_dir: Path
+    candidates: CandidateSet
+    map: PlaceMap | None
+
+
+def recordings_for(recordings_root: Path, place: str) -> list[Path]:
+    key = " ".join(place.split()).casefold()
+    out = []
+    for mf in sorted(recordings_root.glob("*/manifest.json")):
+        m = Manifest.model_validate_json(mf.read_text())
+        if m.place.casefold() == key and m.status in USABLE_STATUS and m.video:
+            out.append(mf.parent)
+    return out
+
+
+def select_candidates(place: str, preps: list[Prepared], p: SelectParams, embed_model: str,
+                      build_dir: Path) -> CandidateSet:
+    """Run selection and write candidates.json + frames/ into build_dir."""
+    kept = []
+    for prep in preps:
+        mark_usable(prep.frames, p)
+        kept += select_in_recording(prep.frames, prep.track, prep.marks, prep.voice, p)
+    groups, hints = group_frames(kept, p)
+    groups, hints = cap_groups(groups, hints, p)
+    width = max(2, len(str(len(groups))))
+    ids = [f"c{i + 1:0{width}d}" for i in range(len(groups))]
+
+    frames_dir = build_dir / "frames"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    candidates = []
+    for i, (cid, g) in enumerate(zip(ids, groups)):
+        shutil.copyfile(g.rep.image_path, frames_dir / f"{cid}.jpg")
+        same = [ids[b] if a == i else ids[a] for (a, b) in hints if i in (a, b)]
+        candidates.append(Candidate(
+            id=cid, image=f"frames/{cid}.jpg", reason=sorted({r for f in g.frames for r in f.reasons}),
+            views=[View(rec_id=f.rec_id, t_ms=f.t_ms, sharpness=f.sharpness, motion=Motion(**f.motion),
+                        marks=f.marks, voice=f.voice) for f in g.frames],
+            possibly_same_as=sorted(set(same))))
+
+    recordings = []
+    for prep in preps:
+        m = prep.manifest
+        views = sorted((v.t_ms, c.id, v) for c in candidates for v in c.views if v.rec_id == m.rec_id)
+        timeline, prev = [], None
+        for t, cid, v in views:
+            if timeline and timeline[-1].candidate == cid:
+                continue  # several views of one candidate in a row: one step
+            heading = prep.track.mean_heading(t - 1500, t + 1500)
+            timeline.append(TimelineStep(
+                t_ms=t, candidate=cid, walked_m=v.motion.walked_m, heading_deg=None if heading is None else round(heading),
+                from_prev_m=None if prev is None else round(v.motion.walked_m - prev[0], 1),
+                turn_deg=None if prev is None or prev[1] is None or heading is None else round(angle_diff(prev[1], heading))))
+            prev = (v.motion.walked_m, heading)
+        recordings.append(RecordingInfo(
+            rec_id=m.rec_id, created_at_utc=m.created_at_utc, duration_s=m.duration_ms and round(m.duration_ms / 1000, 1),
+            notes=m.notes, step_length_m=m.step_length_m, walked_m=round(float(prep.track.walked_m[-1]), 1),
+            frames_sampled=len(prep.frames), frames_usable=sum(f.usable for f in prep.frames),
+            marks=prep.marks, voice=[{k: v[k] for k in ("t_ms", "t_end_ms", "text")} for v in prep.voice],
+            timeline=timeline))
+    cset = CandidateSet(place=place, map_id=slugify(place), recordings=recordings, candidates=candidates,
+                        params=p.as_dict(), embed_model=embed_model,
+                        embed_dim=int(kept[0].emb.shape[0]) if kept else None)
+    (build_dir / "candidates.json").write_text(cset.model_dump_json(indent=1))
+    tracks = {}
+    for prep in preps:
+        tr = prep.track
+        idx = np.unique([tr.index(t) for t in np.arange(0, tr.t_ms[-1] + 1, 1000)])
+        tracks[prep.manifest.rec_id] = [[round(float(tr.t_ms[i])), round(float(tr.x_m[i]), 2),
+                                         round(float(tr.y_m[i]), 2)] for i in idx]
+    (build_dir / "tracks.json").write_text(json.dumps(tracks))
+    return cset
+
+
+def finish_map(draft: MapDraft, cset: CandidateSet, build: BuildInfo, build_rel: str,
+               tracks: dict[str, list] | None = None) -> PlaceMap:
+    """Check the draft against the candidates and add what code knows: evidence, positions, measured distances,
+    and (given the walks' dead-reckoned tracks) the walked path of each edge."""
+    warnings: list[str] = []
+    cands = {c.id: c for c in cset.candidates}
+
+    def known(owner: str, ids: list[str]) -> list[str]:
+        unknown = [c for c in ids if c not in cands]
+        if unknown:
+            warnings.append(f"{owner} cites unknown candidates {', '.join(unknown)}")
+        return [c for c in ids if c in cands]
+
+    nodes: list[PlaceNode] = []
+    for n in draft.nodes:
+        if any(x.id == n.id for x in nodes):
+            warnings.append(f"duplicate node id {n.id} dropped")
+            continue
+        cids = known(f"node {n.id}", n.candidates)
+        evidence = [Evidence(candidate=c, rec_id=v.rec_id, t_ms=v.t_ms, image=f"{build_rel}/{cands[c].image}")
+                    for c in cids for v in cands[c].views]
+        nodes.append(PlaceNode(**{**n.model_dump(), "candidates": cids}, evidence=evidence))
+    node_ids = {n.id for n in nodes}
+    if unused := [c for c in cands if not any(c in n.candidates for n in nodes)]:
+        warnings.append(f"candidates not used by any node: {', '.join(unused)}")
+
+    edges: list[PlaceEdge] = []
+    for e in draft.edges:
+        if e.source not in node_ids or e.target not in node_ids or e.source == e.target:
+            warnings.append(f"edge {e.id} ({e.source} -> {e.target}) dropped: unknown or identical nodes")
+            continue
+        if any(x.id == e.id for x in edges):
+            warnings.append(f"duplicate edge id {e.id} dropped")
+            continue
+        edges.append(PlaceEdge(**{**e.model_dump(), "candidates": known(f"edge {e.id}", e.candidates)}))
+
+    offsets = _place_nodes(nodes, cands)
+    by_id = {n.id: n for n in nodes}
+    tracks = tracks or {}
+    for e in edges:
+        e.measured_distance_m = _measured(by_id[e.source], by_id[e.target], cands)
+        _edge_path(e, by_id[e.source], by_id[e.target], cands, tracks, offsets)
+    placed = [Track(rec_id=r, points=[(t, round(x + offsets[r][0], 2), round(y + offsets[r][1], 2))
+                                      for t, x, y in tracks[r]]) for r in offsets if r in tracks]
+    return PlaceMap(tracks=placed, **draft.model_dump(exclude={"nodes", "edges"}), map_id=cset.map_id,
+                    recordings=[r.rec_id for r in cset.recordings], build=build, nodes=nodes, edges=edges,
+                    warnings=warnings)
+
+
+def _node_views(node: PlaceNode, cands: dict[str, Candidate]) -> list[View]:
+    return [v for c in node.candidates for v in cands[c].views]
+
+
+def _place_nodes(nodes: list[PlaceNode], cands: dict[str, Candidate]) -> dict[str, np.ndarray]:
+    """Dead-reckoned position per node: mean of its views per recording, recordings shifted onto each other
+    through the nodes they share (headings are compass-anchored, so only translation is fitted)."""
+    local: dict[str, dict[str, np.ndarray]] = {}
+    for n in nodes:
+        per_rec: dict[str, list[View]] = {}
+        for v in _node_views(n, cands):
+            per_rec.setdefault(v.rec_id, []).append(v)
+        for rec, views in per_rec.items():
+            # the main visit (most views, then earliest): revisits drift apart in dead reckoning, a mean would
+            # put the node between them
+            views.sort(key=lambda v: v.t_ms)
+            visits = [[views[0]]]
+            for v in views[1:]:
+                (visits[-1].append(v) if v.t_ms - visits[-1][-1].t_ms <= VISIT_S * 1000 else visits.append([v]))
+            main = max(visits, key=len)
+            local.setdefault(rec, {})[n.id] = np.mean([(v.motion.x_m, v.motion.y_m) for v in main], axis=0)
+    if not local:
+        return {}
+    order = sorted(local, key=lambda r: -len(local[r]))
+    offsets = {order[0]: np.zeros(2)}
+    progress = True
+    while progress:
+        progress = False
+        placed = {}
+        for rec, off in offsets.items():
+            for nid, xy in local[rec].items():
+                placed.setdefault(nid, []).append(xy + off)
+        for rec in order:
+            shared = [nid for nid in local[rec] if nid in placed] if rec not in offsets else []
+            if shared:
+                offsets[rec] = np.mean([np.mean(placed[nid], axis=0) - local[rec][nid] for nid in shared], axis=0)
+                progress = True
+                break
+    pos: dict[str, list] = {}
+    for rec, off in offsets.items():
+        for nid, xy in local[rec].items():
+            pos.setdefault(nid, []).append(xy + off)
+    for n in nodes:
+        if n.id in pos:
+            x, y = np.mean(pos[n.id], axis=0)
+            n.position = Point(x_m=round(float(x), 1), y_m=round(float(y), 1))
+    return offsets
+
+
+def _edge_path(e: PlaceEdge, a: PlaceNode, b: PlaceNode, cands: dict[str, Candidate], tracks: dict[str, list],
+               offsets: dict[str, np.ndarray]) -> None:
+    """Path of an edge: the stretch of a walk between the closest-in-time views of its two nodes."""
+    pairs = [(abs(x.t_ms - y.t_ms), x, y) for x in _node_views(a, cands) for y in _node_views(b, cands)
+             if x.rec_id == y.rec_id and x.rec_id in tracks and x.rec_id in offsets]
+    if not pairs or a.position is None or b.position is None:
+        return
+    _, va, vb = min(pairs, key=lambda p: p[0])
+    lo, hi = sorted((va.t_ms, vb.t_ms))
+    ox, oy = offsets[va.rec_id]
+    inner = [Point(x_m=round(x + ox, 2), y_m=round(y + oy, 2)) for t, x, y in tracks[va.rec_id] if lo < t < hi]
+    if va.t_ms > vb.t_ms:
+        inner.reverse()  # the walk went target -> source; keep the path oriented source -> target
+    e.path = [a.position, *inner, b.position]
+    e.walked_at_ms, e.walked_in = va.t_ms, va.rec_id
+
+
+def _closest_visits(a: PlaceNode, b: PlaceNode, cands: dict[str, Candidate]) -> tuple[list[View], list[View]] | None:
+    """The visits of a and b closest in time within one recording (a node can be passed several times)."""
+    va_all, vb_all = _node_views(a, cands), _node_views(b, cands)
+    pairs = [(abs(x.t_ms - y.t_ms), x, y) for x in va_all for y in vb_all if x.rec_id == y.rec_id]
+    if not pairs:
+        return None
+    _, x, y = min(pairs, key=lambda p: p[0])
+    visit = lambda views, v: [w for w in views if w.rec_id == v.rec_id and abs(w.t_ms - v.t_ms) <= VISIT_S * 1000]
+    return visit(va_all, x), visit(vb_all, y)
+
+
+def _measured(a: PlaceNode, b: PlaceNode, cands: dict[str, Candidate]) -> float | None:
+    """Walked distance between the centres of the two nodes' closest visits."""
+    visits = _closest_visits(a, b, cands)
+    if not visits:
+        return None
+    wa, wb = (float(np.mean([v.motion.walked_m for v in vs])) for vs in visits)
+    return round(abs(wa - wb), 1)
+
+
+def build_map(place: str, *, recordings_root: Path, maps_root: Path, cache_root: Path, params: SelectParams,
+              embed_model: str, transcribe_model: str | None, llm_model: str, language: str, budget_usd: float,
+              run_llm: bool = True) -> BuildResult:
+    rec_dirs = recordings_for(recordings_root, place)
+    if not rec_dirs:
+        raise ValueError(f"no finished recordings with video for place {place!r}")
+    preps = [prepare(d, cache_root, params, embed_model, transcribe_model) for d in rec_dirs]
+    place = preps[-1].manifest.place  # spelled as in the latest recording
+
+    build_id = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}"
+    build_dir = maps_root / slugify(place) / "builds" / build_id
+    build_dir.mkdir(parents=True)
+    cset = select_candidates(place, preps, params, embed_model, build_dir)
+    (build_dir / "build.json").write_text(json.dumps({"transcribe_model": transcribe_model}))
+    log.info("%s: %d recordings -> %d candidates in %s", place, len(preps), len(cset.candidates), build_dir)
+    if not run_llm:
+        return BuildResult(build_dir, cset, None)
+    return run_llm_on_build(build_dir, llm_model=llm_model, language=language, budget_usd=budget_usd)
+
+
+def run_llm_on_build(build_dir: Path, *, llm_model: str, language: str, budget_usd: float) -> BuildResult:
+    """LLM + finish for a build folder that has candidates.json; publishes its map as the place's map.json."""
+    from nav.mapping.llm import run_claude_code
+
+    cset = CandidateSet.model_validate_json((build_dir / "candidates.json").read_text())
+    draft, run = run_claude_code(build_dir, cset.place, language, llm_model, budget_usd)
+    return publish(build_dir, cset, draft, run)
+
+
+def refinish_build(build_dir: Path) -> BuildResult:
+    """Redo the finish step from the LLM answer saved in job/claude.json (no new LLM call), e.g. after changing
+    post-processing. Rebuilds tracks.json from the per-recording cache if the build predates it."""
+    from nav.mapping.llm import parse_claude_result
+
+    cset = CandidateSet.model_validate_json((build_dir / "candidates.json").read_text())
+    if not (build_dir / "tracks.json").is_file():
+        from nav.mapping.prepare import load_motion_only
+
+        tracks = {}
+        for r in cset.recordings:
+            tr = load_motion_only(r.rec_id)
+            idx = np.unique([tr.index(t) for t in np.arange(0, tr.t_ms[-1] + 1, 1000)])
+            tracks[r.rec_id] = [[round(float(tr.t_ms[i])), round(float(tr.x_m[i]), 2), round(float(tr.y_m[i]), 2)]
+                                for i in idx]
+        (build_dir / "tracks.json").write_text(json.dumps(tracks))
+    draft, run = parse_claude_result(build_dir / "job" / "claude.json")
+    old = build_dir / "map.json"
+    if old.is_file():  # keep the original duration (the saved result doesn't have wall-clock time)
+        run.duration_s = PlaceMap.model_validate_json(old.read_text()).build.llm.duration_s
+    return publish(build_dir, cset, draft, run)
+
+
+def publish(build_dir: Path, cset: CandidateSet, draft: MapDraft, run) -> BuildResult:
+    tracks = json.loads((build_dir / "tracks.json").read_text()) if (build_dir / "tracks.json").is_file() else {}
+    extra = json.loads((build_dir / "build.json").read_text()) if (build_dir / "build.json").is_file() else {}
+    build_id = build_dir.name
+    built_at = datetime.strptime(build_id, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+    info = BuildInfo(build_id=build_id, built_at_utc=built_at, pipeline_version=PIPELINE_VERSION,
+                     params=cset.params, embed_model=cset.embed_model, embed_dim=cset.embed_dim,
+                     transcribe_model=extra.get("transcribe_model"),
+                     llm=run, candidates=len(cset.candidates))
+    pmap = finish_map(draft, cset, info, f"builds/{build_id}", tracks)
+    text = pmap.model_dump_json(indent=1)
+    (build_dir / "map.json").write_text(text)
+    map_dir = build_dir.parent.parent
+    tmp = map_dir / ".map.json.tmp"
+    tmp.write_text(text)
+    tmp.replace(map_dir / "map.json")
+    return BuildResult(build_dir, cset, pmap)

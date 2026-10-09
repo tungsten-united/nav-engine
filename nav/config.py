@@ -23,3 +23,14 @@ PORT = int(os.environ.get("NAV_PORT", "8450"))
 MAX_UPLOAD_BYTES = int(os.environ.get("NAV_MAX_UPLOAD_MB", "64")) * 1024 * 1024
 # Shared copy of data/recordings for the team (`nav rec push` / `nav rec pull`); same layout, one prefix per rec_id.
 GCS_URL = os.environ.get("NAV_GCS_URL", "gs://tungsten-united-nav-recordings/recordings").rstrip("/")
+
+# Map pipeline (`nav map build`): one folder per place under MAPS_DIR, per-recording stage caches under CACHE_DIR.
+MAPS_DIR = DATA_DIR / "maps"
+CACHE_DIR = DATA_DIR / "cache"
+# Maps go next to the recordings in the team bucket, under their own prefix.
+GCS_MAPS_URL = os.environ.get("NAV_GCS_MAPS_URL", "gs://tungsten-united-nav-recordings/maps").rstrip("/")
+EMBED_MODEL = os.environ.get("NAV_EMBED_MODEL", "facebook/dinov2-base")
+TRANSCRIBE_MODEL = os.environ.get("NAV_TRANSCRIBE_MODEL", "openai/whisper-large-v3-turbo")
+MAP_LLM_MODEL = os.environ.get("NAV_MAP_LLM_MODEL", "opus")  # Claude Code --model (alias or full id)
+MAP_LANGUAGE = os.environ.get("NAV_MAP_LANGUAGE", "en")
+MAP_LLM_BUDGET_USD = float(os.environ.get("NAV_MAP_LLM_BUDGET_USD", "5"))

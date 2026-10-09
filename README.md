@@ -91,6 +91,10 @@ voice notes play along with the video. Drag on a chart to zoom, double-click to 
 | POST | `/recordings/{id}/finalize?wait=true` | rebuild outputs |
 | GET | `/recordings/{id}/files[/{path}]` | list / download any file (Range requests work, for video seeking) |
 | GET | `/recordings/{id}/series/{imu,orientation}?max_points` | samples as JSON columns, for plotting |
+| GET | `/maps` | built maps → `MapSummary[]` |
+| GET | `/maps/{map_id}` | `PlaceMap` (the latest build) |
+| GET | `/maps/{map_id}/builds` | build ids, newest first |
+| GET | `/maps/{map_id}/files/{path}` | frames, `candidates.json`, job files of any build |
 
 From another worker:
 ```sh
@@ -104,3 +108,63 @@ curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret:
 - Indoor compass readings are disturbed by steel and wiring; heading is stored raw for offline fusion with the gyro.
 - Uploads waiting in the queue live in page memory: don't close or reload the tab until it says "Recording saved".
 - The recorder writes to local disk; sharing through the bucket is a manual `nav rec push`.
+- Maps: positions come from dead reckoning, so they drift over long walks; distances undercount very slow steps.
+
+## Maps
+
+Every walk of a place feeds one **semantic topological map** of that place: nodes are spots worth naming (entrance,
+doors, junctions, rooms, areas, stairs, lifts, destinations, landmarks), and edges are walkable connections with
+spoken, egocentric instructions both ways. The format is in [`nav/schemas/map.py`](nav/schemas/map.py).
+
+```sh
+uv run nav map setup                  # once: download + check the local models (GPU if available)
+uv run nav map build "Itnig"          # all finished walks of the place -> data/maps/itnig/
+uv run nav map build "Itnig" --no-llm # stop after selecting candidates (free; to tune the selection)
+uv run nav map llm itnig              # rerun only the LLM on the latest build (same candidates)
+uv run nav map refinish itnig         # redo post-processing from the saved LLM answer (no new LLM call)
+uv run nav map list | show <map_id>
+uv run nav map push [<map_id> …]      # upload to gs://tungsten-united-nav-recordings/maps/<map_id>/ (--dry-run)
+uv run nav map pull [<map_id> …]
+```
+
+### Pipeline
+1. **Preprocess** each walk (cached per recording in `data/cache/<rec_id>/`, keyed by parameters and model):
+   - frames at **1 fps**, the sharpest of each second (variance of the Laplacian), 768 px;
+   - **motion** from the IMU: steps (adaptive peaks of vertical acceleration, in bouts), walked distance
+     (steps × step length), heading (gyro yaw about gravity, anchored to the compass), camera pitch, and a
+     dead-reckoned path;
+   - voice notes transcribed locally with **Whisper** (`openai/whisper-large-v3-turbo`);
+   - frame **embeddings** with **DINOv2** (`facebook/dinov2-base`, whole frame without cropping, [CLS] + mean patch,
+     1536-d, cosine similarity).
+2. **Select candidates**: drop blurry, dark or floor/ceiling frames; per walk keep the start and end, frames at tags
+   and voice notes, frames that look new once the walker moved ≥ 2 m or turned ≥ 60°, and one every 10 m; fold
+   near-identical frames (cosine ≥ 0.92) across walks and revisits into one candidate with several views, and flag
+   look-alikes (≥ 0.80) as possibly the same place; at most 60. Thresholds: `SelectParams` in
+   [`nav/mapping/select.py`](nav/mapping/select.py).
+3. **LLM**: a headless **Claude Code** job runs in the build folder with read-only tools (`Read`, `Glob`), opens
+   `candidates.json` and every frame, and must answer in the `MapDraft` JSON Schema (`claude -p --json-schema`).
+   The prompt is in [`nav/mapping/llm.py`](nav/mapping/llm.py). The schema is written to also be valid for the
+   Anthropic structured-outputs API (closed objects, all fields required, no numeric/length constraints), which can
+   replace the job later.
+4. **Finish**: check node, edge and candidate ids (problems go into `warnings`), attach evidence (recording, time,
+   frame) to every node, place nodes at their dead-reckoned position (walks aligned through shared nodes), measure
+   each edge's walked distance and keep its walked path for drawing.
+
+Defaults can be changed with `NAV_EMBED_MODEL`, `NAV_TRANSCRIBE_MODEL`, `NAV_MAP_LLM_MODEL` (default `opus`),
+`NAV_MAP_LANGUAGE` (default `en`), `NAV_MAP_LLM_BUDGET_USD` (default 5) and `NAV_GCS_MAPS_URL`. A build of a
+2-minute walk takes about 15 s of preprocessing on the GPU plus 4 minutes and about $1 of Claude Code.
+
+```
+data/maps/<map_id>/              map_id = slug of the place, e.g. "itnig"
+  map.json                       latest build's PlaceMap
+  builds/<build_id>/             immutable, one per build
+    map.json  candidates.json  tracks.json  frames/c01.jpg …
+    job/  prompt.md  schema.json  command.txt  claude.json  claude.log
+```
+
+### Viewer
+**https://helium-nav.oscarmartinez.dev/viz/** shows each map as a navigation graph: nodes at their dead-reckoned
+positions and edges along the walked path (with the whole walk as a faint track), the route in recording order
+with turns, hover previews with the frame, and details pinned on click (description, landmarks, hazards, both
+instructions, frames, the walks and times that show it). **Directions** picks two nodes and chains the
+instructions along the shortest walked route.

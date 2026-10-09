@@ -12,7 +12,9 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 
 from nav import config
+from nav.mapping.store import MapStore
 from nav.recorder.store import Conflict, NotFound, RecordingStore
+from nav.schemas.map import MapSummary, PlaceMap
 from nav.schemas.recording import (
     SCHEMA_VERSION,
     FileInfo,
@@ -29,8 +31,9 @@ from nav.schemas.recording import (
 WEB_DIR = Path(__file__).parent / "web"
 
 
-def create_app(store: RecordingStore | None = None) -> FastAPI:
+def create_app(store: RecordingStore | None = None, maps: MapStore | None = None) -> FastAPI:
     store = store or RecordingStore(config.RECORDINGS_DIR)
+    maps = maps or MapStore(config.MAPS_DIR)
     app = FastAPI(title="nav-engine recorder", version=f"schema-{SCHEMA_VERSION}")
     app.state.store = store
 
@@ -143,6 +146,24 @@ def create_app(store: RecordingStore | None = None) -> FastAPI:
         """imu or orientation samples as columns, for plotting (the parquet files hold everything)."""
         return store.series(rec_id, stream, max_points)
 
+    @app.get(f"{api}/maps")
+    def list_maps() -> list[MapSummary]:
+        """Built maps, newest first (one per place; build with `nav map build <place>`)."""
+        return maps.summaries()
+
+    @app.get(f"{api}/maps/{{map_id}}")
+    def get_map(map_id: str) -> PlaceMap:
+        return maps.get(map_id)
+
+    @app.get(f"{api}/maps/{{map_id}}/builds")
+    def map_builds(map_id: str) -> list[str]:
+        return maps.builds(map_id)
+
+    @app.get(f"{api}/maps/{{map_id}}/files/{{path:path}}")
+    def map_file(map_id: str, path: str) -> FileResponse:
+        """Frames, candidates.json, the Claude Code job files ... of any build (paths as in map.json)."""
+        return FileResponse(maps.file(map_id, path))
+
     def page(folder: Path, assets: tuple[str, ...]) -> HTMLResponse:
         # Cache-bust assets by content hash: Cloudflare forces a 4 h browser TTL on .js/.css, the page itself isn't cached.
         html = (folder / "index.html").read_text()
@@ -165,6 +186,16 @@ def create_app(store: RecordingStore | None = None) -> FastAPI:
     def dash() -> HTMLResponse:
         """Recordings dashboard: browse places and walks, play video with tags/voice/sensors on one timeline."""
         return page(WEB_DIR / "dash", ("dash.js", "dash.css"))
+
+    @app.get("/viz", include_in_schema=False)
+    def viz_redirect() -> RedirectResponse:
+        return RedirectResponse("/viz/")
+
+    @app.get("/viz/", include_in_schema=False)
+    @app.get("/viz/index.html", include_in_schema=False)
+    def viz() -> HTMLResponse:
+        """Map viewer: the graph of each place, node and edge details with their frames, directions between nodes."""
+        return page(WEB_DIR / "viz", ("viz.js", "viz.css"))
 
     app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
     return app

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nav Maps</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="viz.css">
+</head>
+<body>
+  <div class="layout">
+    <main class="stage">
+      <header class="head">
+        <div>
+          <h1 id="title">Navigation graph</h1>
+          <p id="subtitle" class="sub"></p>
+        </div>
+        <div class="tools">
+          <select id="maps" aria-label="Map"></select>
+          <button id="walk" type="button" aria-pressed="true">Walked path</button>
+          <button id="fit" type="button">Fit</button>
+        </div>
+      </header>
+      <div id="graph" class="graph">
+        <svg id="svg" role="img" aria-label="Navigation graph"><g id="world"></g></svg>
+        <div id="tip" class="tip" hidden></div>
+        <p id="empty" class="empty" hidden></p>
+      </div>
+      <footer id="legend" class="legend"></footer>
+    </main>
+    <aside id="panel" class="panel" aria-live="polite"></aside>
+  </div>
+  <dialog id="zoom" class="zoom"><img alt=""><p class="caption"></p><form method="dialog"><button>Close</button></form></dialog>
+  <script src="viz.js"></script>
+</body>
+</html>
