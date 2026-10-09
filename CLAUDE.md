@@ -47,4 +47,7 @@ Browser end-to-end check: headless `/usr/bin/chromium` via `uvx --from playwrigh
 
 ## Conventions
 - Work on branch `omm/first_draft`; push with `git push` (gh credential helper is configured for this repo).
+- Data sharing: the server does not upload by itself. After new recordings are finalized, run `uv run nav rec push`
+  (from the main checkout, so it sees the live `data/`) to keep the team bucket current; check with `--dry-run` first.
+  Teammates with access: lpall98@gmail.com (objectAdmin). Grant others per README → "Shared dataset".
 - Propose before large changes; the user reviews plans first.
