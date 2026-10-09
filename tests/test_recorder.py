@@ -10,8 +10,7 @@ from nav.recorder.store import RecordingStore
 
 API = "/api/v1"
 CREATE = {
-    "title": "lifts to kitchen",
-    "place": "test floor",
+    "place": "  Test   floor ",
     "t0_epoch_ms": 1_791_500_000_000,
     "device": {"user_agent": "pytest"},
     "camera": {"width": 320, "height": 240, "fps": 10, "mime": "video/webm;codecs=vp9"},
@@ -109,6 +108,17 @@ def test_full_recording(client, webm, tmp_path):
 
     listed = client.get(f"{API}/recordings").json()
     assert [s["rec_id"] for s in listed] == [rec_id] and listed[0]["counts"]["marks"] == 3
+
+
+def test_places_group_free_walks(client):
+    ids = [create(client) for _ in range(2)]
+    other = client.post(f"{API}/recordings", json={**CREATE, "place": "Library"}).json()["rec_id"]
+    assert client.get(f"{API}/recordings/{ids[0]}").json()["place"] == "Test floor"  # whitespace normalised
+    places = {p["place"]: p["recordings"] for p in client.get(f"{API}/places").json()}
+    assert places == {"Test floor": 2, "Library": 1}
+    same = client.get(f"{API}/recordings", params={"place": "test FLOOR"}).json()
+    assert sorted(s["rec_id"] for s in same) == sorted(ids) and other not in [s["rec_id"] for s in same]
+    assert client.post(f"{API}/recordings", json={**CREATE, "place": "  "}).status_code == 422
 
 
 def test_missing_uploads_are_reported(client, webm):

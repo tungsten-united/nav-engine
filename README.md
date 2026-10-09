@@ -62,7 +62,7 @@ uv run pytest
 | GET | `/health` | |
 | POST | `/recordings` | create (`RecordingCreate`) → `Manifest` |
 | GET | `/recordings` | list → `RecordingSummary[]` |
-| GET / PATCH / DELETE | `/recordings/{id}` | manifest / edit title, place, notes, step length / delete |
+| GET / PATCH / DELETE | `/recordings/{id}` | manifest / edit place, notes, step length / delete |
 | PUT | `/recordings/{id}/video/{seq}` | raw video chunk |
 | POST | `/recordings/{id}/samples` | `SampleBatch` (imu, orientation, events) |
 | PUT | `/recordings/{id}/voice/{clip}?t_start_ms&t_end_ms` | audio clip (Content-Type = its mime) |

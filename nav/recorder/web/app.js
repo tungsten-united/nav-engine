@@ -238,6 +238,13 @@ async function start() {
   btn.disabled = true;
   msg.textContent = "";
   let video = null, audio = null;
+  const place = $("place").value.trim();
+  if (!place) {
+    msg.textContent = "Enter the place you are mapping.";
+    $("place").focus();
+    btn.disabled = false;
+    return;
+  }
   try {
     // iOS (and newer Chrome) ask for motion permission, requested directly inside the tap
     const warnings = [];
@@ -255,7 +262,7 @@ async function start() {
     const mime = pick(VIDEO_MIMES);
     const t0 = performance.now();
     const res = await json("POST", "/recordings", {
-      title: $("title").value.trim(), place: $("place").value.trim(), holding: $("holding").value,
+      place, notes: $("notes").value.trim(), holding: $("holding").value,
       step_length_m: Number($("step").value) || 0.7, t0_epoch_ms: Math.round(performance.timeOrigin + t0),
       device: { user_agent: navigator.userAgent, platform: navigator.userAgentData?.platform || navigator.platform || null,
         screen_w: screen.width, screen_h: screen.height, pixel_ratio: devicePixelRatio },
@@ -345,6 +352,7 @@ async function stop() {
   status.textContent = { complete: "Complete ✓", incomplete: "Saved with gaps", failed: "Processing failed" }[m.status];
   const v = m.video;
   $("done-summary").textContent = [
+    `place     ${m.place}`,
     `id        ${m.rec_id}`,
     `duration  ${(m.duration_ms / 1000).toFixed(0)} s`,
     v ? `video     ${v.width}×${v.height} ${v.codec}, ${v.duration_s?.toFixed(1)} s` : "video     —",
@@ -359,13 +367,17 @@ async function stop() {
 }
 
 async function loadRecent() {
+  const pr = await api("GET", "/places").catch(() => null);
+  if (pr?.ok) {
+    $("places").replaceChildren(...(await pr.json()).map((p) => Object.assign(document.createElement("option"), { value: p.place })));
+  }
   const r = await api("GET", "/recordings").catch(() => null);
   if (!r?.ok) return;
   const list = await r.json();
   $("recent").replaceChildren(...list.slice(0, 10).map((s) => {
     const li = document.createElement("li");
     const dur = s.duration_ms ? `${Math.round(s.duration_ms / 1000)} s` : "—";
-    li.textContent = `${s.title || s.rec_id} · ${dur} · ${s.status}`;
+    li.textContent = `${s.place} · ${dur} · ${s.status}`;
     return li;
   }));
 }

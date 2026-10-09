@@ -1,5 +1,8 @@
 """Recording format (schema_version 1): what the phone recorder captures during a walkthrough.
 
+A recording is a free walk through a place, not a planned route: the volunteer wanders, tags and describes
+what they pass. All recordings with the same `place` are merged into that place's map.
+
 Every timestamp `t_ms` is milliseconds since the recording started, on the phone's monotonic clock
 (performance.now() - t0). `Manifest.t0_epoch_ms` anchors that clock to UTC.
 
@@ -18,13 +21,18 @@ On disk (one folder per recording; paths are relative so the folder maps 1:1 to 
 
 import re
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BeforeValidator, BaseModel, Field
 
 SCHEMA_VERSION = 1
 REC_ID_RE = re.compile(r"^\d{8}T\d{6}Z_[0-9a-f]{4}$")  # 20261009T194012Z_a3f9
 
+def _clean_place(v: str) -> str:
+    return " ".join(v.split()) if isinstance(v, str) else v
+
+
+Place = Annotated[str, Field(min_length=1, max_length=120), BeforeValidator(_clean_place)]
 Holding = Literal["handheld_portrait", "handheld_landscape", "chest_mount", "lanyard", "other"]
 Tag = Literal["door", "junction", "stairs", "lift", "destination"]
 Status = Literal["recording", "finalizing", "complete", "incomplete", "failed"]
@@ -62,8 +70,7 @@ class CameraInfo(BaseModel):
 
 
 class RecordingCreate(BaseModel):
-    title: str = ""
-    place: str = ""  # building / floor, e.g. "Office, 3rd floor"
+    place: Place  # area being mapped, e.g. "Office, 3rd floor"; the key that groups recordings into one map
     notes: str = ""
     holding: Holding = "handheld_portrait"
     step_length_m: float = Field(0.7, ge=0.3, le=1.2)
@@ -73,8 +80,7 @@ class RecordingCreate(BaseModel):
 
 
 class RecordingUpdate(BaseModel):
-    title: str | None = None
-    place: str | None = None
+    place: Place | None = None
     notes: str | None = None
     holding: Holding | None = None
     step_length_m: float | None = Field(None, ge=0.3, le=1.2)
@@ -174,7 +180,6 @@ class SampleBatch(BaseModel):
 
 class RecordingSummary(BaseModel):
     rec_id: str
-    title: str
     place: str
     created_at_utc: datetime
     status: Status
@@ -185,3 +190,10 @@ class RecordingSummary(BaseModel):
 class FileInfo(BaseModel):
     path: str
     bytes: int
+
+
+class PlaceSummary(BaseModel):
+    place: str
+    recordings: int
+    duration_ms: float
+    last_recorded_utc: datetime

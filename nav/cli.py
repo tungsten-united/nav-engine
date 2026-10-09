@@ -28,7 +28,7 @@ def _store():
 def rec_list() -> None:
     for s in _store().summaries():
         dur = f"{s.duration_ms / 1000:6.0f}s" if s.duration_ms else "      -"
-        print(f"{s.rec_id}  {s.status:<10} {dur}  marks={s.counts.marks:<3} {s.title or '-'}  [{s.place or '-'}]")
+        print(f"{s.rec_id}  {s.status:<10} {dur}  marks={s.counts.marks:<3} {s.place}")
 
 
 @rec.command("show")

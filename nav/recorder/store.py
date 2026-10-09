@@ -25,6 +25,7 @@ from nav.schemas.recording import (
     ImuSample,
     Manifest,
     OrientationSample,
+    PlaceSummary,
     RecordingCreate,
     RecordingSummary,
     RecordingUpdate,
@@ -111,13 +112,22 @@ class RecordingStore:
             self._save(m)
             return m
 
-    def summaries(self) -> list[RecordingSummary]:
+    def summaries(self, place: str | None = None) -> list[RecordingSummary]:
         out = []
         for d in sorted(self.root.iterdir(), reverse=True):
             if REC_ID_RE.match(d.name) and (d / "manifest.json").is_file():
                 m = self.get(d.name)
-                out.append(RecordingSummary(**m.model_dump(include=set(RecordingSummary.model_fields))))
+                if place is None or m.place.casefold() == " ".join(place.split()).casefold():
+                    out.append(RecordingSummary(**m.model_dump(include=set(RecordingSummary.model_fields))))
         return out
+
+    def places(self) -> list[PlaceSummary]:
+        """One entry per place (case-insensitive), newest first, spelled as in its latest recording."""
+        groups: dict[str, list[RecordingSummary]] = defaultdict(list)
+        for s in self.summaries():
+            groups[s.place.casefold()].append(s)
+        return [PlaceSummary(place=g[0].place, recordings=len(g), duration_ms=sum(s.duration_ms or 0 for s in g),
+                             last_recorded_utc=g[0].created_at_utc) for g in groups.values()]
 
     def delete(self, rec_id: str) -> None:
         shutil.rmtree(self.dir(rec_id))

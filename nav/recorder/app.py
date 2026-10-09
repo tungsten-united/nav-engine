@@ -17,6 +17,7 @@ from nav.schemas.recording import (
     FileInfo,
     FinishRequest,
     Manifest,
+    PlaceSummary,
     RecordingCreate,
     RecordingSummary,
     RecordingUpdate,
@@ -65,8 +66,13 @@ def create_app(store: RecordingStore | None = None) -> FastAPI:
         return store.create(req, created_by=identity(request))
 
     @app.get(f"{api}/recordings")
-    def list_recordings() -> list[RecordingSummary]:
-        return store.summaries()
+    def list_recordings(place: str | None = None) -> list[RecordingSummary]:
+        return store.summaries(place)
+
+    @app.get(f"{api}/places")
+    def places() -> list[PlaceSummary]:
+        """Places with recordings; each place becomes one map."""
+        return store.places()
 
     @app.get(f"{api}/recordings/{{rec_id}}")
     def get(rec_id: str) -> Manifest:
