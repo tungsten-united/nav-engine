@@ -1,0 +1,12 @@
+[Unit]
+Description=nav-engine recorder (phone web app + /api/v1) on 127.0.0.1:8450
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/Projects/nav-engine
+ExecStart=%h/.local/bin/uv run --frozen nav serve
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

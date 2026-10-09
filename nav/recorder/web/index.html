@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>Nav Recorder</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Setup -->
+  <main id="setup" class="screen">
+    <h1>Nav Recorder</h1>
+    <p class="hint">Walk the route holding the phone upright with the rear camera facing forward.
+      Hold <b>Talk</b> to describe what is around you, or tap it to start and tap again to stop.
+      Tap a tag whenever you pass one.</p>
+    <label for="title">Route</label>
+    <input id="title" type="text" placeholder="Lifts → kitchen" autocomplete="off">
+    <label for="place">Place</label>
+    <input id="place" type="text" placeholder="Office, 3rd floor" autocomplete="off">
+    <label for="holding">Phone position</label>
+    <select id="holding">
+      <option value="handheld_portrait">In hand, upright</option>
+      <option value="handheld_landscape">In hand, sideways</option>
+      <option value="chest_mount">Chest mount</option>
+      <option value="lanyard">Lanyard</option>
+      <option value="other">Other</option>
+    </select>
+    <label for="step">Step length (m)</label>
+    <input id="step" type="number" min="0.3" max="1.2" step="0.05" value="0.7" inputmode="decimal">
+    <button id="start" class="big">Start recording</button>
+    <p id="setup-msg" class="msg" role="alert"></p>
+    <details>
+      <summary>Recent recordings</summary>
+      <ul id="recent" class="recent"></ul>
+    </details>
+  </main>
+
+  <!-- Recording -->
+  <main id="rec" class="screen rec" hidden>
+    <div class="topbar">
+      <span id="clock" class="clock" aria-label="Elapsed time">0:00</span>
+      <span id="upload" class="pill" aria-live="polite">uploads ok</span>
+    </div>
+    <video id="preview" playsinline muted autoplay aria-hidden="true"></video>
+    <div class="stats" aria-hidden="true">
+      <span><b id="steps">0</b> steps</span>
+      <span><b id="speed">0.00</b> m/s</span>
+      <span><b id="heading">—</b> heading</span>
+    </div>
+    <p id="status" class="status" aria-live="assertive"></p>
+    <div class="tags" role="group" aria-label="Tags">
+      <button class="tag" data-tag="door">Door</button>
+      <button class="tag" data-tag="junction">Junction</button>
+      <button class="tag" data-tag="stairs">Stairs</button>
+      <button class="tag" data-tag="lift">Lift</button>
+      <button class="tag" data-tag="destination">Destination</button>
+    </div>
+    <button id="talk" class="talk" aria-pressed="false">Talk</button>
+    <button id="stop" class="big stop">Stop</button>
+  </main>
+
+  <!-- Done -->
+  <main id="done" class="screen" hidden>
+    <h1>Recording saved</h1>
+    <p id="done-status" class="status" aria-live="polite"></p>
+    <pre id="done-summary" class="summary"></pre>
+    <button id="again" class="big">New recording</button>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
