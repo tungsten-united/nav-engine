@@ -10,7 +10,10 @@ const VIDEO_TIMESLICE_MS = 2000, BATCH_MS = 1000, VIDEO_BPS = 5_000_000;
 const VIDEO_MIMES = ["video/webm;codecs=h264", "video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm",
   "video/mp4;codecs=avc1.640028", "video/mp4;codecs=avc1", "video/mp4"];
 const AUDIO_MIMES = ["audio/webm;codecs=opus", "audio/mp4", "audio/ogg;codecs=opus", "audio/webm"];
-const STEP_HI = 10.8, STEP_LO = 9.8, MIN_STEP_GAP_MS = 300;  // |accel incl. gravity| hysteresis, m/s²
+// Live step detector on |accel incl. gravity|: low-pass, subtract a slow baseline, and fire when the bounce exceeds
+// a fraction of its own recent size (a gentle handheld walk bounces ~0.3 m/s², a brisk one several m/s²).
+// Display only: speed = steps in the last WINDOW_MS × step length; the real estimate is computed offline.
+const STEP = { lpMs: 60, baseMs: 1500, varMs: 3000, frac: 0.4, floor: 0.1, minGapMs: 400, windowMs: 4000, minSteps: 3 };
 const TAP_MS = 350;  // Talk pressed shorter than this toggles instead of push-to-talk
 
 const $ = (id) => document.getElementById(id);
@@ -88,20 +91,32 @@ function onMotion(e) {
 
 function detectStep(mag, ts) {
   const st = S.steps;
-  st.smoothed = 0.8 * st.smoothed + 0.2 * mag;
-  if (!st.above && st.smoothed > STEP_HI) {
-    st.above = true;
-    if (!st.times.length || ts - st.times.at(-1) > MIN_STEP_GAP_MS) {
+  if (st.last == null) { st.lp = st.base = mag; st.last = ts; return; }
+  const dt = Math.max(ts - st.last, 1), k = (tau) => 1 - Math.exp(-dt / tau);  // time constants, any sensor rate
+  st.last = ts;
+  st.lp += k(STEP.lpMs) * (mag - st.lp);
+  st.base += k(STEP.baseMs) * (st.lp - st.base);
+  const d = st.lp - st.base;
+  st.var += k(STEP.varMs) * (d * d - st.var);
+  const hi = Math.max(STEP.floor, STEP.frac * Math.sqrt(st.var));
+  if (st.armed && d > hi) {
+    st.armed = false;
+    if (!st.times.length || ts - st.times.at(-1) > STEP.minGapMs) {
       st.times.push(ts);
       st.count++;
-      st.times = st.times.filter((t) => ts - t < 3000);
-      const cadence = st.times.length >= 2 ? (st.times.length - 1) / ((ts - st.times[0]) / 1000) : 0;
-      st.speed = cadence * S.stepLength;
-      S.events.push({ t_ms: at(ts), type: "step", data: { cadence: r4(cadence), speed_mps: r4(st.speed) } });
+      const { cadence, speed } = walk(ts);
+      S.events.push({ t_ms: at(ts), type: "step", data: { cadence: r4(cadence), speed_mps: r4(speed) } });
     }
-  } else if (st.above && st.smoothed < STEP_LO) {
-    st.above = false;
+  } else if (!st.armed && d < -0.3 * hi) {
+    st.armed = true;
   }
+}
+
+function walk(ts) {
+  const st = S.steps;
+  st.times = st.times.filter((t) => ts - t < STEP.windowMs);
+  const cadence = st.times.length >= STEP.minSteps ? st.times.length / (STEP.windowMs / 1000) : 0;
+  return { cadence, speed: cadence * S.stepLength };
 }
 
 // Heading of the rear-camera axis (device -z) from W3C Euler angles (Z-X'-Y'', earth frame x=E, y=N, z=up).
@@ -161,8 +176,7 @@ function tickUi() {
   const s = Math.floor(now() / 1000);
   $("clock").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   $("steps").textContent = S.steps.count;
-  const recent = S.steps.times.length && performance.now() - S.steps.times.at(-1) < 1500;
-  $("speed").textContent = (recent ? S.steps.speed : 0).toFixed(2);
+  $("speed").textContent = walk(performance.now()).speed.toFixed(2);
   $("heading").textContent = S.heading == null ? "—" : `${Math.round(S.heading)}°`;
 }
 
@@ -274,7 +288,7 @@ async function start() {
 
     S = { id: manifest.rec_id, t0, stepLength: manifest.step_length_m, video, audio, audioMime: pick(AUDIO_MIMES),
       imu: [], orientation: [], events: [], batchSeq: 0, videoSeq: 0, clipSeq: 0, heading: null,
-      steps: { smoothed: 9.81, above: false, times: [], count: 0, speed: 0 }, voice: null, voiceToggle: null };
+      steps: { last: null, lp: 0, base: 0, var: 0.04, armed: true, times: [], count: 0 }, voice: null, voiceToggle: null };
     ev("start", { rec_id: S.id });
 
     const recorder = new MediaRecorder(video, { ...(mime ? { mimeType: mime } : {}), videoBitsPerSecond: VIDEO_BPS,
