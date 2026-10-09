@@ -42,5 +42,37 @@ def rec_finalize(rec_id: str) -> None:
     print(f"{m.rec_id}: {m.status}" + (f"  gaps: {', '.join(m.gaps)}" if m.gaps else "") + (f"  error: {m.error}" if m.error else ""))
 
 
+def _gcloud_rsync(src: str, dst: str, *flags: str, dry_run: bool) -> None:
+    import subprocess
+
+    cmd = ["gcloud", "storage", "rsync", "--recursive", *flags, *(["--dry-run"] if dry_run else []), src, dst]
+    print("$", " ".join(cmd))
+    if subprocess.run(cmd).returncode:
+        raise typer.Exit(1)
+
+
+@rec.command("push")
+def rec_push(rec_ids: list[str] = typer.Argument(None, help="Default: every finished recording."),
+             raw: bool = typer.Option(False, help="Also upload raw/ (the uploads as received)."),
+             dry_run: bool = False) -> None:
+    """Upload recordings to the team bucket (NAV_GCS_URL). Only adds or updates objects, never deletes."""
+    store = _store()
+    ids = rec_ids or [s.rec_id for s in store.summaries() if s.status in ("complete", "incomplete", "failed")]
+    for rec_id in ids:
+        _gcloud_rsync(str(store.dir(rec_id)), f"{config.GCS_URL}/{rec_id}", *([] if raw else ["--exclude", "^raw/"]),
+                      dry_run=dry_run)
+
+
+@rec.command("pull")
+def rec_pull(rec_ids: list[str] = typer.Argument(None, help="Default: everything in the bucket."),
+             dry_run: bool = False) -> None:
+    """Download recordings from the team bucket into NAV_DATA_DIR/recordings. Never deletes local files."""
+    config.RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+    if not rec_ids:
+        _gcloud_rsync(config.GCS_URL, str(config.RECORDINGS_DIR), dry_run=dry_run)
+    for rec_id in rec_ids or []:
+        _gcloud_rsync(f"{config.GCS_URL}/{rec_id}", str(config.RECORDINGS_DIR / rec_id), dry_run=dry_run)
+
+
 if __name__ == "__main__":
     app()

@@ -56,6 +56,21 @@ uv run nav rec finalize <rec_id>      # rebuild outputs from raw uploads
 uv run pytest
 ```
 
+### Shared dataset (Google Cloud Storage)
+Finished recordings are shared with the team in the private bucket
+**`gs://tungsten-united-nav-recordings/recordings/<rec_id>/`** (project `tungsten-united`, region `europe-southwest1`),
+with the same layout as `data/recordings/`. `raw/` is not uploaded unless you ask for it.
+```sh
+gcloud auth login                     # once, with the Google account that was granted access
+uv run nav rec push [<rec_id> …]      # upload (default: every finished recording); --raw, --dry-run
+uv run nav rec pull [<rec_id> …]      # download into data/recordings (default: everything)
+gcloud storage ls gs://tungsten-united-nav-recordings/recordings/   # or browse without the repo
+```
+Both only add or update files and never delete. `NAV_GCS_URL` overrides the location. To give a teammate
+read/write access:
+`gcloud storage buckets add-iam-policy-binding gs://tungsten-united-nav-recordings --member user:<email> --role roles/storage.objectAdmin`
+(use `roles/storage.objectViewer` for read-only).
+
 ### API (`/api/v1`, OpenAPI at `/docs`)
 | method | path | |
 |---|---|---|
@@ -81,4 +96,4 @@ curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret:
 - No barometer or OS step counter in browsers: floor changes come from video/voice, steps from accel peaks.
 - Indoor compass readings are disturbed by steel and wiring; heading is stored raw for offline fusion with the gyro.
 - Uploads waiting in the queue live in page memory: don't close or reload the tab until it says "Recording saved".
-- Storage is local for now; the folder layout maps 1:1 to object keys for a later move to Google Cloud Storage.
+- The recorder writes to local disk; sharing through the bucket is a manual `nav rec push`.

@@ -8,8 +8,9 @@ walks through a place. Next: turn all walks of a place into one semantic topolog
 - `nav/recorder/app.py` — FastAPI app factory: `/api/v1` + the static phone app; `store.py` — filesystem storage,
   idempotent uploads, `finalize` (chunks → `video.mp4`, batches → parquet/jsonl).
 - `nav/recorder/web/` — phone app (vanilla JS, no build step).
-- `nav/cli.py` — `nav serve`, `nav rec list|show|finalize`.
-- `data/recordings/<rec_id>/` — recordings (gitignored). Layout maps 1:1 to object keys for a later GCS move.
+- `nav/cli.py` — `nav serve`, `nav rec list|show|finalize|push|pull`.
+- `data/recordings/<rec_id>/` — recordings (gitignored). Shared copy for the team: `gs://tungsten-united-nav-recordings/recordings/<rec_id>/`
+  (project `tungsten-united`, not the active gcloud project `kotie-app`), via `nav rec push|pull` (`gcloud storage rsync`, no deletes, skips `raw/`).
 
 ## Run / test
 ```sh

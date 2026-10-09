@@ -21,3 +21,5 @@ RECORDINGS_DIR = DATA_DIR / "recordings"
 HOST = os.environ.get("NAV_HOST", "127.0.0.1")
 PORT = int(os.environ.get("NAV_PORT", "8450"))
 MAX_UPLOAD_BYTES = int(os.environ.get("NAV_MAX_UPLOAD_MB", "64")) * 1024 * 1024
+# Shared copy of data/recordings for the team (`nav rec push` / `nav rec pull`); same layout, one prefix per rec_id.
+GCS_URL = os.environ.get("NAV_GCS_URL", "gs://tungsten-united-nav-recordings/recordings").rstrip("/")
