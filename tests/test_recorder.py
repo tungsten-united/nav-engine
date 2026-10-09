@@ -149,3 +149,9 @@ def test_web_app_served(client):
     assert r.status_code == 200 and "Nav Recorder" in r.text
     assert client.get("/app.js").status_code == 200
     assert client.get(f"{API}/health").json() == {"ok": True, "schema_version": 1}
+
+
+def test_assets_are_not_cached(client):
+    # Cloudflare edge-caches .js/.css unless told otherwise
+    assert client.get("/app.js").headers["cache-control"] == "no-cache"
+    assert client.get(f"{API}/health").headers["cache-control"] == "no-store"

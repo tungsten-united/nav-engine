@@ -41,6 +41,13 @@ def create_app(store: RecordingStore | None = None) -> FastAPI:
     async def _conflict(_: Request, e: Conflict):
         return JSONResponse({"detail": str(e)}, status_code=409)
 
+    @app.middleware("http")
+    async def no_stale_assets(request: Request, call_next):
+        # Cloudflare caches .js/.css at the edge by default: a new page with an old app.js breaks the app.
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store" if request.url.path.startswith("/api/") else "no-cache"
+        return response
+
     async def body(request: Request) -> bytes:
         if int(request.headers.get("content-length") or 0) > config.MAX_UPLOAD_BYTES:
             raise HTTPException(413, "upload too large")
