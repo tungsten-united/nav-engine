@@ -73,17 +73,27 @@ const ArrivalNav = (() => {
   }
 
   // --- arrival.NodeConfirmer -----------------------------------------------------------------------------------
-  const PARAMS = { k: 2, n: 3, gateP: 0.2, gateSigmas: 2.0, looseFrac: 0.5, headingTol: 45.0 };
+  // score / margin: the confirmer's own vote thresholds (not nav-api's confirm_score); headingTol: passing only.
+  const PARAMS = { k: 2, n: 3, score: 0.30, margin: 0.04, gateP: 0.2, gateSigmas: 2.0, looseFrac: 0.5, headingTol: 90.0 };
   const CONFIRM_KINDS = ["arrived", "passed", "manual"];
   const r2 = (x) => Math.round(x * 100) / 100;
   const r3 = (x) => Math.round(x * 1000) / 1000;
 
+  // node -> the nodes an edge joins it to, either direction (arrival.neighbours)
+  function neighbours(edges) {
+    const out = {};
+    const add = (a, b) => { (out[a] ||= new Set()).add(b); };
+    for (const e of edges || []) { add(e.source, e.target); add(e.target, e.source); }
+    return out;
+  }
+
   class NodeConfirmer {
-    // route: nav-api RouteHop[] (source, target, length_m, bearing_deg, arrival_deg); tracker: GraphTracker | null
-    constructor(route, tracker = null, params = {}) {
-      this.route = route.slice(); this.tracker = tracker; this.p = { ...PARAMS, ...params };
-      this.hopIndex = 0; this.votes = []; this.heading = null; this.offRoute = false;
-      this.done = !this.route.length; this.uncertainSent = false; this.events = [];
+    // route: nav-api RouteHop[] (source, target, length_m, bearing_deg, arrival_deg); tracker: GraphTracker | null;
+    // nbrs: neighbours(map.edges) or null
+    constructor(route, tracker = null, params = {}, nbrs = null) {
+      this.route = route.slice(); this.tracker = tracker; this.p = { ...PARAMS, ...params }; this.nbrs = nbrs || {};
+      this.hopIndex = 0; this.votes = []; this.heading = null; this.walkGate = false;
+      this.done = !this.route.length; this.uncertainSent = false; this.offRouteSent = false; this.events = [];
     }
     get hop() { return this.done ? null : this.route[this.hopIndex]; }
     get nextHop() { return !this.done && this.hopIndex + 1 < this.route.length ? this.route[this.hopIndex + 1] : null; }
@@ -100,7 +110,7 @@ const ArrivalNav = (() => {
 
     onStep(headingMapDeg, t = 0) {
       if (headingMapDeg != null) this.heading = ((headingMapDeg % 360) + 360) % 360;
-      if (this.done || this.offRoute || !this.tracker) return null;
+      if (this.done || !this.tracker) return null;
       this.tracker.onStep(this.heading != null ? this.heading : (this.hop.bearing_deg || 0));
       const pdr = this.pdr();
       if (pdr && !this.uncertainSent && pdr.remaining_m < -this.p.gateSigmas * pdr.sigma_m) {
@@ -112,53 +122,60 @@ const ArrivalNav = (() => {
 
     vote(loc) {
       const hop = this.hop, nxt = this.nextHop;
-      if (!loc.candidates?.length || loc.best == null) return [null, {}];
-      const top = loc.candidates[0], th = loc.thresholds;
-      const clear = top.score >= th.confirm_score && (loc.margin || 0) >= th.confirm_margin;
+      if (!hop || !loc.candidates?.length || loc.best == null) return [null, {}];
+      const top = loc.candidates[0];
+      const clear = top.score >= this.p.score && (loc.margin || 0) >= this.p.margin;
       const ref = top.refs?.[0] || null;
-      const info = { best: loc.best, score: top.score, margin: loc.margin, role: ref ? ref.role : null, toward: ref ? ref.toward : null };
+      const info = { best: loc.best, score: top.score, margin: loc.margin, role: ref ? ref.role : null,
+                     toward: ref ? ref.toward : null, plausible: top.plausible ?? null };
       if (!clear) return [null, info];
       if (loc.best === hop.target) {
         if (ref && ref.role === "outgoing") return [nxt && ref.toward === nxt.target ? "pass" : null, info];
         return ["arrive", info];
       }
       if (nxt && loc.best === nxt.target) return [ref && (ref.role === "approach" || ref.role === "at") ? "pass" : null, info];
-      if (loc.best !== hop.source) return ["elsewhere", info];
-      return [null, info];
+      const onHop = [hop.source, hop.target, ...(nxt ? [nxt.target] : [])];
+      if (onHop.includes(loc.best) || onHop.some((x) => this.nbrs[x]?.has(loc.best))) return [null, info];
+      return ["elsewhere", info];
+    }
+
+    gate(vote, info, pdr) {
+      if (info.plausible != null) return info.plausible;  // nav-api's walked-distance gate (steps, no compass)
+      if (vote === "arrive") return this.near(pdr) || (info.role === "at" && this.walkedEnough(pdr));
+      return this.walkedEnough(pdr);
     }
 
     onLocalization(t, loc) {
       if (loc.heading_map_deg != null) this.heading = ((loc.heading_map_deg % 360) + 360) % 360;
-      if (this.done || this.offRoute) return null;
+      if (this.done) return null;
       let [vote, info] = this.vote(loc);
+      if (info.plausible != null) this.walkGate = true;
       const pdr = this.pdr();
-      if (vote === "arrive" && !(this.near(pdr) || (info.role === "at" && this.walkedEnough(pdr)))) vote = "far";
-      else if (vote === "pass" && !this.walkedEnough(pdr)) vote = "far";
+      if ((vote === "arrive" || vote === "pass") && !this.gate(vote, info, pdr)) vote = "far";
       this.votes.push(vote);
       if (this.votes.length > this.p.n) this.votes.shift();
       const count = (x) => this.votes.filter((v) => v === x).length;
-      const hop = this.hop, nxt = this.nextHop;
+      const nxt = this.nextHop;
       const evidence = { pdr, last: info, votes: this.votes.slice(), heading_map_deg: this.heading };
-      if (count("elsewhere") >= this.p.k) { this.offRoute = true; return this.emit("off_route", info.best ?? null, t, evidence); }
-      const need = pdr != null ? this.p.k : this.p.n;
-      const absDiff = (a, b) => (a == null || b == null ? null : Math.abs(angleDiff(a, b)));
-      const arriveDiff = absDiff(this.heading, hop.arrival_deg ?? null);
-      evidence.heading_diff_deg = arriveDiff;
-      if (count("arrive") >= need && (arriveDiff == null || arriveDiff <= this.p.headingTol)) return this.confirm("arrived", t, evidence);
+      const need = this.walkGate || pdr != null ? this.p.k : this.p.n;
+      if (count("arrive") >= need) return this.confirm("arrived", t, evidence);
       if (nxt && count("pass") >= need) {
-        const leaveDiff = absDiff(this.heading, nxt.bearing_deg ?? null);
+        const leaveDiff = this.heading == null || nxt.bearing_deg == null ? null : Math.abs(angleDiff(this.heading, nxt.bearing_deg));
         evidence.heading_diff_deg = leaveDiff;
         if (leaveDiff == null || leaveDiff <= this.p.headingTol) return this.confirm("passed", t, evidence);
+      }
+      if (count("elsewhere") >= this.p.k && !this.offRouteSent) {
+        this.offRouteSent = true;  // a warning: confirmation goes on
+        return this.emit("off_route", info.best ?? null, t, evidence);
       }
       return null;
     }
 
     confirmManual(t = 0) {
       if (this.done) return null;
-      this.offRoute = false;
       return this.confirm("manual", t, { pdr: this.pdr() });
     }
-    reroute(route, tracker = null) { const p = this.p; Object.assign(this, new NodeConfirmer(route, tracker, p)); }
+    reroute(route, tracker = null) { const p = this.p, nb = this.nbrs; Object.assign(this, new NodeConfirmer(route, tracker, p, nb)); }
 
     emit(kind, node, t, evidence) {
       const ev = { kind, node, hop_index: this.hopIndex, t, evidence };
@@ -170,12 +187,12 @@ const ArrivalNav = (() => {
       const ev = this.emit(kind, target, t, evidence);
       if (this.tracker) { try { this.tracker.confirmNode(target); } catch {} }
       if (this.hopIndex + 1 >= this.route.length) this.done = true; else this.hopIndex += 1;
-      this.votes = []; this.uncertainSent = false;
+      this.votes = []; this.uncertainSent = false; this.offRouteSent = false;
       return ev;
     }
   }
 
-  return { StepDetector, GraphTracker, NodeConfirmer, PARAMS, CONFIRM_KINDS };
+  return { StepDetector, GraphTracker, NodeConfirmer, PARAMS, CONFIRM_KINDS, neighbours };
 })();
 
 if (typeof module !== "undefined") module.exports = ArrivalNav;

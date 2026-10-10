@@ -1,12 +1,22 @@
 // Nav Navigate: a route over a map's trusted edges (nav-api POST /maps/{id}/route), its spoken instructions, and a
 // bare-bones controller to try it: live frames are localized against the next checkpoint; arrival is confirmed by
 // hand, or with "auto-confirm" by the node confirmer (arrival.js, the port of nav/navigation/arrival.py): votes over
-// consecutive localizations + dead reckoning from the phone's steps + the compass (docs/navigation_stack.md 4.3: a
-// place recognised from afar is not reached). The real controller is the app's; this is for checking routes, wording
-// and checkpoint recognition.
+// consecutive localizations (the node that leads, by the confirmer's own score and margin) + the walked distance from
+// the phone's steps (docs/navigation_stack.md 4.3: a place recognised from afar is not reached). The rule can be tuned
+// on site with ?k=&n=&score=&margin= (k votes of the last n; a vote: score >= score, lead >= margin). The real
+// controller is the orchestrator's; this is where its rule is tried first.
 "use strict";
 
 const BURST = 2;  // frames per /localize call while following a route (every 1 s by default): one confirmer vote
+// The confirmer's rule, with overrides from the URL (?k=2&n=3&score=0.3&margin=0.04)
+const RULE = (() => {
+  const q = new URLSearchParams(location.search), out = {};
+  for (const key of ["k", "n", "score", "margin"]) {
+    const v = parseFloat(q.get(key));
+    if (Number.isFinite(v) && v >= 0) out[key] = key === "k" || key === "n" ? Math.max(1, Math.round(v)) : v;
+  }
+  return out;
+})();
 const N = { map: null, names: {}, route: null, hop: 0, confirmed: null, busy: false, timer: null,
             confirmer: null, steps: new ArrivalNav.StepDetector(), stepCount: 0, prevSteps: 0 };
 // The step count when the user's node last changed: /localize turns new steps into metres walked from it.
@@ -81,15 +91,18 @@ function startConfirmer() {
   const live = Frames.kind === "camera";
   const tracker = live && hops.length
     ? new ArrivalNav.GraphTracker(hops, { stepLength: N.map?.frame?.live_step_length_m || N.map?.frame?.step_length_m || 0.7 }) : null;
-  N.confirmer = new ArrivalNav.NodeConfirmer(hops, tracker);
+  N.confirmer = new ArrivalNav.NodeConfirmer(hops, tracker, RULE, ArrivalNav.neighbours(N.map?.edges));
   showPdr();
 }
 
 function showPdr() {
   const c = N.confirmer, s = c?.pdr();
-  $("#pdr").textContent = !c || c.done ? "" : s
-    ? `${fmtM(Math.max(s.remaining_m, 0))} ± ${fmtM(s.sigma_m)} to ${N.names[c.expected]} · votes ${c.votes.map((v) => v ? v[0] : "·").join("")}`
-    : `no steps (${Frames.kind || "no source"}): camera votes only · ${c.votes.map((v) => v ? v[0] : "·").join("")}`;
+  if (!c || c.done) { $("#pdr").textContent = ""; return; }
+  const rule = `${c.p.k} of ${c.p.n}, score ≥ ${c.p.score.toFixed(2)}, lead ≥ ${c.p.margin.toFixed(2)}`;
+  const votes = `votes ${c.votes.map((v) => v ? v[0] : "·").join("")}`;
+  $("#pdr").textContent = s
+    ? `${fmtM(Math.max(s.remaining_m, 0))} ± ${fmtM(s.sigma_m)} to ${N.names[c.expected]} · ${votes} · ${rule}`
+    : `no steps (${Frames.kind || "no source"}): camera votes only (${c.p.n} of ${c.p.n}) · ${votes} · ${rule}`;
 }
 
 function onConfirmerEvent(ev) {
@@ -100,9 +113,9 @@ function onConfirmerEvent(ev) {
   } else if (ev.kind === "uncertain") {
     $("#arrive").textContent = `Not sure you reached ${name}: stop and pan slowly, or confirm by hand.`;
     speak(`Not sure you reached ${name}. Stop and turn slowly, or confirm.`);
-  } else if (ev.kind === "off_route") {
-    $("#arrive").textContent = `This looks like ${name}, off the route. Locate yourself and plan again.`;
-    speak(`This looks like ${name}, which is off the route. Stop, then plan again.`);
+  } else if (ev.kind === "off_route") {  // a warning: the confirmer keeps looking for the checkpoint
+    $("#arrive").textContent = `This looks like ${name}, off the route. Still heading to ${N.names[N.confirmer.expected]}; plan again if you are lost.`;
+    speak(`This looks like ${name}, which is off the route.`);
   }
   showPdr();
 }
@@ -211,7 +224,9 @@ async function run() {
     const auto = $("#autoconfirm").checked;  // with auto-confirm the confirmer's votes (#pdr) are the temporal check
     const steady = auto ? null : History.steady();
     $("#steady").textContent = steady ? `steady: ${N.names[steady]}` : "";
-    if (hop && res.status === "confirmed" && res.best === hop.target) {
+    // the confirmer's rule (its own score and lead, nav-api's walked-distance gate), not nav-api's status
+    const [vote, info] = N.confirmer?.hop ? N.confirmer.vote(res) : [null, {}];
+    if (hop && vote === "arrive" && res.best === hop.target && info.plausible !== false) {
       $("#arrive").textContent = `${N.names[hop.target]} recognised${steady === hop.target ? " (steady)" : ""}: confirm arrival when you are there.`;
       $("#arrive").classList.add("match");
     } else if (hop) {

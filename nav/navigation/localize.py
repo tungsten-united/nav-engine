@@ -66,23 +66,36 @@ class RefIndex:
         return cls(pmap, vectors, refs)
 
     def distances_from(self, node: str, unknown_m: float = 10.0) -> dict[str, float]:
-        """Shortest walk (metres) from `node` to every node over the map's edges, either direction."""
-        graph: dict[str, list[tuple[str, float]]] = {}
+        """Shortest walk (metres) from `node` to every node over the map's edges, either direction; through a merged
+        area only in and out of the same part (as route.py)."""
+        from nav.navigation.route import edge_parts
+
+        areas = set(self.pmap.merged.values())
+        graph: dict[str, list[tuple[str, float, str, str]]] = {}  # node -> (next node, metres, part left, reached)
         for e in self.pmap.edges:
             length = e.distance_m if e.distance_m is not None else unknown_m
-            graph.setdefault(e.source, []).append((e.target, length))
-            graph.setdefault(e.target, []).append((e.source, length))
-        best = {node: 0.0}
-        queue = [(0.0, node)]
+            sp, tp = edge_parts(e)
+            graph.setdefault(e.source, []).append((e.target, length, sp, tp))
+            graph.setdefault(e.target, []).append((e.source, length, tp, sp))
+        first = (node, "")
+        best = {first: 0.0}
+        queue = [(0.0, first)]
         while queue:
-            d, n = heapq.heappop(queue)
-            if d > best.get(n, math.inf):
+            d, state = heapq.heappop(queue)
+            n, part = state
+            if d > best.get(state, math.inf):
                 continue
-            for m, length in graph.get(n, []):
-                if d + length < best.get(m, math.inf):
-                    best[m] = d + length
-                    heapq.heappush(queue, (d + length, m))
-        return best
+            for m, length, leave, reach in graph.get(n, []):
+                if part and leave != part:
+                    continue
+                nxt = (m, reach if m in areas else "")
+                if d + length < best.get(nxt, math.inf):
+                    best[nxt] = d + length
+                    heapq.heappush(queue, (d + length, nxt))
+        out: dict[str, float] = {}
+        for (n, _), d in best.items():
+            out[n] = min(d, out.get(n, math.inf))
+        return out
 
     def live_step_length(self) -> float | None:
         f = self.pmap.frame

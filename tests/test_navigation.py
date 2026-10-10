@@ -215,6 +215,80 @@ def test_review_overlay_verifies_edits_and_hides_without_deleting():
     assert back.edges["e2"].approve_reverse and "e3" not in back.edges and back.nodes["n3"].hide
 
 
+def merged_map():
+    """The L shape plus n4 (3 m past n3), with reference images, and n3 merged into n2 by the review."""
+    from nav.schemas.map import ReferenceImage
+
+    draft, cset, tracks = lshape()
+    raw = finish_map(draft, cset, BUILD, "builds/b", tracks)
+    n3 = next(n for n in raw.nodes if n.id == "n3")
+    raw.nodes.append(n3.model_copy(update={"id": "n4", "name": "N4", "relations": []}))
+    e2 = next(e for e in raw.edges if e.id == "e2")
+    raw.edges.append(e2.model_copy(update={"id": "e4", "source": "n3", "target": "n4", "distance_m": 3.0,
+                                           "status": "observed", "reverse_status": "observed"}))
+    for e in raw.edges:
+        e.status = e.reverse_status = "observed"
+
+    def ref(i, node, role="at", edge=None, toward=None):
+        return ReferenceImage(id=i, node=node, role=role, edge=edge, toward=toward, image="x.jpg", rec_id="r",
+                              t_ms=0.0, heading_deg=None, embedding_row=None)
+
+    raw.references = [ref("r1", "n3"), ref("r2", "n3", "outgoing", "e2", "n2"), ref("r3", "n1", "outgoing", "e3", "n3"),
+                      ref("r4", "n2"), ref("r5", "n4", "outgoing", "e4", "n3")]
+    n3.references = ["r1", "r2"]
+    n3.landmarks = ["a wall"]
+    review = Review(nodes={"n3": NodeReview(merge_into="n2"), "n2": NodeReview(name="Area", description="One area.")})
+    return raw, apply_review(raw, review)
+
+
+def test_review_merges_a_node_into_another():
+    raw, m = merged_map()
+    assert [n.id for n in m.nodes] == ["n1", "n2", "n4"] and m.merged == {"n3": "n2"}
+    area = m.nodes[1]
+    assert (area.name, area.description) == ("Area", "One area.")
+    assert {"r1", "r2"} <= set(area.references) and "a wall" in area.landmarks
+    # e2 (n3 - n2) is the walk inside the area: dropped. The others join the area and remember which part.
+    edges = {e.id: (e.source, e.source_part, e.target, e.target_part) for e in m.edges}
+    assert edges == {"e1": ("n1", None, "n2", None), "e3": ("n1", None, "n2", "n3"), "e4": ("n2", "n3", "n4", None)}
+    assert "e2" in m.hidden
+    refs = {r.id: r for r in m.references}
+    assert (refs["r1"].node, refs["r2"].node, refs["r2"].role, refs["r2"].edge) == ("n2", "n2", "at", None)
+    assert (refs["r3"].edge, refs["r3"].toward, refs["r5"].toward) == ("e3", "n2", "n2")
+    assert [n.id for n in raw.nodes] == ["n1", "n2", "n3", "n4"]  # the build's own map is untouched
+
+    # parts a short walk joined (e2, here 2 m) are one part: routes may cross between them
+    short = raw.model_copy(deep=True)
+    next(e for e in short.edges if e.id == "e2").distance_m = 2.0
+    joined = apply_review(short, Review(nodes={"n3": NodeReview(merge_into="n2")}))
+    assert all(e.source_part is None and e.target_part is None for e in joined.edges)
+    assert [h.edge for h in plan_route(joined, "n1", "n4", "observed")] == ["e1", "e4"]
+
+    # chains are followed; a merge into a missing node or a cycle is not done, with a warning
+    chain = apply_review(raw, Review(nodes={"n4": NodeReview(merge_into="n3"), "n3": NodeReview(merge_into="n2")}))
+    assert chain.merged == {"n4": "n2", "n3": "n2"}
+    bad = apply_review(raw, Review(nodes={"n4": NodeReview(merge_into="n9"), "n3": NodeReview(merge_into="n1"),
+                                          "n1": NodeReview(merge_into="n3")}))
+    assert bad.merged == {} and len([w for w in bad.warnings if "not merged" in w]) == 3
+
+
+def test_routes_and_walked_distances_cross_a_merged_area_only_at_one_part():
+    from nav.navigation.localize import RefIndex
+
+    _, m = merged_map()
+    e3 = next(e for e in m.edges if e.id == "e3")
+    e3.status = e3.reverse_status = "inferred"
+    # n1 -e1-> the area's n2 part; n4 leaves from its n3 part: the walk between the parts isn't in the map
+    assert [h.target for h in plan_route(m, "n1", "n2", "observed")] == ["n2"]
+    assert [h.target for h in plan_route(m, "n2", "n4", "observed")] == ["n4"]  # from anywhere in it: fine
+    assert plan_route(m, "n1", "n4", "observed") is None
+    assert [h.edge for h in plan_route(m, "n1", "n4", "any")] == ["e3", "e4"]  # in and out at the n3 part
+    index = RefIndex(m, np.zeros((0, 4), np.float32), [])
+    dist = index.distances_from("n1", unknown_m=50.0)
+    assert dist["n2"] == 10.0 and dist["n4"] == 53.0  # via e3 (unknown: 50 m), not e1 + e4 (13 m)
+    assert index.distances_from("n2")["n4"] == 3.0
+    assert index.distances_from("n4")["n1"] == 13.0  # e4 to the n3 part, e3 out of it (unknown: 10 m)
+
+
 def test_routes_use_trusted_edges_in_the_walked_direction():
     draft, cset, tracks = lshape()
     m = finish_map(draft, cset, BUILD, "builds/b", tracks)

@@ -10,30 +10,35 @@ Inputs, all optional but the first:
 - `on_step(heading_map_deg)`: each detected step (pdr.StepDetector), with the phone heading in the map frame;
 - `confirm_manual(t)`: the user says or taps "I'm here".
 
-For the current hop A -> T (and the next hop T -> U), each localization votes:
-- arrive: T is recognised (score >= confirm_score, margin >= confirm_margin) through an approach / at reference;
-- pass: T is recognised through an outgoing reference toward U, or U is recognised through an approach / at
-  reference (in an open space the next spot is often what the camera sees from T): the user is at or past T;
-- elsewhere: a node other than A, T, U is recognised.
-A vote counts only if the dead reckoning agreed when the frame was taken, so T seen from afar doesn't add up to an
-arrival once the user gets near:
-- strict gate (approach references: they are taken from a distance): near T, P(arrival) >= gate_p or
-  |remaining| <= gate_sigmas sigma;
-- loose gate (at references, the spot itself, and pass votes): at least (1 - loose_frac) of the hop walked. Map
-  lengths can be off by a few metres (Itnig: the camera recognised a node from its "at" photos 3-4 m before the
-  dead reckoning got there), and requiring the strict gate there loses most confirmations.
+For the current hop A -> T (and the next hop T -> U), each localization votes. Votes use the confirmer's own
+thresholds, not nav-api's `confirm_score` (live phone frames of the right node score 0.36-0.48 at Itnig; the
+leader and its margin matter, not the absolute score): the best node X votes when its score >= vote_score and its
+margin over the second >= vote_margin.
+- arrive: X = T;
+- pass: X = T through an outgoing reference toward U, or X = U through an approach / at reference (in an open space
+  the next spot is often what the camera sees from T): the user is at or past T;
+- elsewhere: X is none of A, T, U nor next to any of them (`neighbours`, the map's edges): a node next to the hop is
+  often in view from it, and is no sign of being lost.
+A vote counts only if the user had walked far enough when the frame was taken, so T seen from afar doesn't add up to
+an arrival once the user gets near:
+- with the phone's motion, nav-api says so: the best node's `plausible` (walked since A from the phone's step count
+  >= its distance - slack, localize.py; no compass involved);
+- without it, the dead reckoning (GraphTracker, which projects steps on the compass): approach references need
+  near T (P(arrival) >= gate_p or |remaining| <= gate_sigmas sigma); at references and pass votes need at least
+  (1 - loose_frac) of the hop walked.
 Events, preferring a late confirmation to a false one (recognising a place from afar is not being there):
-- arrived T: counted arrive votes >= k of the last n and the heading agrees with the hop's arrival direction when
-  both are known;
-- passed T: counted pass votes >= k of n and the heading agrees with U's direction. Never at the goal (there you
-  arrive);
-- off_route: elsewhere votes >= k of n. Confirmation stops until `reroute`;
+- arrived T: counted arrive votes >= k of the last n. The heading is not checked: the camera is pointed around and
+  phone compasses are off by tens of degrees indoors;
+- passed T: counted pass votes >= k of n and the heading agrees with U's direction (heading_tol_deg). Never at the
+  goal (there you arrive);
+- off_route: elsewhere votes >= k of n, at most once per hop. A warning: confirmation goes on;
 - uncertain: the user walked gate_sigmas sigma past T without a confirmation (once per hop): ask for a slow pan or a
   manual confirmation;
 - manual: always accepted for T.
 Only T can be confirmed, so no checkpoint is skipped. A confirmation calls `tracker.confirm_node(T)` (re-learning the
-step length) and moves to the next hop. Without dead reckoning for a hop (no tracker, no length) the gate counts as
-open but arrival needs n of n votes. Thresholds are placeholders until tuned (`nav map nav-replay`).
+step length) and moves to the next hop. Without any gate for a hop (no motion, no tracker, no length) arrival needs n
+of n votes. Defaults from the /nav test at Itnig on 2026-10-10 (nav-api logs); the /nav page takes ?k=&n=&score=&margin=
+to tune them on site.
 """
 
 from collections import deque
@@ -48,10 +53,12 @@ CONFIRM_KINDS = ("arrived", "passed", "manual")
 class ArrivalParams:
     k: int = 2  # votes needed ...
     n: int = 3  # ... among the last n localizations (one burst a second: about 2-3 s to confirm)
+    vote_score: float = 0.30  # the best node votes when it scores at least this ...
+    vote_margin: float = 0.04  # ... and leads the second by at least this
     gate_p: float = 0.2  # P(within the arrival radius) that opens the dead-reckoning gate ...
     gate_sigmas: float = 2.0  # ... or |remaining| within this many sigma
     loose_frac: float = 0.5  # loose gate: at least (1 - loose_frac) of the hop walked
-    heading_tol_deg: float = 45.0
+    heading_tol_deg: float = 90.0  # passing only
 
 
 @dataclass
@@ -63,23 +70,36 @@ class ArrivalEvent:
     evidence: dict = field(default_factory=dict)
 
 
+def neighbours(pmap) -> dict[str, set[str]]:
+    """node -> the nodes an edge joins it to, either direction (NodeConfirmer's `neighbours`)."""
+    out: dict[str, set[str]] = {}
+    for e in pmap.edges:
+        out.setdefault(e.source, set()).add(e.target)
+        out.setdefault(e.target, set()).add(e.source)
+    return out
+
+
 def _wrap_abs(a: float | None, b: float | None) -> float | None:
     return None if a is None or b is None else abs(angle_diff(a, b))
 
 
 class NodeConfirmer:
-    def __init__(self, route: list, tracker=None, params: ArrivalParams | None = None):
+    def __init__(self, route: list, tracker=None, params: ArrivalParams | None = None,
+                 neighbours: dict[str, set[str]] | None = None):
         """`route`: hops (route.Hop or nav-api RouteHop: source, target, length_m, bearing_deg, arrival_deg).
-        `tracker`: a pdr.GraphTracker over the same hops, or None."""
+        `tracker`: a pdr.GraphTracker over the same hops, or None. `neighbours`: node -> the nodes an edge joins it
+        to (`neighbours(pmap)`), or None (every node off the hop is elsewhere)."""
         self.route = list(route)
         self.tracker = tracker
         self.p = params or ArrivalParams()
+        self.neighbours = neighbours or {}
         self.hop_index = 0
         self.votes: deque = deque(maxlen=self.p.n)
         self.heading: float | None = None  # last known phone heading, map frame
-        self.off_route = False
+        self.walk_gate = False  # nav-api has said whether nodes are plausible (the phone sends its motion)
         self.done = not self.route
         self._uncertain_sent = False
+        self._off_route_sent = False
         self.events: list[ArrivalEvent] = []
 
     # --- where we are -------------------------------------------------------------------------------------------
@@ -121,7 +141,7 @@ class NodeConfirmer:
     def on_step(self, heading_map_deg: float | None, t: float = 0.0) -> ArrivalEvent | None:
         if heading_map_deg is not None:
             self.heading = heading_map_deg % 360
-        if self.done or self.off_route or self.tracker is None:
+        if self.done or self.tracker is None:
             return None
         self.tracker.on_step(self.heading if self.heading is not None else (self.hop.bearing_deg or 0.0))
         pdr = self._pdr()
@@ -135,11 +155,10 @@ class NodeConfirmer:
         if not loc.candidates or loc.best is None:
             return None, {}
         top = loc.candidates[0]
-        th = loc.thresholds
-        clear = top.score >= th.confirm_score and (loc.margin or 0.0) >= th.confirm_margin
+        clear = top.score >= self.p.vote_score and (loc.margin or 0.0) >= self.p.vote_margin
         ref = top.refs[0] if top.refs else None
         info = {"best": loc.best, "score": top.score, "margin": loc.margin, "role": ref.role if ref else None,
-                "toward": ref.toward if ref else None}
+                "toward": ref.toward if ref else None, "plausible": top.plausible}
         if not clear:
             return None, info
         if loc.best == hop.target:
@@ -148,54 +167,59 @@ class NodeConfirmer:
             return "arrive", info
         if nxt is not None and loc.best == nxt.target:
             return ("pass" if ref and ref.role in ("approach", "at") else None), info
-        if loc.best != hop.source:
-            return "elsewhere", info
-        return None, info
+        on_hop = [hop.source, hop.target] + ([nxt.target] if nxt is not None else [])
+        if loc.best in on_hop or any(loc.best in self.neighbours.get(x, ()) for x in on_hop):
+            return None, info
+        return "elsewhere", info
+
+    def _gate(self, vote: str, info: dict, pdr: dict | None) -> bool:
+        """Had the user walked far enough for this vote when the frame was taken?"""
+        if info.get("plausible") is not None:  # nav-api's walked-distance gate (the phone's steps, no compass)
+            return info["plausible"]
+        if vote == "arrive":
+            return self._near(pdr) or (info.get("role") == "at" and self._walked_enough(pdr))
+        return self._walked_enough(pdr)
 
     def on_localization(self, t: float, loc) -> ArrivalEvent | None:
         if loc.heading_map_deg is not None:
             self.heading = loc.heading_map_deg % 360
-        if self.done or self.off_route:
+        if self.done:
             return None
         vote, info = self._vote(loc)
+        if info.get("plausible") is not None:
+            self.walk_gate = True
         pdr = self._pdr()
-        # A vote counts only if the dead reckoning agreed when the frame was taken: T seen from afar, before the
-        # gate opened, must not add up to an arrival once the user gets near.
-        role = info.get("role")
-        if vote == "arrive" and not (self._near(pdr) or (role == "at" and self._walked_enough(pdr))):
-            vote = "far"
-        elif vote == "pass" and not self._walked_enough(pdr):
+        # A vote counts only if the user had walked far enough when the frame was taken: T seen from afar, before
+        # the gate opened, must not add up to an arrival once the user gets near.
+        if vote in ("arrive", "pass") and not self._gate(vote, info, pdr):
             vote = "far"
         self.votes.append(vote)
         n_arrive, n_pass, n_else = (sum(v == x for v in self.votes) for x in ("arrive", "pass", "elsewhere"))
-        hop, nxt = self.hop, self.next_hop
+        nxt = self.next_hop
         evidence = {"pdr": pdr, "last": info, "votes": list(self.votes), "heading_map_deg": self.heading}
 
-        if n_else >= self.p.k:
-            self.off_route = True
-            return self._emit("off_route", info.get("best"), t, evidence)
-
-        need = self.p.k if pdr is not None else self.p.n  # without dead reckoning, ask the camera for more
-        arrive_diff = _wrap_abs(self.heading, getattr(hop, "arrival_deg", None))
-        evidence["heading_diff_deg"] = arrive_diff
-        if n_arrive >= need and self._near(pdr) and (arrive_diff is None or arrive_diff <= self.p.heading_tol_deg):
+        gated = self.walk_gate or pdr is not None
+        need = self.p.k if gated else self.p.n  # without any gate, ask the camera for more
+        if n_arrive >= need:
             return self._confirm("arrived", t, evidence)
-        if nxt is not None and n_pass >= need and self._walked_enough(pdr):
+        if nxt is not None and n_pass >= need:
             leave_diff = _wrap_abs(self.heading, nxt.bearing_deg)
             evidence["heading_diff_deg"] = leave_diff
             if leave_diff is None or leave_diff <= self.p.heading_tol_deg:
                 return self._confirm("passed", t, evidence)
+        if n_else >= self.p.k and not self._off_route_sent:
+            self._off_route_sent = True  # a warning: confirmation goes on
+            return self._emit("off_route", info.get("best"), t, evidence)
         return None
 
     def confirm_manual(self, t: float = 0.0) -> ArrivalEvent | None:
         if self.done:
             return None
-        self.off_route = False
         return self._confirm("manual", t, {"pdr": self._pdr()})
 
     def reroute(self, route: list, tracker=None) -> None:
         """A new route (after off_route and relocalization): start over on it."""
-        self.__init__(route, tracker, self.p)
+        self.__init__(route, tracker, self.p, self.neighbours)
 
     # --- outputs ------------------------------------------------------------------------------------------------
     def _emit(self, kind: str, node: str | None, t: float, evidence: dict) -> ArrivalEvent:
@@ -217,4 +241,5 @@ class NodeConfirmer:
             self.hop_index += 1
         self.votes.clear()
         self._uncertain_sent = False
+        self._off_route_sent = False
         return ev
