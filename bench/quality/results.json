@@ -1,0 +1,355 @@
+{
+ "reference": {
+  "judge": "claude-opus (Claude Code, effort high)",
+  "cost_usd": 0.26077720000000004,
+  "duration_s": 40.7
+ },
+ "jev": {
+  "model": "jev-latest",
+  "input_tokens": 83774,
+  "usd": 0.00352,
+  "wall_s": 0.85,
+  "requests": 173,
+  "visual_threshold": 0.6,
+  "turn_threshold": 0.3
+ },
+ "sets": {
+  "visual / real map text": {
+   "positives": 37,
+   "no check": {
+    "n": 73,
+    "tp": 0,
+    "fp": 0,
+    "fn": 37,
+    "tn": 36,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "accuracy": 0.493
+   },
+   "keyword check": {
+    "n": 73,
+    "tp": 37,
+    "fp": 0,
+    "fn": 0,
+    "tn": 36,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "accuracy": 1.0
+   },
+   "jev": {
+    "n": 73,
+    "tp": 36,
+    "fp": 0,
+    "fn": 1,
+    "tn": 36,
+    "precision": 1.0,
+    "recall": 0.973,
+    "f1": 0.986,
+    "accuracy": 0.986,
+    "auroc": 1.0
+   },
+   "errors": {
+    "keyword check": [],
+    "jev": [
+     {
+      "id": "20261009T210414Z:e2",
+      "truth": true,
+      "p": 0.59,
+      "text": "Walk along the cooler with it on your right for a few metres. Then turn left and walk about 8 m into the hall towards the left-hand stone wall. You have arrived when you are among long white work tables set against the rough stone wall, with people typing all around. | Main hall with tables on both sides; Stone wall ahead",
+      "clause": null
+     }
+    ]
+   }
+  },
+  "visual / synthetic": {
+   "positives": 18,
+   "no check": {
+    "n": 36,
+    "tp": 0,
+    "fp": 0,
+    "fn": 18,
+    "tn": 18,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "accuracy": 0.5
+   },
+   "keyword check": {
+    "n": 36,
+    "tp": 16,
+    "fp": 12,
+    "fn": 2,
+    "tn": 6,
+    "precision": 0.571,
+    "recall": 0.889,
+    "f1": 0.696,
+    "accuracy": 0.611
+   },
+   "jev": {
+    "n": 36,
+    "tp": 17,
+    "fp": 6,
+    "fn": 1,
+    "tn": 12,
+    "precision": 0.739,
+    "recall": 0.944,
+    "f1": 0.829,
+    "accuracy": 0.806,
+    "auroc": 0.92
+   },
+   "errors": {
+    "keyword check": [
+     {
+      "id": "syn-vis:20261009T210414Z:e8",
+      "truth": true,
+      "text": "Stand facing the stage edge. Turn left so the stage is on your right, and walk about 8 m along its front edge towards the stone wall. Near the left end of the stage you pass a lectern on a metal stand and a speaker box on the floor; keep clear of them. You have arrived when you reach the stone wall, with a low wooden bench of potted plants against it and tables on your left. A poster of a mountain hangs on the left. | Stage edge on the right; Lectern and speaker box; Stone wall ahead",
+      "clause": "A poster of a mountain hangs on the left."
+     },
+     {
+      "id": "syn-vis:20261009T224008Z-prev:e2",
+      "truth": false,
+      "text": "With your back to the drinks cooler, turn left and walk about 5 m across the hall towards the brick and stone wall. The rows of hackathon tables start right there, and you will hear keyboards and talking. The sign-in desk is waist high, on your right. | Sound of keyboards and voices; Tables directly ahead",
+      "clause": "The sign-in desk is waist high, on your right."
+     },
+     {
+      "id": "syn-vis:20261009T224008Z:n4",
+      "truth": false,
+      "text": "An open central aisle, about 2 metres wide, running down the middle of the hall between rows of tables, towards the stage at the far end. The floor is smooth concrete. There are tables on both sides, with the stone wall beyond the left-hand tables. Look out for a low bench at knee height. | Table edges on both sides within an arm's reach or two; Smooth concrete underfoot; Speaker, likely heard ahead during presentations",
+      "clause": "Look out for a low bench at knee height."
+     },
+     {
+      "id": "syn-vis:20261009T224008Z:n6",
+      "truth": false,
+      "text": "The stage corridor ends at an open, clear floor area near the far end of the hall. The kitchen counter starts on your right, and the stage is ahead and to the left. Ahead, there are stacked plastic chairs and a wooden box room with a glass front. A screen door rattles when someone passes. | Tables end on both sides and the space opens up; Wall on your right, with the start of the kitchen counter; Stack of plastic chairs ahead",
+      "clause": "A screen door rattles when someone passes."
+     },
+     {
+      "id": "syn-vis:20261009T224008Z:e1",
+      "truth": true,
+      "text": "Go through the main door and walk straight ahead about 5 metres on the smooth concrete. Then bear right about 3 metres towards the right wall. You have arrived when your cane meets the waist-high drinks cooler against the wall, with a door frame just to its right. You can spot the exit door from there. | Door frame of the main door; Open concrete floor; Drinks cooler against the right wall",
+      "clause": "You can spot the exit door from there."
+     },
+     {
+      "id": "syn-vis:20261009T224008Z:e2",
+      "truth": false,
+      "text": "With the drinks cooler in front of you, turn left and walk about 5 metres across the hall, then bear a little further left. You have arrived when you reach the long work tables, with the rough stone wall behind them and the noise of people working. A radiator there is red-hot; you feel the heat a metre away. | Open floor in the middle of the hall; Table edges; Stone wall behind the tables",
+      "clause": "A radiator there is red-hot; you feel the heat a metre away."
+     },
+     {
+      "id": "syn-vis:20261009T224008Z:e8",
+      "truth": false,
+      "text": "From the left end of the stage, by the lectern, turn left and walk about 4 metres to the stone wall, which has a low bench with potted plants along it. Turn left again so the stone wall is on your right, and walk about 3 metres. You have arrived when you reach the long work tables along the wall. The wall is painted plaster, smooth to the touch. | Lectern and speaker at the stage's left end; Rough stone wall; Low wooden bench with plant pots along the wall; Wooden stools",
+      "clause": "The wall is painted plaster, smooth to the touch."
+     },
+     {
+      "id": "syn-vis:20261010T052535Z:n2",
+      "truth": false,
+      "text": "A waist-high drinks chest cooler stands against the right-hand wall, with a flat metal lid and cans and stacked plastic cups on top. A doorway is just right of it, and a woven armchair and a tall bar table are to its left. The cooler likely hums. A radiator there is red-hot; you feel the heat a metre away. | waist-high cooler with a flat metal lid against the right wall; door frame just right of the cooler; woven armchair to the left of the cooler; likely hum of the cooler",
+      "clause": "A radiator there is red-hot; you feel the heat a metre away."
+     },
+     {
+      "id": "syn-vis:20261010T052535Z:n4",
+      "truth": false,
+      "text": "The central aisle between rows of tables, running the length of the hall toward the stage. It is a few metres wide, with tables on both sides and an open concrete floor down the middle. Look out for a low bench at knee height. | table edges on both sides; open floor straight ahead; likely voices from the stage end ahead",
+      "clause": "Look out for a low bench at knee height."
+     },
+     {
+      "id": "syn-vis:20261010T052535Z:n11",
+      "truth": false,
+      "text": "The far end of the hackathon tables along the stone wall, near the stage end of the hall. Rows of tables stretch back toward the entrance. The room is dark at night, so the lights are on a timer you hear click. | stone wall on your right as you face the tables; pillar against the wall; table edges at waist height",
+      "clause": "The room is dark at night, so the lights are on a timer you hear click."
+     },
+     {
+      "id": "syn-vis:20261010T052535Z:e2",
+      "truth": false,
+      "text": "Stand with the cooler on your right. Turn left and cross the hall about 5 metres to the tables along the stone wall. The room is dark at night, so the lights are on a timer you hear click. | table edges ahead; stone wall behind the tables",
+      "clause": "The room is dark at night, so the lights are on a timer you hear click."
+     },
+     {
+      "id": "syn-vis:20261010T052535Z:e5",
+      "truth": false,
+      "text": "Continue straight ahead along the aisle for about 10 metres until the tables end and the floor opens up. Stacked chairs are ahead. The wall is painted plaster, smooth to the touch. | tables end; open floor",
+      "clause": "The wall is painted plaster, smooth to the touch."
+     },
+     {
+      "id": "syn-vis:20261010T052535Z:e7",
+      "truth": false,
+      "text": "Keep the kitchen counter on your right and trail it for about 10 metres, past the sink, microwaves and bowls. At the water dispenser and cooler, bear left and walk about 3 metres more. The stage is ahead of you, with chairs facing it. A radiator there is red-hot; you feel the heat a metre away. | worktop edge; sink; water dispenser and cooler at the end",
+      "clause": "A radiator there is red-hot; you feel the heat a metre away."
+     },
+     {
+      "id": "syn-vis:20261010T052535Z:e9",
+      "truth": false,
+      "text": "Follow the stage edge to its left end, past the podium and floor speaker. Then turn left and walk about 4 metres to the stone wall. The low plant bench is there. Look out for a low bench at knee height. | stage edge; podium and speaker; stone wall",
+      "clause": "Look out for a low bench at knee height."
+     }
+    ],
+    "jev": [
+     {
+      "id": "syn-vis:20261009T224008Z:e1",
+      "truth": true,
+      "p": 0.13,
+      "text": "Go through the main door and walk straight ahead about 5 metres on the smooth concrete. Then bear right about 3 metres towards the right wall. You have arrived when your cane meets the waist-high drinks cooler against the wall, with a door frame just to its right. You can spot the exit door from there. | Door frame of the main door; Open concrete floor; Drinks cooler against the right wall",
+      "clause": "You can spot the exit door from there."
+     },
+     {
+      "id": "syn-vis:20261009T224008Z:e2",
+      "truth": false,
+      "p": 0.62,
+      "text": "With the drinks cooler in front of you, turn left and walk about 5 metres across the hall, then bear a little further left. You have arrived when you reach the long work tables, with the rough stone wall behind them and the noise of people working. A radiator there is red-hot; you feel the heat a metre away. | Open floor in the middle of the hall; Table edges; Stone wall behind the tables",
+      "clause": "A radiator there is red-hot; you feel the heat a metre away."
+     },
+     {
+      "id": "syn-vis:20261009T224008Z:e8",
+      "truth": false,
+      "p": 0.72,
+      "text": "From the left end of the stage, by the lectern, turn left and walk about 4 metres to the stone wall, which has a low bench with potted plants along it. Turn left again so the stone wall is on your right, and walk about 3 metres. You have arrived when you reach the long work tables along the wall. The wall is painted plaster, smooth to the touch. | Lectern and speaker at the stage's left end; Rough stone wall; Low wooden bench with plant pots along the wall; Wooden stools",
+      "clause": "The wall is painted plaster, smooth to the touch."
+     },
+     {
+      "id": "syn-vis:20261010T052535Z:n2",
+      "truth": false,
+      "p": 0.83,
+      "text": "A waist-high drinks chest cooler stands against the right-hand wall, with a flat metal lid and cans and stacked plastic cups on top. A doorway is just right of it, and a woven armchair and a tall bar table are to its left. The cooler likely hums. A radiator there is red-hot; you feel the heat a metre away. | waist-high cooler with a flat metal lid against the right wall; door frame just right of the cooler; woven armchair to the left of the cooler; likely hum of the cooler",
+      "clause": "A radiator there is red-hot; you feel the heat a metre away."
+     },
+     {
+      "id": "syn-vis:20261010T052535Z:n11",
+      "truth": false,
+      "p": 0.72,
+      "text": "The far end of the hackathon tables along the stone wall, near the stage end of the hall. Rows of tables stretch back toward the entrance. The room is dark at night, so the lights are on a timer you hear click. | stone wall on your right as you face the tables; pillar against the wall; table edges at waist height",
+      "clause": "The room is dark at night, so the lights are on a timer you hear click."
+     },
+     {
+      "id": "syn-vis:20261010T052535Z:e5",
+      "truth": false,
+      "p": 0.73,
+      "text": "Continue straight ahead along the aisle for about 10 metres until the tables end and the floor opens up. Stacked chairs are ahead. The wall is painted plaster, smooth to the touch. | tables end; open floor",
+      "clause": "The wall is painted plaster, smooth to the touch."
+     },
+     {
+      "id": "syn-vis:20261010T052535Z:e7",
+      "truth": false,
+      "p": 0.78,
+      "text": "Keep the kitchen counter on your right and trail it for about 10 metres, past the sink, microwaves and bowls. At the water dispenser and cooler, bear left and walk about 3 metres more. The stage is ahead of you, with chairs facing it. A radiator there is red-hot; you feel the heat a metre away. | worktop edge; sink; water dispenser and cooler at the end",
+      "clause": "A radiator there is red-hot; you feel the heat a metre away."
+     }
+    ]
+   }
+  },
+  "turn mismatch / synthetic": {
+   "positives": 32,
+   "no check": {
+    "n": 64,
+    "tp": 0,
+    "fp": 0,
+    "fn": 32,
+    "tn": 32,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "accuracy": 0.5
+   },
+   "keyword check": {
+    "n": 64,
+    "tp": 18,
+    "fp": 0,
+    "fn": 14,
+    "tn": 32,
+    "precision": 1.0,
+    "recall": 0.562,
+    "f1": 0.72,
+    "accuracy": 0.781
+   },
+   "jev": {
+    "n": 64,
+    "tp": 32,
+    "fp": 0,
+    "fn": 0,
+    "tn": 32,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "accuracy": 1.0,
+    "auroc": 1.0
+   },
+   "errors": {
+    "keyword check": [
+     {
+      "id": "syn-turn-other:20261009T210414Z:e2",
+      "measured": "right",
+      "text": "Walk along the cooler with it on your right for a few metres. Then turn left and walk about 8 m into the hall towards the left-hand stone wall. You have arrived when you are among long white work tables set against the rough stone wall, with people typing all around."
+     },
+     {
+      "id": "syn-turn-other:20261009T210414Z:e3",
+      "measured": "left",
+      "text": "Turn right so that the stone wall is on your left and the far end of the hall is ahead. Walk about 8 m into the central aisle between the table rows. You are in the corridor to the stage when you have tables on both sides and an open aisle straight ahead towards the screen."
+     },
+     {
+      "id": "syn-turn-other:20261009T210414Z:e8",
+      "measured": "right",
+      "text": "Stand facing the stage edge. Turn left so the stage is on your right, and walk about 8 m along its front edge towards the stone wall. Near the left end of the stage you pass a lectern on a metal stand and a speaker box on the floor; keep clear of them. You have arrived when you reach the stone wall, with a low wooden bench of potted plants against it and tables on your left."
+     },
+     {
+      "id": "syn-turn-other:20261009T210414Z:e9",
+      "measured": "right",
+      "text": "With the stone wall on your right, turn to face back towards the entrance end of the hall, then bear left. Walk about 6 m across the open floor, away from the stone-wall tables. The kitchen counter, with the 'Flexroom' sign and microwaves, comes up on your left."
+     },
+     {
+      "id": "syn-turn-other:20261009T224008Z-prev:e1",
+      "measured": "left",
+      "text": "Go through the glass door and walk straight in for about 5 m, passing a tall bar table on your left. Then bear right towards the painted wall on your right. After about 8 m in total you reach a waist-high metal drinks cooler against that wall, with a wicker armchair to its left."
+     },
+     {
+      "id": "syn-turn-other:20261009T224008Z-prev:e2",
+      "measured": "right",
+      "text": "With your back to the drinks cooler, turn left and walk about 5 m across the hall towards the brick and stone wall. The rows of hackathon tables start right there, and you will hear keyboards and talking."
+     },
+     {
+      "id": "syn-turn-other:20261009T224008Z-prev:e7",
+      "measured": "right",
+      "text": "Go to the left end of the stage, past the lectern and the floor loudspeaker. Turn left, away from the screen, and walk about 4 m towards the stone wall. There is a low bench with potted plants under a green exit sign. From there, bear left to follow the stone wall on your right; the tables start along it."
+     },
+     {
+      "id": "syn-turn-other:20261009T224008Z:e5",
+      "measured": "right",
+      "text": "With the mural tables on your right, keep going straight down the corridor towards the far end for about 12 metres. Bear slightly left halfway. You have arrived when the tables end and the floor opens up, with a wall and the start of the kitchen counter on your right."
+     },
+     {
+      "id": "syn-turn-other:20261009T224008Z:e7",
+      "measured": "right",
+      "text": "Keep the kitchen counter on your right and trail it with your hand. Walk about 10 metres, past the microwaves, to the sink and the fridge at its end. Then bear left about 3 metres into the open floor. The stage is just ahead: your cane will hit its raised wooden edge, about 30 cm high."
+     },
+     {
+      "id": "syn-turn-other:20261009T224008Z:e8",
+      "measured": "right",
+      "text": "From the left end of the stage, by the lectern, turn left and walk about 4 metres to the stone wall, which has a low bench with potted plants along it. Turn left again so the stone wall is on your right, and walk about 3 metres. You have arrived when you reach the long work tables along the wall."
+     },
+     {
+      "id": "syn-turn-other:20261010T052535Z:e2",
+      "measured": "right",
+      "text": "Stand with the cooler on your right. Turn left and cross the hall about 5 metres to the tables along the stone wall."
+     },
+     {
+      "id": "syn-turn-other:20261010T052535Z:e3",
+      "measured": "left",
+      "text": "Turn right so the hackathon tables are on your left. Walk about 8 metres into the central aisle, where tables are on both sides and the floor ahead is open."
+     },
+     {
+      "id": "syn-turn-other:20261010T052535Z:e7",
+      "measured": "right",
+      "text": "Keep the kitchen counter on your right and trail it for about 10 metres, past the sink, microwaves and bowls. At the water dispenser and cooler, bear left and walk about 3 metres more. The stage is ahead of you, with chairs facing it."
+     },
+     {
+      "id": "syn-turn-other:20261010T052535Z:e10",
+      "measured": "right",
+      "text": "Turn left so the stone wall is on your right. Walk about 4 metres to the first tables along the wall."
+     }
+    ],
+    "jev": []
+   }
+  }
+ }
+}

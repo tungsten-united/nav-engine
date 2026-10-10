@@ -1,0 +1,1066 @@
+[
+ {
+  "id": "20261009T210414Z:n1",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Main entrance",
+  "spoken": {
+   "description": "Glass entrance door at the short end of the hall, with a metal frame and a red horizontal push bar on the left-hand door. Inside, the floor is smooth polished concrete with patches. The long hall opens straight ahead, with tables on both sides and a big projection screen far ahead.",
+   "landmarks": [
+    "Glass door frame with a red push bar on the left",
+    "Change from the door threshold to smooth polished concrete",
+    "Large windows with string lights along the entrance wall, seen from inside the hall",
+    "Big bright projection screen far ahead at the end of the hall"
+   ]
+  }
+ },
+ {
+  "id": "20261009T210414Z:n2",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Drinks area",
+  "spoken": {
+   "description": "Front right corner of the hall, near the entrance. A waist-high chest cooler for drinks stands against the colourful mural wall. It has a metal lid and a white brick-pattern front, with cans and plastic cups on top. An open doorway with a glass door is immediately to the right of the cooler, and a wicker armchair and a tall round table are to its left.",
+   "landmarks": [
+    "Waist-high chest cooler with a cold metal top and a humming compressor",
+    "Painted mural wall behind the cooler",
+    "Doorway with a glass door just to the right of the cooler",
+    "Wicker armchair to the left of the cooler"
+   ]
+  }
+ },
+ {
+  "id": "20261009T210414Z:n3",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Hackathon tables by the stone wall (entrance end)",
+  "spoken": {
+   "description": "Rows of long white tables where hackathon teams work, placed against the old rough stone and brick wall on the left side of the hall. A white pipe runs along the wall and a white column stands against it. The area is busy, with talking and typing.",
+   "landmarks": [
+    "Rough stone and brick wall with a horizontal white pipe",
+    "White column against the wall",
+    "Long white tables with folding chairs"
+   ]
+  }
+ },
+ {
+  "id": "20261009T210414Z:n4",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Corridor to the stage",
+  "spoken": {
+   "description": "The central aisle running the length of the hall towards the stage, with work tables on both sides. The stone wall with a speaker is on the left and the white and mural wall is on the right. The projection screen is straight ahead in the distance.",
+   "landmarks": [
+    "Projection screen straight ahead",
+    "Wall speaker high on the left stone wall",
+    "Open, smooth concrete aisle between the table rows"
+   ]
+  }
+ },
+ {
+  "id": "20261009T210414Z:n5",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Tables on the right by the mural",
+  "spoken": {
+   "description": "More hackathon tables along the right-hand wall, which is painted with a large colourful mural. There is an emergency exit sign on the wall and a red fire extinguisher cabinet next to it. A white door is a little further along this wall, towards the kitchen.",
+   "landmarks": [
+    "Colourful mural wall with a large yellow vertical shape and a red circle",
+    "Green emergency exit sign on the mural wall",
+    "Red fire extinguisher cabinet with a plant beside it"
+   ]
+  }
+ },
+ {
+  "id": "20261009T210414Z:n6",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Open area at the end of the corridor",
+  "spoken": {
+   "description": "The tables end here and the floor opens into a wide, clear space in front of the stage end of the hall. The projection screen is up ahead and to the left. Ahead there are stacked white plastic chairs and a wooden booth with plants. The kitchen counter starts just ahead on the right.",
+   "landmarks": [
+    "Wide open concrete floor with no tables",
+    "Stacked white plastic chairs ahead",
+    "Wooden (chipboard) booth with plants ahead",
+    "Speaker on the right wall"
+   ]
+  }
+ },
+ {
+  "id": "20261009T210414Z:n7",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Kitchen",
+  "spoken": {
+   "description": "A long open kitchen counter against the right-hand wall, under a yellow 'Flexroom' sign. It has a light wooden worktop with bowls of snacks, built-in microwaves below, and a tiled wall behind. Recycling bins (blue, yellow, black) stand at one end of the counter, then a sink and a water dispenser. A black cooler labelled 'itnig' is at the stage end.",
+   "landmarks": [
+    "Yellow 'Flexroom' letters on the wall above the counter",
+    "Light wooden worktop with bowls of snacks and bottles",
+    "Built-in microwaves under the counter",
+    "Blue, yellow and black recycling bins at the end of the counter",
+    "Black 'itnig' cooler and sink at the stage end of the kitchen",
+    "Speaker hanging on the wall above"
+   ]
+  }
+ },
+ {
+  "id": "20261009T210414Z:n8",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Stage",
+  "spoken": {
+   "description": "The presentation stage at the far end of the hall, to the left of the kitchen. It is a low raised platform about one step high, with a rough wooden edge and grey carpet on top. A large projection screen hangs above it. A lectern and a speaker box stand on the floor at the left end of the stage, and stacked white chairs are at the right end. Further right is a wooden booth with a glass front and potted plants.",
+   "landmarks": [
+    "Step up onto a carpeted platform with a wooden edge",
+    "Large projection screen above the stage",
+    "Lectern on a metal stand at the left end of the stage",
+    "Stacked white chairs at the right end",
+    "Wooden booth with a glass front and potted plants to the right of the stage"
+   ]
+  }
+ },
+ {
+  "id": "20261009T210414Z:n9",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Stone wall with the plant bench (stage end)",
+  "spoken": {
+   "description": "The old stone wall to the left of the stage. Against it are a low wooden bench with potted plants and a small wooden stool, with a green emergency exit sign on the wall above. More hackathon tables run along this wall back towards the entrance; the walker said these are the same tables seen from the other end.",
+   "landmarks": [
+    "Rough stone wall",
+    "Low wooden bench with potted plants against the wall",
+    "Green emergency exit sign on the stone wall",
+    "Wall speaker high in the corner"
+   ]
+  }
+ },
+ {
+  "id": "20261009T210414Z:e1",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Main entrance",
+  "to": "Drinks area",
+  "spoken": {
+   "instruction": "Go through the glass door and walk straight ahead about 6 m on the smooth concrete floor, with tables starting on both sides. Then bear right, about half a turn, and walk about 5 m towards the painted right-hand wall. You have arrived when you reach a waist-high chest cooler with a metal top, humming quietly, with an open doorway just to its right.",
+   "along_the_way": [
+    "Tall round bar table on the left just inside",
+    "Tables on both sides",
+    "Mural wall ahead on the right"
+   ]
+  }
+ },
+ {
+  "id": "20261009T210414Z:e2",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Drinks area",
+  "to": "Hackathon tables by the stone wall (entrance end)",
+  "spoken": {
+   "instruction": "Walk along the cooler with it on your right for a few metres. Then turn left and walk about 8 m into the hall towards the left-hand stone wall. You have arrived when you are among long white work tables set against the rough stone wall, with people typing all around.",
+   "along_the_way": [
+    "Main hall with tables on both sides",
+    "Stone wall ahead"
+   ]
+  }
+ },
+ {
+  "id": "20261009T210414Z:e3",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Hackathon tables by the stone wall (entrance end)",
+  "to": "Corridor to the stage",
+  "spoken": {
+   "instruction": "Turn right so that the stone wall is on your left and the far end of the hall is ahead. Walk about 8 m into the central aisle between the table rows. You are in the corridor to the stage when you have tables on both sides and an open aisle straight ahead towards the screen.",
+   "along_the_way": [
+    "Speaker on the left stone wall",
+    "Screen far ahead"
+   ]
+  }
+ },
+ {
+  "id": "20261009T210414Z:e4",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Corridor to the stage",
+  "to": "Tables on the right by the mural",
+  "spoken": {
+   "instruction": "Continue straight down the corridor towards the stage for about 12 m, keeping slightly to the right. The tables on your right are against the painted mural wall. You have arrived when an emergency exit sign and a red fire extinguisher cabinet are on the wall to your right.",
+   "along_the_way": [
+    "Tables on both sides",
+    "Mural wall on the right"
+   ]
+  }
+ },
+ {
+  "id": "20261009T210414Z:e5",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Tables on the right by the mural",
+  "to": "Open area at the end of the corridor",
+  "spoken": {
+   "instruction": "Keep going straight towards the screen for about 12 m along the central aisle. You have arrived when the tables end and the floor opens into a wide clear space: the screen is ahead and to the left, stacked white chairs and a wooden booth are ahead, and the kitchen starts on your right.",
+   "along_the_way": [
+    "Tables thinning out",
+    "Screen growing larger ahead",
+    "White chairs ahead"
+   ]
+  }
+ },
+ {
+  "id": "20261009T210414Z:e6",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Open area at the end of the corridor",
+  "to": "Kitchen",
+  "spoken": {
+   "instruction": "Bear right and walk about 6 m towards the right-hand wall. You have arrived at the kitchen when the long wooden counter with microwaves is in front of you and on your right, with recycling bins at its near end and the 'Flexroom' sign above.",
+   "along_the_way": [
+    "Speaker on the wall",
+    "Recycling bins at the end of the counter"
+   ]
+  }
+ },
+ {
+  "id": "20261009T210414Z:e7",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Kitchen",
+  "to": "Stage",
+  "spoken": {
+   "instruction": "Follow the kitchen counter to its far end, past the sink and the black 'itnig' cooler. Then turn left, about a third of a turn, and walk about 12 m across the open floor towards the screen. Slow down: you have arrived when your foot or cane meets the wooden edge of the stage, a step about 20-30 cm high.",
+   "along_the_way": [
+    "'itnig' cooler at the end of the kitchen",
+    "Screen above, straight ahead",
+    "Stacked white chairs to the right of the stage"
+   ]
+  }
+ },
+ {
+  "id": "20261009T210414Z:e8",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Stage",
+  "to": "Stone wall with the plant bench (stage end)",
+  "spoken": {
+   "instruction": "Stand facing the stage edge. Turn left so the stage is on your right, and walk about 8 m along its front edge towards the stone wall. Near the left end of the stage you pass a lectern on a metal stand and a speaker box on the floor; keep clear of them. You have arrived when you reach the stone wall, with a low wooden bench of potted plants against it and tables on your left.",
+   "along_the_way": [
+    "Stage edge on the right",
+    "Lectern and speaker box",
+    "Stone wall ahead"
+   ]
+  }
+ },
+ {
+  "id": "20261009T210414Z:e9",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Stone wall with the plant bench (stage end)",
+  "to": "Kitchen",
+  "spoken": {
+   "instruction": "With the stone wall on your right, turn to face back towards the entrance end of the hall, then bear left. Walk about 6 m across the open floor, away from the stone-wall tables. The kitchen counter, with the 'Flexroom' sign and microwaves, comes up on your left.",
+   "along_the_way": [
+    "Tables along the stone wall",
+    "Kitchen counter on the left"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z-prev:n1",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Main entrance",
+  "spoken": {
+   "description": "The glass double door at the front of the hall. The door on the left has a red push bar. Inside, the floor is smooth polished concrete with patched cracks, and the hall opens up ahead under a high steel roof. The projection screen above the stage is straight ahead at the far end.",
+   "landmarks": [
+    "Glass door frames on both sides",
+    "Red push bar on the left door",
+    "Sound of a crowd and voices opening up ahead"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z-prev:n2",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Drinks area",
+  "spoken": {
+   "description": "A waist-high stainless-steel drinks cooler stands against the painted mural wall on the right side of the hall. Its front is white, with a brick pattern. Cans and stacks of plastic cups sit on its flat metal lid. A wicker armchair is to its left and a tall round bar table is in front of it. A glass door is set in the wall just to its right.",
+   "landmarks": [
+    "Cooler with a cold metal lid at waist height",
+    "Hum of the cooler's motor",
+    "Wicker armchair beside it",
+    "Glass door to the right of the cooler"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z-prev:n3",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Hackathon tables",
+  "spoken": {
+   "description": "Rows of long white tables where hackathon participants work, near the front of the hall. They run along the left wall, which is old brick and stone with a white pipe along it. Expect people seated close together, chairs pushed out and the sound of typing and talking.",
+   "landmarks": [
+    "Rough brick and stone wall behind the tables",
+    "Steady sound of keyboards and conversation",
+    "Potted plant at the end of the row"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z-prev:n4",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Stage corridor",
+  "spoken": {
+   "description": "The start of the long central aisle between the tables. It leads straight to the stage and its projection screen at the far end of the hall. The aisle is wide, open and floored with smooth concrete, with tables on both sides.",
+   "landmarks": [
+    "Projection screen straight ahead at the far end",
+    "Loudspeaker on the right wall",
+    "Yellow 'Flexroom' letters far ahead on the right"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z-prev:n5",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Mural tables",
+  "spoken": {
+   "description": "More tables on the right side of the central aisle, set against the colourful painted mural wall. On the wall there is a red fire hose cabinet with a fire extinguisher and a green emergency exit sign. The kitchen is further ahead on the same side.",
+   "landmarks": [
+    "Red fire hose cabinet and fire extinguisher on the right wall",
+    "Green emergency exit sign above them",
+    "Painted mural wall"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z-prev:n6",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Kitchen",
+  "spoken": {
+   "description": "A long, open kitchen counter, about 13 m, along the right wall under large yellow 'Flexroom' letters. The light wood worktop has bowls of snacks and bottles on it, and the wall behind is tiled. Going towards the stage, you pass built-in microwaves, recycling bins under the counter (blue, yellow and black), a sink, a water dispenser and, at the far end, a black cooler with the white word 'itnig'.",
+   "landmarks": [
+    "Long wooden worktop at hip height on the right",
+    "Tiled wall above the counter",
+    "Yellow 'Flexroom' sign",
+    "Black 'itnig' cooler at the far end",
+    "Loudspeaker on the wall"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z-prev:n7",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Stage",
+  "spoken": {
+   "description": "The stage where presentations take place, at the far end of the hall. It is a low raised platform with a plywood edge and grey carpet on top, under a large projection screen. On its left are a lectern and a floor loudspeaker in front of the old stone wall. On its right are stacks of white plastic chairs, and beyond them a plywood meeting cube with a glass front and potted plants.",
+   "landmarks": [
+    "Large projection screen above",
+    "Raised edge of the platform at shin height, with carpet on top",
+    "Lectern and loudspeaker on the left side",
+    "Stacks of white plastic chairs on the right",
+    "Plywood meeting cube with plants to the right"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z-prev:n8",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Stage-end tables",
+  "spoken": {
+   "description": "The far end of the tables along the old stone wall, near the stage. Here a low wooden bench with potted plants and some small wooden stools stand against the rough stone wall, under a green emergency exit sign. The walker said these are the same hackathon tables, seen from the other end.",
+   "landmarks": [
+    "Rough stone wall",
+    "Bench with potted plants under a green exit sign",
+    "Small wooden stools against the wall"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z-prev:e1",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Main entrance",
+  "to": "Drinks area",
+  "spoken": {
+   "instruction": "Go through the glass door and walk straight in for about 5 m, passing a tall bar table on your left. Then bear right towards the painted wall on your right. After about 8 m in total you reach a waist-high metal drinks cooler against that wall, with a wicker armchair to its left.",
+   "along_the_way": [
+    "Tall bar table just inside the entrance",
+    "Painted mural wall on the right",
+    "Hum of the drinks cooler"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z-prev:e2",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Drinks area",
+  "to": "Hackathon tables",
+  "spoken": {
+   "instruction": "With your back to the drinks cooler, turn left and walk about 5 m across the hall towards the brick and stone wall. The rows of hackathon tables start right there, and you will hear keyboards and talking.",
+   "along_the_way": [
+    "Sound of keyboards and voices",
+    "Tables directly ahead"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z-prev:e3",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Hackathon tables",
+  "to": "Stage corridor",
+  "spoken": {
+   "instruction": "From the hackathon tables, turn right to face the far end of the hall. Walk about 8 m along the tables into the wide central aisle. The projection screen is straight ahead in the distance.",
+   "along_the_way": [
+    "Tables on both sides",
+    "Projection screen straight ahead"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z-prev:e4",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Stage corridor",
+  "to": "Mural tables",
+  "spoken": {
+   "instruction": "Walk straight down the central aisle, bearing slightly right, for about 12 m. Tables are on both sides. When the tables on your right are against the painted wall with a red fire hose cabinet, you have reached the mural tables.",
+   "along_the_way": [
+    "Tables on both sides of the aisle",
+    "Red fire hose cabinet on the right wall"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z-prev:e5",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Mural tables",
+  "to": "Kitchen",
+  "spoken": {
+   "instruction": "Keep going straight down the aisle towards the screen, about 15 m. The tables end and the floor opens up, still smooth concrete with some patched cracks. Stacks of white chairs and a plywood meeting cube are ahead. The kitchen counter begins on your right, starting with the recycling bins and microwaves.",
+   "along_the_way": [
+    "Open floor where the tables end",
+    "Projection screen ahead and to the left",
+    "Kitchen counter starting on the right"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z-prev:e6",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Kitchen",
+  "to": "Stage",
+  "spoken": {
+   "instruction": "At the end of the kitchen counter, by the black 'itnig' cooler, turn left about 30 degrees to face the projection screen. Walk about 4 m and then slowly forward until your foot or cane meets the raised wooden edge of the stage.",
+   "along_the_way": [
+    "Projection screen ahead",
+    "Black 'itnig' cooler at the end of the kitchen",
+    "Stacked white chairs on the right"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z-prev:e7",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Stage",
+  "to": "Stage-end tables",
+  "spoken": {
+   "instruction": "Go to the left end of the stage, past the lectern and the floor loudspeaker. Turn left, away from the screen, and walk about 4 m towards the stone wall. There is a low bench with potted plants under a green exit sign. From there, bear left to follow the stone wall on your right; the tables start along it.",
+   "along_the_way": [
+    "Lectern and loudspeaker at the stage's left end",
+    "Rough stone wall",
+    "Plant bench under a green exit sign"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z:n1",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Main entrance",
+  "spoken": {
+   "description": "A glass double door at the short end of the hall. The left door has a horizontal push bar at waist height. Inside, the floor is smooth concrete with shallow cracks, and the room opens into a large, echoing hall.",
+   "landmarks": [
+    "Metal door frame on both sides as you pass through",
+    "Horizontal push bar on the left door",
+    "Smooth concrete floor with cracks under your feet",
+    "Large echoing space with voices ahead, likely"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z:n2",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Drinks area",
+  "spoken": {
+   "description": "A waist-high metal drinks cooler with a flat steel lid stands against the right wall, close to the entrance. A small glass side door is just to its right. A tall bar table and a woven chair stand to its left, and you may hear the cooler humming.",
+   "landmarks": [
+    "Waist-high cooler with a cold, flat steel top",
+    "Likely hum of the cooler's fridge motor",
+    "Door frame of the side door just right of the cooler",
+    "Woven chair to the left of the cooler"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z:n3",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Hackathon tables",
+  "spoken": {
+   "description": "Rows of long work tables along the rough stone wall on the left side of the hall. They run from near the entrance almost to the stage. It is likely busy, with talking and typing, and there are chairs and benches on both sides of the tables.",
+   "landmarks": [
+    "Rough stone wall you can touch behind the tables",
+    "Pipe running along the stone wall",
+    "Edges of long tables at hip height",
+    "Noise of people working, likely"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z:n4",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Stage corridor",
+  "spoken": {
+   "description": "An open central aisle, about 2 metres wide, running down the middle of the hall between rows of tables, towards the stage at the far end. The floor is smooth concrete. There are tables on both sides, with the stone wall beyond the left-hand tables.",
+   "landmarks": [
+    "Table edges on both sides within an arm's reach or two",
+    "Smooth concrete underfoot",
+    "Speaker, likely heard ahead during presentations"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z:n5",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Mural tables",
+  "spoken": {
+   "description": "More work tables along the right wall, about halfway down the hall. A fire extinguisher hangs on the wall behind them. The kitchen counter is further on, on the same side. It is likely noisy with people working.",
+   "landmarks": [
+    "Table edges on the right of the stage corridor",
+    "Fire extinguisher cabinet on the wall behind the tables",
+    "Noise of people working, likely"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z:n6",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Corridor end",
+  "spoken": {
+   "description": "The stage corridor ends at an open, clear floor area near the far end of the hall. The kitchen counter starts on your right, and the stage is ahead and to the left. Ahead, there are stacked plastic chairs and a wooden box room with a glass front.",
+   "landmarks": [
+    "Tables end on both sides and the space opens up",
+    "Wall on your right, with the start of the kitchen counter",
+    "Stack of plastic chairs ahead"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z:n7",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Kitchen",
+  "spoken": {
+   "description": "A long kitchen counter along the right wall, about 10 metres long, at waist height. It has a wooden top and a tiled wall behind it. There are built-in microwaves under the counter, a sink near the far end, and a row of recycling bins at the near end. At the far end there is a water cooler and a second drinks fridge.",
+   "landmarks": [
+    "Smooth wooden countertop at waist height you can trail with your hand",
+    "Tiled wall behind the counter",
+    "Microwave doors under the counter",
+    "Recycling bins at the counter's near end",
+    "Sink and tap near the far end",
+    "Water cooler and fridge at the far end, likely humming"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z:n8",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Stage",
+  "spoken": {
+   "description": "A low platform about 30 cm high at the far end of the hall, covered in carpet, with a wooden edge you can feel with a cane. There is a stone wall at the back and a lectern with a speaker on its left side. Rows of chairs face it, and a wooden box room with a glass front stands to its right.",
+   "landmarks": [
+    "Step up onto the platform's wooden edge, about shin height",
+    "Carpet on top of the platform",
+    "Stone wall at the back left",
+    "Lectern and floor speaker at the left end",
+    "Rows of chairs facing the stage",
+    "Wooden box room to the right of the stage"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z:e1",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Main entrance",
+  "to": "Drinks area",
+  "spoken": {
+   "instruction": "Go through the main door and walk straight ahead about 5 metres on the smooth concrete. Then bear right about 3 metres towards the right wall. You have arrived when your cane meets the waist-high drinks cooler against the wall, with a door frame just to its right.",
+   "along_the_way": [
+    "Door frame of the main door",
+    "Open concrete floor",
+    "Drinks cooler against the right wall"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z:e2",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Drinks area",
+  "to": "Hackathon tables",
+  "spoken": {
+   "instruction": "With the drinks cooler in front of you, turn left and walk about 5 metres across the hall, then bear a little further left. You have arrived when you reach the long work tables, with the rough stone wall behind them and the noise of people working.",
+   "along_the_way": [
+    "Open floor in the middle of the hall",
+    "Table edges",
+    "Stone wall behind the tables"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z:e3",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Hackathon tables",
+  "to": "Stage corridor",
+  "spoken": {
+   "instruction": "From the hackathon tables, turn right towards the far end of the hall and walk about 8 metres into the central aisle. You are in the stage corridor when there are table edges on both sides of you and open floor straight ahead.",
+   "along_the_way": [
+    "Table edges on both sides",
+    "Smooth concrete floor"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z:e4",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Stage corridor",
+  "to": "Mural tables",
+  "spoken": {
+   "instruction": "Keep walking straight down the stage corridor, bearing slightly right, for about 12 metres. Tables continue on both sides. The mural tables are the group of tables on your right at this point.",
+   "along_the_way": [
+    "Table edges on both sides",
+    "Fire extinguisher cabinet on the right wall behind the tables"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z:e5",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Mural tables",
+  "to": "Corridor end",
+  "spoken": {
+   "instruction": "With the mural tables on your right, keep going straight down the corridor towards the far end for about 12 metres. Bear slightly left halfway. You have arrived when the tables end and the floor opens up, with a wall and the start of the kitchen counter on your right.",
+   "along_the_way": [
+    "Last tables on both sides",
+    "Floor opening up into clear space"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z:e6",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Corridor end",
+  "to": "Kitchen",
+  "spoken": {
+   "instruction": "From the corridor end, bear right and walk about 6 metres towards the right wall. You have arrived when your cane finds the recycling bins at the start of the kitchen counter, with the waist-high wooden countertop just beyond them.",
+   "along_the_way": [
+    "Right wall",
+    "Recycling bins",
+    "Wooden countertop at waist height"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z:e7",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Kitchen",
+  "to": "Stage",
+  "spoken": {
+   "instruction": "Keep the kitchen counter on your right and trail it with your hand. Walk about 10 metres, past the microwaves, to the sink and the fridge at its end. Then bear left about 3 metres into the open floor. The stage is just ahead: your cane will hit its raised wooden edge, about 30 cm high.",
+   "along_the_way": [
+    "Wooden countertop on the right",
+    "Microwave doors under the counter",
+    "Sink, water cooler and fridge at the counter's end",
+    "Raised wooden stage edge"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z:e8",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Stage",
+  "to": "Hackathon tables",
+  "spoken": {
+   "instruction": "From the left end of the stage, by the lectern, turn left and walk about 4 metres to the stone wall, which has a low bench with potted plants along it. Turn left again so the stone wall is on your right, and walk about 3 metres. You have arrived when you reach the long work tables along the wall.",
+   "along_the_way": [
+    "Lectern and speaker at the stage's left end",
+    "Rough stone wall",
+    "Low wooden bench with plant pots along the wall",
+    "Wooden stools"
+   ]
+  }
+ },
+ {
+  "id": "20261009T224008Z:e9",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Hackathon tables",
+  "to": "Mural tables",
+  "spoken": {
+   "instruction": "From the stage end of the hackathon tables, face back towards the entrance end, then turn left to cross the hall. Walk about 8 metres between the tables towards the opposite wall. The mural tables are ahead of you, with the kitchen counter to their left.",
+   "along_the_way": [
+    "Table edges and chairs on both sides",
+    "Kitchen counter ahead-left"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:n1",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Main entrance",
+  "spoken": {
+   "description": "Glass main door at the short end of the hall. The door frame is on both sides within reach, and a push bar is on the left door. Beyond it is the large hall, which likely echoes and is full of people talking and typing.",
+   "landmarks": [
+    "metal door frame on both sides",
+    "push bar on the left door at waist height",
+    "smooth concrete floor, cracked and uneven just inside"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:n2",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Drinks area",
+  "spoken": {
+   "description": "A waist-high drinks chest cooler stands against the right-hand wall, with a flat metal lid and cans and stacked plastic cups on top. A doorway is just right of it, and a woven armchair and a tall bar table are to its left. The cooler likely hums.",
+   "landmarks": [
+    "waist-high cooler with a flat metal lid against the right wall",
+    "door frame just right of the cooler",
+    "woven armchair to the left of the cooler",
+    "likely hum of the cooler"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:n3",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Hackathon tables",
+  "spoken": {
+   "description": "Rows of long tables against the rough stone wall, where hackathon participants work. The tables are shoulder to shoulder with chairs and bags around them. It is likely noisy with talking and typing.",
+   "landmarks": [
+    "rough stone wall you can trail behind the tables",
+    "long table edges at waist height",
+    "pipe running along the wall"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:n4",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Stage corridor",
+  "spoken": {
+   "description": "The central aisle between rows of tables, running the length of the hall toward the stage. It is a few metres wide, with tables on both sides and an open concrete floor down the middle.",
+   "landmarks": [
+    "table edges on both sides",
+    "open floor straight ahead",
+    "likely voices from the stage end ahead"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:n5",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Mural tables",
+  "spoken": {
+   "description": "More tables on the right side of the corridor, against the painted wall halfway down the hall. A fire extinguisher and a wall cabinet are on that wall.",
+   "landmarks": [
+    "tables on the right of the aisle",
+    "wall-mounted fire extinguisher cabinet on the wall behind the tables"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:n6",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Corridor end",
+  "spoken": {
+   "description": "The corridor opens into a clear area before the kitchen and stage. Stacked plastic chairs and a small glass-walled room with wooden board walls are ahead, and the kitchen counter starts just ahead on the right. The floor is open and smooth, with some cracks.",
+   "landmarks": [
+    "open floor with no tables",
+    "stacked chairs ahead",
+    "bins at the start of the kitchen counter just ahead on the right"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:n7",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Kitchen",
+  "spoken": {
+   "description": "A long kitchen counter along the right-hand wall, about 10 metres long. Recycling bins come first, then a sink, built-in microwaves under the worktop and bowls of snacks on it. At the far end are a water dispenser and a drinks cooler. The wall above the counter is tiled.",
+   "landmarks": [
+    "waist-high worktop you can trail with the right hand",
+    "row of recycling bins at the start",
+    "sink and tap",
+    "built-in microwaves below the worktop",
+    "water dispenser and cooler at the far end",
+    "likely hum of appliances"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:n8",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Stage seating",
+  "spoken": {
+   "description": "Chairs facing the stage, which is ahead and to the left of the kitchen. The concrete floor is open in front of the stage.",
+   "landmarks": [
+    "loose chairs facing the stage",
+    "stacked chairs on the right",
+    "likely presentation audio from the stage"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:n9",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Stage",
+  "spoken": {
+   "description": "A low raised stage with a carpeted top and a wooden board edge at about shin to knee height. It stands against the stone wall, where presentations take place. A podium and a loudspeaker are at its left end, and a small glass-walled room is beside it on the right.",
+   "landmarks": [
+    "stage edge at shin to knee height, a step up",
+    "carpet on top of the stage",
+    "stone wall behind",
+    "podium and floor speaker at the left end"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:n10",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Plant bench",
+  "spoken": {
+   "description": "A low wooden bench with potted plants against the stone wall, past the stage. A small stool stands beside it, and an emergency exit is likely nearby.",
+   "landmarks": [
+    "low bench with pots at knee height",
+    "stone wall behind",
+    "small wooden stool to the left of the bench"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:n11",
+  "kind": "node",
+  "place": "Itnig",
+  "spot": "Far tables",
+  "spoken": {
+   "description": "The far end of the hackathon tables along the stone wall, near the stage end of the hall. Rows of tables stretch back toward the entrance.",
+   "landmarks": [
+    "stone wall on your right as you face the tables",
+    "pillar against the wall",
+    "table edges at waist height"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:e1",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Main entrance",
+  "to": "Drinks area",
+  "spoken": {
+   "instruction": "Go through the glass door and walk straight ahead into the hall, bearing slightly right. After about 8 metres you reach the right-hand wall. The drinks cooler is there at waist height, with a flat metal lid.",
+   "along_the_way": [
+    "tall bar table on your left just inside",
+    "right-hand wall you reach at the cooler"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:e2",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Drinks area",
+  "to": "Hackathon tables",
+  "spoken": {
+   "instruction": "Stand with the cooler on your right. Turn left and cross the hall about 5 metres to the tables along the stone wall.",
+   "along_the_way": [
+    "table edges ahead",
+    "stone wall behind the tables"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:e3",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Hackathon tables",
+  "to": "Stage corridor",
+  "spoken": {
+   "instruction": "Turn right so the hackathon tables are on your left. Walk about 8 metres into the central aisle, where tables are on both sides and the floor ahead is open.",
+   "along_the_way": [
+    "tables on both sides"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:e4",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Stage corridor",
+  "to": "Mural tables",
+  "spoken": {
+   "instruction": "Walk straight down the aisle, bearing slightly right, for about 12 metres. The tables on your right are against the painted wall.",
+   "along_the_way": [
+    "tables on both sides",
+    "wall behind the tables on the right"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:e5",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Mural tables",
+  "to": "Corridor end",
+  "spoken": {
+   "instruction": "Continue straight ahead along the aisle for about 10 metres until the tables end and the floor opens up. Stacked chairs are ahead.",
+   "along_the_way": [
+    "tables end",
+    "open floor"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:e6",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Corridor end",
+  "to": "Kitchen",
+  "spoken": {
+   "instruction": "Bear right and walk about 6 metres to the right-hand wall. The recycling bins come first, then the kitchen worktop at waist height.",
+   "along_the_way": [
+    "recycling bins",
+    "worktop edge"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:e7",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Kitchen",
+  "to": "Stage seating",
+  "spoken": {
+   "instruction": "Keep the kitchen counter on your right and trail it for about 10 metres, past the sink, microwaves and bowls. At the water dispenser and cooler, bear left and walk about 3 metres more. The stage is ahead of you, with chairs facing it.",
+   "along_the_way": [
+    "worktop edge",
+    "sink",
+    "water dispenser and cooler at the end"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:e8",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Stage seating",
+  "to": "Stage",
+  "spoken": {
+   "instruction": "Walk straight ahead about 8 metres past the chairs. Stop when your cane finds the raised wooden edge of the stage at shin height.",
+   "along_the_way": [
+    "stage edge at shin height"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:e9",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Stage",
+  "to": "Plant bench",
+  "spoken": {
+   "instruction": "Follow the stage edge to its left end, past the podium and floor speaker. Then turn left and walk about 4 metres to the stone wall. The low plant bench is there.",
+   "along_the_way": [
+    "stage edge",
+    "podium and speaker",
+    "stone wall"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:e10",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Plant bench",
+  "to": "Far tables",
+  "spoken": {
+   "instruction": "Turn left so the stone wall is on your right. Walk about 4 metres to the first tables along the wall.",
+   "along_the_way": [
+    "stone wall on your right",
+    "first table edges"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:e11",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Far tables",
+  "to": "Hackathon tables",
+  "spoken": {
+   "instruction": "Walk along the row of hackathon tables with the stone wall on your right, toward the entrance end. Go most of the length of the hall until you are near the drinks area.",
+   "along_the_way": [
+    "stone wall",
+    "continuous table edges"
+   ]
+  }
+ },
+ {
+  "id": "20261010T052535Z:e12",
+  "kind": "edge",
+  "place": "Itnig",
+  "from": "Far tables",
+  "to": "Mural tables",
+  "spoken": {
+   "instruction": "Turn left and walk across the hall toward the painted wall, bearing toward the entrance end. The kitchen counter is on your left. Keep going a few more metres to the tables against the painted wall.",
+   "along_the_way": [
+    "kitchen counter on your left",
+    "tables ahead"
+   ]
+  }
+ }
+]
