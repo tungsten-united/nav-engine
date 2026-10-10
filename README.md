@@ -304,7 +304,7 @@ nav-api, to test it by hand.
 **Localization** ([`localize.py`](nav/navigation/localize.py)): the frames are embedded with the map's own model
 (MegaLoc) on the inference host, ahead of any queued map-build calls, and compared with the map's reference images. A
 node scores as its best reference (a burst scores each reference by the mean over its frames); the margin is the best
-node's score minus the second's. Status: `lost` under 0.45, `confirmed` at ≥ 0.60 with a margin ≥ 0.05 and, when
+node's score minus the second's. Status: `lost` under 0.35, `confirmed` at ≥ 0.45 with a margin ≥ 0.05 and, when
 `previous` is given, the node being it or one edge away; `uncertain` otherwise. The thresholds are placeholders until
 tuned on venue images (`NAV_LOC_CONFIRM_SCORE`, `NAV_LOC_CONFIRM_MARGIN`, `NAV_LOC_LOST_SCORE`). It is stateless: the
 caller (the orchestrator) keeps the last confirmed node, combines consecutive results and confirms arrival itself
