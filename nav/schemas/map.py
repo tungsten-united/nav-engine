@@ -232,6 +232,7 @@ class RecordingInfo(BaseModel):
     duration_s: float | None
     notes: str
     step_length_m: float  # used for this walk: re-estimated from the video when it could be, else the recorder's
+    live_step_length_m: float | None = None  # video metres per step of the phone's causal detector (live tracker)
     distance: str = "steps"  # steps (x step length) | video (floor odometry, odometry.py) | time (no sensors)
     video_distance_share: float | None = None  # fraction of walked_m measured from the floor in the video
     motion: str = "imu"  # imu: steps and heading from the phone; video: no sensors, heading from the video and
@@ -336,6 +337,9 @@ class MapFrame(BaseModel):
     heading_source: str  # compass (every walk), or relative (some walk had no compass: only roughly aligned)
     heading_zero_abs_deg: float | None  # absolute heading of +y; None when not compass-referenced
     step_length_m: float | None  # mean of the walks'
+    # The live tracker's starting step length: metres per step of the causal detector the phone runs (pdr.py),
+    # mean of the walks'. None for maps built before it, or without floor odometry.
+    live_step_length_m: float | None = None
     note: str = "dead reckoning: ~5-10% distance error, drifting a few metres per minute; indoor compass is rough"
     # Distances measured on site (review.json `distances`) rescale every metric quantity of the published map by one
     # factor: edge and step distances, positions, paths, tracks and the step length.

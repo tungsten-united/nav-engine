@@ -329,6 +329,8 @@ def map_pdr_replay(map_id: str, rec_id: str,
 def map_nav_replay(map_id: str, rec_id: str,
                    step_scale: float = typer.Option(1.0, help="0.85 = a user with 15% shorter steps."),
                    heading_bias: float = typer.Option(0.0, help="Compass bias of the user's phone, degrees."),
+                   burst: int = typer.Option(2, help="Frames per /localize call, as the app sends them."),
+                   every: float = typer.Option(1.0, help="... every this many seconds."),
                    k: int = typer.Option(None, help="Votes needed (ArrivalParams.k)."),
                    n: int = typer.Option(None, help="... among the last n localizations (ArrivalParams.n)."),
                    heading_tol: float = typer.Option(None, help="Heading tolerance, degrees."),
@@ -352,12 +354,13 @@ def map_nav_replay(map_id: str, rec_id: str,
                     confirm_margin=confirm_margin if confirm_margin is not None else config.LOC_CONFIRM_MARGIN,
                     lost_score=config.LOC_LOST_SCORE)
     res = nav_replay(store.get(map_id), store.dir(map_id), config.RECORDINGS_DIR / rec_id, config.CACHE_DIR, th,
-                     params, step_scale, heading_bias)
+                     params, step_scale, heading_bias, burst=burst, every_s=every)
     if res is None:
         print(f"{rec_id} doesn't walk any edge of {map_id}, or the map has no reference embeddings")
         raise typer.Exit(1)
     print(f"frames {res.frames_used} (+{res.frames_excluded} left out near the walk's own references) · "
-          f"k={params.k}/n={params.n} · score>={th.confirm_score} margin>={th.confirm_margin}")
+          f"bursts of {burst} every {every:g} s · k={params.k}/n={params.n} · score>={th.confirm_score} "
+          f"margin>={th.confirm_margin}")
     print(f"{'#':>2} {'to':<24} {'len':>5} {'reached':>8} {'how':<8} {'delay':>6} {'unc':>4} {'off':>4} "
           f"{'score':>6} {'step':>6}")
     for r in res.rows:

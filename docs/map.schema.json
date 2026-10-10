@@ -269,6 +269,18 @@
      ],
      "title": "Step Length M"
     },
+    "live_step_length_m": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Live Step Length M"
+    },
     "note": {
      "default": "dead reckoning: ~5-10% distance error, drifting a few metres per minute; indoor compass is rough",
      "title": "Note",

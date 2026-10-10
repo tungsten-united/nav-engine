@@ -27,9 +27,12 @@ def loc(best: str | None, role: str = "at", toward: str | None = None, score: fl
                         heading_map_deg=heading)
 
 
+RULES = ArrivalParams(k=3, n=4)  # the rule tests below count votes against 3 of 4; the default is 2 of 3 (bursts)
+
+
 def confirmer(params: ArrivalParams | None = None, tracker: bool = True) -> NodeConfirmer:
     hops = route()
-    return NodeConfirmer(hops, GraphTracker(hops, step_length=0.7) if tracker else None, params)
+    return NodeConfirmer(hops, GraphTracker(hops, step_length=0.7) if tracker else None, params or RULES)
 
 
 def walk(c: NodeConfirmer, steps: int, heading: float) -> list:
@@ -140,3 +143,15 @@ def test_route_hops_carry_arrival_heading():
     h1, h2 = plan_route(m, "n1", "n3", "observed")
     assert h1.arrival_deg == pytest.approx(90)  # e1 walked east, arrives facing east
     assert h2.forward is False and h2.arrival_deg == pytest.approx(180)  # e2 walked back n2 -> n3: south
+
+
+def test_default_two_of_three_bursts():
+    """The app sends a burst of 3 frames every 2 s and each burst is one vote: two of the last three confirm."""
+    assert (ArrivalParams().k, ArrivalParams().n) == (2, 3)
+    hops = route()
+    c = NodeConfirmer(hops, GraphTracker(hops, step_length=0.7))
+    walk(c, 10, 90.0)
+    assert c.on_localization(0, loc("b", heading=90)) is None  # one burst is not enough
+    assert c.on_localization(2, loc(None)) is None
+    assert c.on_localization(4, loc("b", heading=90)).kind == "arrived"  # 2 of the last 3
+    assert c.expected == "c"

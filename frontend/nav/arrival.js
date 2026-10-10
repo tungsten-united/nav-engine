@@ -66,7 +66,7 @@ const ArrivalNav = (() => {
     confirmNode(nodeId) {
       if (nodeId !== this.hop.target) throw new Error(`expected ${this.hop.target}, got ${nodeId}`);
       if (this.stepsOnHop >= 5 && this.progress > 0 && this.hop.length_m) {
-        const implied = Math.min(1.0, Math.max(0.4, this.stepLength * this.hop.length_m / this.progress));
+        const implied = Math.min(1.0, Math.max(0.25, this.stepLength * this.hop.length_m / this.progress));
         this.stepLength = 0.7 * this.stepLength + 0.3 * implied;
       }
       this.hopIndex = Math.min(this.hopIndex + 1, this.route.length - 1);
@@ -75,7 +75,7 @@ const ArrivalNav = (() => {
   }
 
   // --- arrival.NodeConfirmer -----------------------------------------------------------------------------------
-  const PARAMS = { k: 3, n: 4, gateP: 0.2, gateSigmas: 2.0, looseFrac: 0.5, headingTol: 45.0 };
+  const PARAMS = { k: 2, n: 3, gateP: 0.2, gateSigmas: 2.0, looseFrac: 0.5, headingTol: 45.0 };
   const CONFIRM_KINDS = ["arrived", "passed", "manual"];
   const r2 = (x) => Math.round(x * 100) / 100;
   const r3 = (x) => Math.round(x * 1000) / 1000;

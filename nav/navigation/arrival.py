@@ -3,7 +3,10 @@ the next checkpoint? Causal and small, so it ports to the app (frontend/nav/arri
 
 Inputs, all optional but the first:
 - `on_localization(t, loc)`: each nav-api `Localization` (localize.py) of the live frames, made with
-  previous = `confirmer.previous` and expected = `confirmer.expected`;
+  previous = `confirmer.previous` and expected = `confirmer.expected`. The app sends a burst of 2 frames every
+  second (localize averages them, which smooths blur and passers-by); each burst is one vote. How often a vote
+  comes matters more than frames per vote: at a walk's ~0.5 m/s the user is near a node for a few seconds
+  (Itnig, nav-replay: 2 every 1 s confirmed 7/9 nodes, 3 every 2 s only 3/9, both with 0 false);
 - `on_step(heading_map_deg)`: each detected step (pdr.StepDetector), with the phone heading in the map frame;
 - `confirm_manual(t)`: the user says or taps "I'm here".
 
@@ -43,8 +46,8 @@ CONFIRM_KINDS = ("arrived", "passed", "manual")
 
 @dataclass
 class ArrivalParams:
-    k: int = 3  # votes needed ...
-    n: int = 4  # ... among the last n localizations
+    k: int = 2  # votes needed ...
+    n: int = 3  # ... among the last n localizations (one burst a second: about 2-3 s to confirm)
     gate_p: float = 0.2  # P(within the arrival radius) that opens the dead-reckoning gate ...
     gate_sigmas: float = 2.0  # ... or |remaining| within this many sigma
     loose_frac: float = 0.5  # loose gate: at least (1 - loose_frac) of the hop walked

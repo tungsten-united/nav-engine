@@ -58,6 +58,8 @@ GRACE_S = 10.0  # after the real arrival, wait this long (or until the next node
 
 
 LIVE_FPS = 2.0
+BURST = 2  # frames per /localize call, as the app sends them ...
+EVERY_S = 1.0  # ... every this many seconds
 
 
 def _live_frames(rec_dir: Path, walk, cache: Path) -> list[dict]:
@@ -96,7 +98,7 @@ def _live_embeddings(paths: list[Path], model: str, cache: Path) -> np.ndarray:
 
 def nav_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, thresholds: Thresholds,
                params: ArrivalParams | None = None, step_scale: float = 1.0, heading_bias_deg: float = 0.0,
-               exclude_ms: float = 400.0) -> NavReplay | None:
+               exclude_ms: float = 400.0, burst: int = BURST, every_s: float = EVERY_S) -> NavReplay | None:
     from nav.mapping.prepare import load_walk
     from nav.mapping.select import SelectParams
 
@@ -123,8 +125,19 @@ def nav_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, t
     tracker = GraphTracker(hops, step_length=map_step_length(pmap))
     conf = NodeConfirmer(hops, tracker, params)
     start = route_start_ms(pmap, rec_id, route)
+    # Every every_s the app grabs `burst` frames: the next usable video frames from that moment (at LIVE_FPS they
+    # span (burst - 1) / LIVE_FPS s; the phone's 250 ms apart are closer, so this is a little harsher).
+    bursts, i, tick = [], 0, start
+    end = rows[-1]["t_ms"] if rows else start
+    while tick <= end:
+        while i < len(rows) and rows[i]["t_ms"] < tick:
+            i += 1
+        group = [j for j in range(i, min(i + burst, len(rows))) if rows[j]["t_ms"] <= tick + burst * 1000 / LIVE_FPS]
+        if group:
+            bursts.append((rows[group[-1]]["t_ms"], "frame", group))
+        tick += every_s * 1000
     timeline = sorted([(float(t) * 1000, "step", None) for t in user_steps(rec_dir, step_scale) if t * 1000 >= start]
-                      + [(r["t_ms"], "frame", i) for i, r in enumerate(rows) if r["t_ms"] >= start])
+                      + bursts, key=lambda x: x[0])
     per_hop = [{"kind": "-", "t": None, "uncertain": 0, "off_route": 0, "score": None, "step": None} for _ in hops]
     state = {"offset": 0, "conf": conf}  # after an off_route, a confirmer over the rest of the route
 
@@ -158,7 +171,7 @@ def nav_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, t
         if kind == "step":
             record(c.on_step(heading(t_ms), t_ms / 1000))
         else:
-            loc = localize(index, emb[i:i + 1], thresholds, previous=c.previous, expected=c.expected,
+            loc = localize(index, emb[i], thresholds, previous=c.previous, expected=c.expected,
                            heading_abs_deg=heading(t_ms), model=model)
             if abs(t_ms - arrivals[k]) <= 3000 and loc.expected_score is not None:
                 per_hop[k]["score"] = max(per_hop[k]["score"] or 0.0, loc.expected_score)

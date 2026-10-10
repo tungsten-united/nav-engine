@@ -185,6 +185,7 @@ def _scale_distances(m: PlaceMap, measured: list[MeasuredDistance]) -> float:
         from nav.schemas.map import MeasuredDistanceCheck
 
         m.frame.step_length_m = s(m.frame.step_length_m, 3)
+        m.frame.live_step_length_m = s(m.frame.live_step_length_m, 3)
         m.frame.distance_scale = round(m.frame.distance_scale * k, 4)
         m.frame.measured_distances = []
         for d, x in pairs:
