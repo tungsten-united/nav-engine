@@ -257,6 +257,13 @@ image here, pushes it and deploys it. Rerun it after every change. It serves `/a
   `deploy/cloudrun.sh secrets` reloads them from this machine.
 - Map builds: `POST /api/v1/maps/build {"place": "Itnig", "llm": false}` → poll the `status_url` it returns.
   `llm: false` stops after the candidates (no LLM cost). One build at a time.
+- **CI deploy** ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)): push a tag `v*` on a commit of
+  `main` (`git tag v0.2.0 origin/main && git push origin v0.2.0`), or Actions → Deploy → Run workflow on `main`.
+  It runs the tests, then `deploy/cloudrun.sh deploy`, then checks `/api/v1/health`. Tags on commits outside
+  `main` stop before touching Google Cloud. Auth is keyless: GitHub OIDC → the workload identity pool `github`
+  (shared with orient-orchestrator) → `nav-deployer` (Cloud Run admin, Artifact Registry writer, acts as
+  `nav-worker`). One-time setup by a project owner: `deploy/cloudrun.sh ci-setup` (only adds). It doesn't touch
+  helium: after a change to the map job or prompt, also update and restart `nav-infer` there.
 
 **nav-infer** (helium): `nav infer serve` on 127.0.0.1:8451 (`deploy/nav-infer.service`), published with
 `tunnel-expose nav-infer 8451`. It serves the local models and the Claude Code map job, and nothing else (no data).
