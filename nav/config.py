@@ -72,3 +72,18 @@ MAP_RELOAD_S = float(os.environ.get("NAV_MAP_RELOAD_S", "30"))  # how often nav-
 LOC_CONFIRM_SCORE = float(os.environ.get("NAV_LOC_CONFIRM_SCORE", "0.45"))
 LOC_CONFIRM_MARGIN = float(os.environ.get("NAV_LOC_CONFIRM_MARGIN", "0.05"))
 LOC_LOST_SCORE = float(os.environ.get("NAV_LOC_LOST_SCORE", "0.35"))
+# With the phone's motion (nav/navigation/localize.py): leave out frames pointed at the floor/ceiling, and require the
+# walked distance from the last confirmed node (tuned with `nav map orchestrator-replay`: on Itnig's 1-7 m edges a
+# 2 m slack let every next node through after a step or two; 1 m stopped 3 of 9 early confirmations, lost no node).
+LOC_MAX_ABS_PITCH_DEG = float(os.environ.get("NAV_LOC_MAX_ABS_PITCH_DEG", "55"))
+LOC_GATE_SLACK_M = float(os.environ.get("NAV_LOC_GATE_SLACK_M", "1.0"))
+LOC_GATE_SLACK_FRAC = float(os.environ.get("NAV_LOC_GATE_SLACK_FRAC", "0.35"))
+
+
+def loc_thresholds():
+    """nav-api's localization thresholds from the environment (NAV_LOC_*)."""
+    from nav.schemas.navigation import Thresholds
+
+    return Thresholds(confirm_score=LOC_CONFIRM_SCORE, confirm_margin=LOC_CONFIRM_MARGIN, lost_score=LOC_LOST_SCORE,
+                      max_abs_pitch_deg=LOC_MAX_ABS_PITCH_DEG, gate_slack_m=LOC_GATE_SLACK_M,
+                      gate_slack_frac=LOC_GATE_SLACK_FRAC)

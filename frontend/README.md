@@ -25,7 +25,10 @@ Two services, two base URLs (both set in `config.js`; OpenAPI at `/docs` on each
   streams the whole file.
 - Localizing a frame: `POST {nav-api}/api/v1/maps/{map_id}/localize` with multipart `images` (1–4 JPEGs, ~768 px),
   optional `previous` (last confirmed node), `expected` (next checkpoint), `heading_deg` (compass) and `top_k`. See
-  `loc/loc-core.js` (`localize`, `Frames.grab`).
+  `loc/loc-core.js` (`localize`, `Frames.grab`). Optionally one `motion` part per image (the Orient app's `Motion`
+  JSON, `phoneMotion()` in `loc-core.js`) and `previous_step_count` (the step count when the user's node last
+  changed): nav-api then leaves out frames pointed at the floor and only confirms a node the user can have walked to.
+  `/nav/` sends them with the camera as source.
 - Confirming checkpoints: `nav/arrival.js` (`StepDetector`, `GraphTracker`, `NodeConfirmer`; a 1:1 port of
   `nav/navigation/pdr.py` and `arrival.py`). Feed it each `/localize` result (`onLocalization`), each step from
   DeviceMotion (`onStep` with the heading in the map frame: compass − `map.frame.heading_zero_abs_deg`) and the

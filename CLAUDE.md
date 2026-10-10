@@ -41,7 +41,7 @@ phone app talks only to the orchestrator; `frontend/` here is a debugging fronte
   where nav-api's live frames go ahead of queued batch calls, bounded queues, 503 + Retry-After), `client.py`
   (chunking, retries, deadlines, Cloudflare service token).
 - `nav/cli.py` — `nav serve [--app nav-api]`, `nav infer serve`, `nav rec list|show|finalize|import|push|pull`,
-  `nav map setup|build|llm|refinish|check|review|measure|route|pdr-replay|schema|list|show|push|pull`.
+  `nav map setup|build|llm|refinish|check|review|measure|route|pdr-replay|orchestrator-replay|schema|list|show|push|pull`.
 - `Dockerfile` + `deploy/cloudrun.sh` + `deploy/{map-api,nav-api}.env.yaml` — the two Cloud Run services;
   `deploy/nav-infer.service`, `deploy/nav-recorder.service` (helium-nav: map-api serving the debugging pages) — helium units.
 - `data/recordings/<rec_id>/` — recordings (gitignored). Shared copy for the team: `gs://tungsten-united-nav-recordings/recordings/<rec_id>/`
@@ -109,8 +109,9 @@ the live inference host out of it.
 - Behind Cloud Run IAM, `Authorization` carries Google's identity token, so the app's token is also accepted as `?token=`.
 - A cold inference host loads MegaLoc on its first place call (~10 s+), longer than nav-api's live deadline (8 s):
   the first frame after nav-infer restarts gets a 503; the next ones take ~30 ms on the GPU.
-- Two step detectors disagree on Itnig (offline band-pass in motion.py ~153 steps, causal StepDetector in
-  navigation/pdr.py ~97); the tracker re-learns step length at each node, but a walk with counted steps is needed.
+- Two step detectors disagree on Itnig (offline band-pass in motion.py ~153 steps; the phone's causal detector,
+  navigation/pdr.py StepDetector = Orient's tracker.ts = the recorder's app.js, 137, hand sway included). The map's
+  `live_step_length_m` is metres per phone step: nav-api turns the phone's stepCount into metres walked with it.
 - Steps x the recorder's 0.7 m overstated Itnig 3x (107 m vs 32 m from floor odometry; Main entrance -> Drinks area
   measured 7 m on site, odometry 5.9 m): the bout gate passes hand sway while standing and talking (moving 94% of
   the walk), and filming makes slow ~0.3 m steps. Distances now come from odometry.py; a measured distance fixes
