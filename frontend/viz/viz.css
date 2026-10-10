@@ -54,6 +54,7 @@ button[aria-pressed="false"] { color: var(--muted); }
 .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 12px 14px 4px; }
 .head h1 { font-size: 17px; margin: 0; }
 .sub { margin: 2px 0 0; color: var(--muted); font-size: 11.5px; }
+.links a { color: inherit; }
 .tools { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .tools select { max-width: 200px; }
 .graph { position: relative; flex: 1; min-height: 300px; overflow: hidden; }

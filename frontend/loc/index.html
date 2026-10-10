@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Nav Localize</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="loc.css">
+</head>
+<body>
+  <div id="top"></div>
+  <div class="layout">
+    <main class="stage">
+      <div class="tools">
+        <select id="map" aria-label="Map"></select>
+        <span id="source"></span>
+      </div>
+      <div class="media">
+        <video id="video" playsinline muted hidden></video>
+        <img id="image" alt="Image to localize" hidden>
+        <p id="placeholder" class="muted">Pick a source: the rear camera, a recording of this place (map-api), or an
+          image. Each localization sends the frame to nav-api, which embeds it on the inference host (MegaLoc) and
+          compares it with the map's reference images.</p>
+      </div>
+      <div class="tools">
+        <button id="once" class="primary" type="button">Localize</button>
+        <label><input id="auto" type="checkbox"> every
+          <select id="every" aria-label="Interval"><option>1</option><option selected>2</option><option>5</option></select> s</label>
+        <label>burst <select id="burst" aria-label="Frames per request"><option selected>1</option><option>2</option><option>3</option></select></label>
+        <label title="Send the last confirmed node: a jump to a node not next to it stays uncertain">
+          <input id="graph" type="checkbox" checked> graph check</label>
+        <label>expect <select id="expected" aria-label="Expected node"><option value="">–</option></select></label>
+      </div>
+      <p id="heading" class="muted small" aria-live="polite"></p>
+      <div class="history-row"><span class="muted small">history</span> <span id="history" class="history"></span>
+        <span id="steady" class="small"></span></div>
+    </main>
+    <aside class="panel">
+      <div id="result" aria-live="polite"><p class="muted">No result yet.</p></div>
+      <p id="error" class="error" role="alert"></p>
+    </aside>
+  </div>
+  <footer id="health" class="foot muted small"></footer>
+  <script src="../config.js"></script>
+  <script src="loc-core.js"></script>
+  <script src="loc.js"></script>
+</body>
+</html>

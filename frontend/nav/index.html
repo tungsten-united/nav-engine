@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Nav Navigate</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="../loc/loc.css">
+</head>
+<body>
+  <div id="top"></div>
+  <div class="layout">
+    <main class="stage">
+      <div class="tools">
+        <select id="map" aria-label="Map"></select>
+        <label>from <select id="start" aria-label="From"></select></label>
+        <button id="locate" type="button" title="Localize a frame of the live source and start from that node">Locate me</button>
+        <label>to <select id="goal" aria-label="To"></select></label>
+        <label title="Real users: verified edges only">over <select id="trust" aria-label="Trusted edges">
+          <option value="verified">verified</option><option value="observed">observed</option><option value="any">any</option>
+        </select></label>
+        <button id="go" class="primary" type="button">Route</button>
+      </div>
+      <p id="summary" class="small" aria-live="polite"></p>
+      <ol id="hops" class="hops"></ol>
+      <p id="error" class="error" role="alert"></p>
+    </main>
+    <aside class="panel">
+      <section class="live" aria-label="Live checkpoints">
+        <span id="source"></span>
+        <video id="video" playsinline muted hidden></video>
+        <img id="image" alt="" hidden>
+        <div class="tools">
+          <button id="once" type="button">Localize</button>
+          <label><input id="auto" type="checkbox"> every
+            <select id="every" aria-label="Interval"><option>1</option><option selected>2</option><option>5</option></select> s</label>
+        </div>
+        <p id="arrive" class="arrive" aria-live="assertive">Plan a route, then follow it.</p>
+        <div class="tools">
+          <button id="confirm" class="primary" type="button" disabled>Confirm arrival</button>
+          <button id="back" type="button" disabled>Back one</button>
+          <button id="say" type="button" disabled>Say next</button>
+        </div>
+        <div class="history-row"><span class="muted small">history</span> <span id="history" class="history"></span>
+          <span id="steady" class="small"></span></div>
+        <div id="result"></div>
+      </section>
+    </aside>
+  </div>
+  <footer id="health" class="foot muted small"></footer>
+  <script src="../config.js"></script>
+  <script src="../loc/loc-core.js"></script>
+  <script src="nav.js"></script>
+</body>
+</html>
