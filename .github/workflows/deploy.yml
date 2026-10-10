@@ -1,0 +1,62 @@
+# Deploy nav-api to Cloud Run (tungsten-united, europe-southwest1) from main.
+#
+#   git tag v0.2.0 origin/main && git push origin v0.2.0     # or: Actions > Deploy > Run workflow (on main)
+#
+# Only commits on main deploy: a tag on any other commit stops before touching Google Cloud. Tests run first, then
+# deploy/cloudrun.sh builds the Dockerfile, pushes it to Artifact Registry and deploys, exactly as from a laptop.
+# Google auth is keyless (GitHub OIDC -> workload identity pool "github" -> nav-deployer); setup in README.md,
+# "Deployment". Secrets stay in Secret Manager; this workflow never sees them. Helium's nav-infer is not touched.
+name: Deploy
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-nav-api
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends ffmpeg
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.16"
+      # No torch: the models run on the inference host; their tests use fakes.
+      - run: uv sync --frozen --no-default-groups --group dev --group map
+      - run: uv run --no-sync --with python-multipart pytest -q
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Only from main
+        run: |
+          git fetch -q origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME ($GITHUB_SHA) is not on main: tag a commit of main to deploy."
+            exit 1
+          fi
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/613464313064/locations/global/workloadIdentityPools/github/providers/github-oidc
+          service_account: nav-deployer@tungsten-united.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Deploy
+        run: deploy/cloudrun.sh deploy | tee url.txt
+      - name: Smoke test
+        run: |
+          URL=$(tail -n1 url.txt)
+          curl -fsS "$URL/api/v1/health" | tee /dev/stderr | grep -q '"ok":true'
+          echo "Deployed $GITHUB_REF_NAME (${GITHUB_SHA::7}) to $URL" >> "$GITHUB_STEP_SUMMARY"

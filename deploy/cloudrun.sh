@@ -6,6 +6,7 @@
 #   deploy/cloudrun.sh url       the service URL
 #   deploy/cloudrun.sh token     the API token the frontends send
 #   deploy/cloudrun.sh secrets   copy the secret values from this machine into Secret Manager (after a change)
+#   deploy/cloudrun.sh ci-setup  once: let GitHub Actions deploy (.github/workflows/deploy.yml) without keys
 #
 # Secrets (API token, Cloudflare Access service token, Jev key) come from this machine and are never printed:
 # ~/.cloudflared/access-service-token.env, ./typesafe.api, and $TOKEN_FILE (the API token, generated once).
@@ -53,6 +54,38 @@ setup() {
             echo "  $name: can't grant nav-worker access (needs a project owner; see the top of $0)"
     done
     echo "setup done; now: $0 deploy"
+}
+
+# GitHub Actions: OIDC tokens of this repo -> the shared workload identity pool "github" -> nav-deployer, which may
+# push images and deploy nav-api running as nav-worker. Only adds: the repo to the provider's list, the account and
+# its roles.
+GITHUB_REPO=tungsten-united/nav-engine
+WIF_POOL=github
+WIF_PROVIDER=github-oidc
+DEPLOYER="nav-deployer@$PROJECT.iam.gserviceaccount.com"
+ci-setup() {
+    local number cond
+    number=$(g projects describe "$PROJECT" --format 'value(projectNumber)')
+    cond=$(g iam workload-identity-pools providers describe "$WIF_PROVIDER" --workload-identity-pool "$WIF_POOL" \
+        --location global --format 'value(attributeCondition)')
+    if [[ "$cond" != *"'$GITHUB_REPO'"* ]]; then
+        [[ "$cond" == "assertion.repository in ["*"]" ]] || { echo "unexpected provider condition: $cond" >&2; exit 1; }
+        cond="${cond%]}, '$GITHUB_REPO']"
+        g iam workload-identity-pools providers update-oidc "$WIF_PROVIDER" --workload-identity-pool "$WIF_POOL" \
+            --location global --attribute-condition "$cond" >/dev/null
+        echo "  provider $WIF_PROVIDER: now accepts $GITHUB_REPO"
+    fi
+    g iam service-accounts describe "$DEPLOYER" >/dev/null 2>&1 ||
+        g iam service-accounts create nav-deployer --display-name "nav-api deploys from GitHub Actions"
+    for role in roles/run.admin roles/artifactregistry.writer; do
+        g projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:$DEPLOYER" --role "$role" \
+            --condition None >/dev/null
+    done
+    g iam service-accounts add-iam-policy-binding "$SA" --member "serviceAccount:$DEPLOYER" \
+        --role roles/iam.serviceAccountUser >/dev/null
+    g iam service-accounts add-iam-policy-binding "$DEPLOYER" --role roles/iam.workloadIdentityUser \
+        --member "principalSet://iam.googleapis.com/projects/$number/locations/global/workloadIdentityPools/$WIF_POOL/attribute.repository/$GITHUB_REPO" >/dev/null
+    echo "ci-setup done: tag a commit of main (v*) to deploy"
 }
 
 put() {  # put <secret> : value on stdin
