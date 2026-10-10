@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from nav.mapping.build import finish_map, run_llm_on_build
+from nav.mapping.continuity import previous_context, stabilize
 from nav.mapping.motion import RATE_HZ, angle_diff, load_motion
 from nav.mapping.select import Frame, SelectParams, group_frames, mark_usable, select_in_recording
 from nav.mapping.verify import candidate_pairs, match_pairs
@@ -213,6 +214,42 @@ def test_finish_checks_ids_and_adds_evidence_positions_distances():
     path = m.edges[0].path
     assert path[0].x_m == 0 and path[-1].x_m == 8 and len(path) > 5
     assert m.tracks[0].rec_id == "r1"
+
+
+def test_ids_stay_stable_across_builds():
+    def node(i, name, c):
+        return {"id": i, "name": name, "kind": "room", "description": "", "landmarks": [], "hazards": [],
+                "visual_cues": [], "floor": None, "candidates": c, "confidence": "high"}
+
+    def edge(i, a, b):
+        return {"id": i, "source": a, "target": b, "kind": "walk", "bidirectional": True, "basis": "walked",
+                "steps": [{"action": "straight", "distance_m": 5, "along": None, "until": None}],
+                "instruction": "go", "reverse_instruction": None, "landmarks": [], "hazards": [], "visual_cues": [],
+                "candidates": [], "confidence": "medium"}
+
+    cset = candidate_set()
+    first = finish_map(draft(), cset, BUILD, "builds/b0")  # n1 = c01 (r1 at 0 s and 90 s), n2 = c02 (10 s); e1
+    prev = previous_context(first, cset)
+    assert [n["candidates"] for n in prev["nodes"]] == [["c01"], ["c02"]]
+
+    # The LLM's scratch ids collide with the old ones in another order; a new spot (c03) appears.
+    d = draft(nodes=[node("n1", "Hall", ["c02"]), node("n2", "Kitchen", ["c03"]), node("n3", "Door", ["c01"])],
+              edges=[edge("e1", "n3", "n1"), edge("e2", "n1", "n2"), edge("e9", "n2", "n7")])
+    d, retired = stabilize(d, cset, prev, "b1")
+    assert [(n.id, n.name) for n in d.nodes] == [("n2", "Hall"), ("n3", "Kitchen"), ("n1", "Door")]
+    assert [(e.id, e.source, e.target) for e in d.edges] == [("e1", "n1", "n2"), ("e2", "n2", "n3"),
+                                                              ("e3", "n3", "unknown:n7")]
+    assert retired == []
+    second = finish_map(d, cset, BUILD, "builds/b1")
+
+    # Next build drops the door: its id and its edge retire, the rest keeps its ids, retired ids aren't reused.
+    d = draft(nodes=[node("a", "Hall", ["c02"]), node("b", "Kitchen", ["c03"]), node("c", "Stage", [])],
+              edges=[edge("x", "a", "b"), edge("y", "b", "c")])
+    d, retired = stabilize(d, cset, previous_context(second, cset), "b2")
+    assert [n.id for n in d.nodes] == ["n2", "n3", "n4"]
+    assert [e.id for e in d.edges] == ["e2", "e3"]
+    assert [(r.id, r.kind, r.name, r.build_id) for r in retired] == [("n1", "node", "Door", "b2"),
+                                                                      ("e1", "edge", "Door - Hall", "b2")]
 
 
 # --- Claude Code job ---------------------------------------------------------------------------------------

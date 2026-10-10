@@ -18,6 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
+from nav.mapping.continuity import previous_context, stabilize
 from nav.mapping.motion import angle_diff
 from nav.mapping.prepare import Prepared, prepare
 from nav.mapping.select import SelectParams, cap_groups, group_frames, mark_usable, select_in_recording
@@ -462,6 +463,10 @@ def build_map(place: str, *, recordings_root: Path, maps_root: Path, cache_root:
     build_dir.mkdir(parents=True)
     cset = select_candidates(place, preps, params, embed_model, place_model, build_dir)
     (build_dir / "build.json").write_text(json.dumps({"transcribe_model": transcribe_model}))
+    published = build_dir.parent.parent / "map.json"
+    if published.is_file():  # what the LLM keeps stable, and what ids are matched against
+        prev = PlaceMap.model_validate_json(published.read_text())
+        (build_dir / "previous.json").write_text(json.dumps(previous_context(prev, cset), ensure_ascii=False, indent=1))
     log.info("%s: %d recordings -> %d candidates in %s", place, len(preps), len(cset.candidates), build_dir)
     if not run_llm:
         return BuildResult(build_dir, cset, None)
@@ -518,7 +523,11 @@ def publish(build_dir: Path, cset: CandidateSet, draft: MapDraft, run) -> BuildR
                      place_model=cset.place_model,
                      transcribe_model=extra.get("transcribe_model"),
                      llm=run, candidates=len(cset.candidates))
+    retired = []
+    if (build_dir / "previous.json").is_file():
+        draft, retired = stabilize(draft, cset, json.loads((build_dir / "previous.json").read_text()), build_id)
     pmap = finish_map(draft, cset, info, f"builds/{build_id}", tracks)
+    pmap.retired = retired
     from nav import config
     from nav.mapping.quality import check_map
 

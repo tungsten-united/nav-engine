@@ -66,8 +66,9 @@ Browser end-to-end check: headless `/usr/bin/chromium` via `uvx --from playwrigh
 - Map pipeline MVP (built): 1 fps sharpest frames → quality filter → keyframes per walk (novelty by DINOv2
   embedding + walked distance / turn from the IMU, anchors at tags and voice notes) → fold the same spot across
   walks and revisits (MegaLoc retrieval, ALIKED+LightGlue geometric check; weaker look-alikes become hints)
-  → a Claude Code job writes the graph from candidates.json + frames → code checks ids and adds evidence, positions
-  and distances. Voice is transcribed locally (Whisper turbo; no OpenAI key here). Later: Anthropic API with
+  → a Claude Code job writes the graph from candidates.json + frames (+ previous.json: keep the last map where it
+  holds) → code assigns stable ids by evidence overlap with the last map (continuity.py), checks ids and adds
+  evidence, positions and distances. Voice is transcribed locally (Whisper turbo; no OpenAI key here). Later: Anthropic API with
   structured outputs instead of the Claude Code job; code proposing node/edge spans itself.
 
 ## Conventions

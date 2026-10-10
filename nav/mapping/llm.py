@@ -94,9 +94,23 @@ people. The app will use it to tell people where they are and to give spoken, st
 Answer with the map in the required JSON structure. Do not create or edit any files.
 """
 
+PREVIOUS = """
+## Previous map
+`previous.json` is the map built before from this place's walks (new walks may have been added since; all the earlier
+walks are still in the candidates). For each previous node, `candidates` lists the candidates that show the same
+frames now (ignore `evidence`, it is for code).
+- Keep the previous map where the evidence still supports it: the same nodes with the same names and kinds, citing
+  those candidates, and the same connections. People already know the place by these names.
+- Add nodes and edges for what is new: spots only the new walks reach, or that the previous map missed.
+- Merge, split, rename or drop a previous node only when the photos, voice notes or positions show it was wrong, and
+  say what changed and why in `notes`.
+- Ids are reassigned by code from the evidence, so any unique ids are fine.
+"""
 
-def build_prompt(place: str, language: str) -> str:
-    return PROMPT.format(place=place, language=language, language_name=LANGUAGES.get(language, language))
+
+def build_prompt(place: str, language: str, previous: bool = False) -> str:
+    prompt = PROMPT.format(place=place, language=language, language_name=LANGUAGES.get(language, language))
+    return prompt.replace("## Output", PREVIOUS.lstrip() + "\n## Output") if previous else prompt
 
 
 class LlmError(RuntimeError):
@@ -111,7 +125,7 @@ def run_claude_code(build_dir: Path, place: str, language: str, model: str, budg
         raise LlmError("the `claude` CLI is not on PATH")
     job = build_dir / "job"
     job.mkdir(parents=True, exist_ok=True)
-    prompt = build_prompt(place, language)
+    prompt = build_prompt(place, language, previous=(build_dir / "previous.json").is_file())
     schema = json.dumps(draft_json_schema())
     (job / "prompt.md").write_text(prompt)
     (job / "schema.json").write_text(json.dumps(draft_json_schema(), indent=2))

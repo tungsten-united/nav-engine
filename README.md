@@ -157,7 +157,13 @@ uv run nav map pull [<map_id> …]
    camera-based localization. The prompt is in [`nav/mapping/llm.py`](nav/mapping/llm.py). The schema is written to also be valid for the
    Anthropic structured-outputs API (closed objects, all fields required, no numeric/length constraints), which can
    replace the job later.
-4. **Finish**: check node, edge and candidate ids and flag visual words left in spoken text (both go into
+   When the place already has a map, it goes into the build as `previous.json` (each old node with the new
+   candidates that show its frames) and the LLM is told to keep it where the evidence holds: same nodes, names and
+   connections, adding what is new and explaining any merge, split or drop in `notes`.
+4. **Finish**: **stable ids** ([`continuity.py`](nav/mapping/continuity.py)): code, not the LLM, assigns them. A node
+   that shares the most evidence frames with a previous node (same recording, within 3 s) keeps its id, new nodes
+   get the next unused number, edges keep theirs when they join the same two nodes, and ids that disappear go to
+   `retired` (never reused). Then check node, edge and candidate ids and flag visual words left in spoken text (both go into
    `warnings`), attach evidence (recording, time,
    frame) to every node, place nodes at their first pass by dead reckoning (walks aligned through shared nodes),
    bend each walk so every later pass of a node lands on it (loop closure: the drift is spread over the stretch in

@@ -12,6 +12,9 @@ Two layers:
 The LLM works from `Candidate`s: frames that survived sampling and filtering, with their motion and voice context.
 Nodes and edges cite candidates by id, which is how evidence is traced back to recordings and times.
 
+Ids are stable across builds of a place (nav/mapping/continuity.py): a node that still shows the same frames keeps
+its id, new nodes get new ids, and ids that disappear go to `retired` and are never reused.
+
 On disk (one folder per place, mirrored to object storage under maps/<map_id>/). Builds are immutable folders;
 map.json at the top is a copy of the latest one, and its image paths point into that build:
 
@@ -20,6 +23,8 @@ map.json at the top is a copy of the latest one, and its image paths point into 
       builds/<build_id>/
         map.json                     PlaceMap
         candidates.json              CandidateSet: what the LLM was given
+        previous.json                the map before this build, as given to the LLM (continuity.previous_context)
+        pairs.json                   same-place checks between keyframes (verify.py), for tuning
         tracks.json                  dead-reckoned path of every walk at 1 Hz: {rec_id: [[t_ms, x_m, y_m], ...]}
         frames/<cand_id>.jpg         one image per candidate
         job/                         prompt.md, schema.json, claude.json (raw Claude Code result), claude.log
@@ -300,6 +305,15 @@ class Track(BaseModel):
     points: list[tuple[float, float, float]]
 
 
+class Retired(BaseModel):
+    """A node or edge id that was in an earlier build of the place and is not any more. Never reused."""
+
+    id: str
+    kind: Literal["node", "edge"]
+    name: str  # node name, or "source name - target name" for an edge
+    build_id: str  # the first build without it
+
+
 class PlaceMap(MapDraft):
     model_config = ConfigDict(extra="ignore")
     schema_version: int = MAP_SCHEMA_VERSION
@@ -311,6 +325,7 @@ class PlaceMap(MapDraft):
     quality: QualityReport | None = None
     tracks: list[Track] = []  # walks that could be placed in the map frame (through shared nodes)
     warnings: list[str] = []  # problems found when checking the draft (dangling ids, unknown candidates ...)
+    retired: list[Retired] = []  # ids of earlier builds that are gone, carried from build to build
 
 
 class MapSummary(BaseModel):
