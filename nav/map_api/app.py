@@ -67,8 +67,9 @@ class BuildRequest(BaseModel):
 
 def create_app(store: RecordingStore | None = None, maps: MapStore | None = None, *, web_dir=_DEFAULT,
                api_token=_DEFAULT, cors_origins=_DEFAULT, cors_origin_regex=_DEFAULT, allow_delete=_DEFAULT,
-               cache_dir: Path | None = None) -> FastAPI:
-    """Settings default to nav/config.py (environment); tests pass them explicitly."""
+               cache_dir: Path | None = None, auto_build=_DEFAULT, build_map_fn=None) -> FastAPI:
+    """Settings default to nav/config.py (environment); tests pass them explicitly. `build_map_fn` stands in for
+    nav.mapping.build.build_map in tests."""
     store = store or RecordingStore(config.RECORDINGS_DIR)
     maps = maps or MapStore(config.MAPS_DIR)
     web_dir = config.WEB_DIR if web_dir is _DEFAULT else web_dir
@@ -76,6 +77,7 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
     cors_origins = config.CORS_ORIGINS if cors_origins is _DEFAULT else cors_origins
     cors_origin_regex = config.CORS_ORIGIN_REGEX if cors_origin_regex is _DEFAULT else cors_origin_regex
     allow_delete = config.ALLOW_DELETE if allow_delete is _DEFAULT else allow_delete
+    auto_build = config.AUTO_BUILD if auto_build is _DEFAULT else auto_build
     cache_dir = cache_dir or config.CACHE_DIR
     app = FastAPI(title="nav-engine map-api", version=f"schema-{SCHEMA_VERSION}")
     app.state.store = store
@@ -157,16 +159,17 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
     @app.post(f"{api}/recordings/{{rec_id}}/finish", status_code=202)
     def finish(rec_id: str, req: FinishRequest, tasks: BackgroundTasks) -> Manifest:
         m = store.finish(rec_id, req)
-        tasks.add_task(store.finalize, rec_id)
+        tasks.add_task(finalize_and_build, rec_id)
         return m
 
     @app.post(f"{api}/recordings/{{rec_id}}/finalize")
     def finalize(rec_id: str, tasks: BackgroundTasks, wait: bool = False) -> Manifest:
-        """Rebuild video.mp4 / parquet / events.jsonl from the raw uploads (e.g. after late uploads)."""
+        """Rebuild video.mp4 / parquet / events.jsonl from the raw uploads (e.g. after late uploads). A usable walk
+        then rebuilds its place's map (see finalize_and_build)."""
         if wait:
-            return store.finalize(rec_id)
+            return finalize_and_build(rec_id)
         store.get(rec_id)
-        tasks.add_task(store.finalize, rec_id)
+        tasks.add_task(finalize_and_build, rec_id)
         return store.get(rec_id)
 
     @app.get(f"{api}/recordings/{{rec_id}}/files")
@@ -223,6 +226,7 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
 
     # --- map builds -------------------------------------------------------------------------------------------
     building: dict = {}  # the build in progress: {map_id, build_id}
+    pending: dict[str, tuple[BuildRequest, list[str]]] = {}  # map_id -> (auto build to run next, walks it is for)
     build_lock = threading.Lock()
 
     def write_status(build_dir: Path, name: str = "status.json", **fields) -> None:
@@ -234,9 +238,12 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
         tmp.replace(path)
 
     def run_build(map_id: str, build_id: str, req: BuildRequest) -> None:
-        from nav.mapping.build import build_map
         from nav.mapping.select import SelectParams
 
+        if build_map_fn is None:
+            from nav.mapping.build import build_map
+        else:
+            build_map = build_map_fn
         build_dir = maps.root / map_id / "builds" / build_id
         try:
             res = build_map(req.place, recordings_root=store.root, maps_root=maps.root, cache_root=cache_dir,
@@ -255,12 +262,10 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
             with build_lock:
                 building.clear()
         write_status(build_dir, finished_at_utc=datetime.now(timezone.utc).isoformat(), **result)
+        start_pending()
 
-    @app.post(f"{api}/maps/build", status_code=202)
-    def build(req: BuildRequest) -> dict:
-        """Build (or rebuild) the map of a place from all its finished recordings, in the background. One build at a
-        time; poll `GET /maps/{map_id}/builds/{build_id}/status`. With `llm: false` it stops after selecting
-        candidates (no LLM cost)."""
+    def start_build(req: BuildRequest, trigger: str) -> dict:
+        """Start a build of the place in the background: 404 without usable walks, 409 while one is running."""
         from nav.mapping.build import recordings_for
         from nav.schemas.map import slugify
 
@@ -279,11 +284,67 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
                 time.sleep(0.2)
             build_dir.mkdir(parents=True)
             building.update(map_id=map_id, build_id=build_id)
+            pending.pop(map_id, None)  # this build takes every walk finalized so far
         write_status(build_dir, status="running", map_id=map_id, build_id=build_id, request=req.model_dump(),
-                     recordings=len(rec_dirs), started_at_utc=datetime.now(timezone.utc).isoformat())
+                     trigger=trigger, recordings=len(rec_dirs), started_at_utc=datetime.now(timezone.utc).isoformat())
         threading.Thread(target=run_build, args=(map_id, build_id, req), name=f"build-{map_id}", daemon=True).start()
+        log.info("map build %s/%s started (%s)", map_id, build_id, trigger)
         return {"map_id": map_id, "build_id": build_id, "status": "running",
                 "status_url": f"{api}/maps/{map_id}/builds/{build_id}/status"}
+
+    # Every walk of a place feeds its one map: when a walk finalizes (in either direction, or into new areas), the
+    # place's map is rebuilt from all its walks with the published map as the previous one, so ids, the review and
+    # what still holds carry over; a failed build leaves the published map as it was. One build at a time: walks
+    # that finalize meanwhile queue one more build of their place, which takes all of them.
+    def request_build(place: str, rec_id: str) -> None:
+        from nav.schemas.map import slugify
+
+        try:
+            start_build(BuildRequest(place=place), f"auto: {rec_id} finalized")
+            return
+        except HTTPException as e:
+            if e.status_code != 409:
+                log.warning("no map build after %s: %s", rec_id, e.detail)
+                return
+        with build_lock:
+            if building:
+                req, recs = pending.get(slugify(place), (BuildRequest(place=place), []))
+                pending[slugify(place)] = (req, [*recs, rec_id])
+                log.info("map build of %s queued after the running one (%s finalized)", place, rec_id)
+                return
+        request_build(place, rec_id)  # it ended in between
+
+    def start_pending() -> None:
+        with build_lock:
+            if building or not pending:
+                return
+            map_id, (req, recs) = next(iter(pending.items()))
+        try:
+            start_build(req, f"auto: {', '.join(recs)} finalized")
+        except HTTPException as e:
+            if e.status_code == 409:  # another build got in first: this one waits for it
+                return
+            with build_lock:
+                pending.pop(map_id, None)
+            log.warning("queued map build of %s dropped: %s", map_id, e.detail)
+
+    def finalize_and_build(rec_id: str) -> Manifest:
+        from nav.mapping.build import USABLE_STATUS
+
+        m = store.finalize(rec_id)
+        if auto_build and m.status in USABLE_STATUS and m.video:
+            try:
+                request_build(m.place, rec_id)
+            except Exception:  # the walk is saved either way; a build can be started by hand
+                log.exception("no map build after %s", rec_id)
+        return m
+
+    @app.post(f"{api}/maps/build", status_code=202)
+    def build(req: BuildRequest) -> dict:
+        """Build (or rebuild) the map of a place from all its finished recordings, in the background. One build at a
+        time; poll `GET /maps/{map_id}/builds/{build_id}/status`. With `llm: false` it stops after selecting
+        candidates (no LLM cost). Walks that finalize start one by themselves (NAV_AUTO_BUILD, on by default)."""
+        return start_build(req, "api")
 
     def run_refinish(map_id: str, build_dir: Path) -> None:
         from nav.mapping.build import refinish_build
@@ -299,6 +360,7 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
             with build_lock:
                 building.clear()
         write_status(build_dir, name="refinish.json", finished_at_utc=datetime.now(timezone.utc).isoformat(), **result)
+        start_pending()
 
     @app.post(f"{api}/maps/{{map_id}}/refinish", status_code=202)
     def refinish(map_id: str) -> dict:

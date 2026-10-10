@@ -95,6 +95,8 @@ the live inference host out of it.
 - Measure an edge's turn from the heading at the end of the source pass vs the next seconds of walking, not from
   the path geometry around the node centre: that booked the turn made while arriving at a spot onto leaving it,
   and made a correct "bear right" look like a contradiction (and fooled the Jev check that compared against it).
+- map-api rebuilds a place's map when one of its walks finalizes (`NAV_AUTO_BUILD`, default on; tests/conftest.py
+  turns it off so test recordings never start a real build). The queue is in memory: a restart mid-build loses it.
 - `nav map refinish` reuses the saved Claude answer: use it to iterate on post-processing without paying again.
 - Generic DINOv2 similarity says "same kind of scene", not "same place" (two ends of one hall: 0.81). Use MegaLoc
   for place identity. LightGlue inliers in one open hall: near-identical views 490–870, different spots 100–300, so
