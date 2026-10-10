@@ -296,8 +296,9 @@ browser. The route in recording order
 with turns, hover previews with the frame, and details pinned on click (description, landmarks, hazards, both
 instructions, frames, the walks and times that show it). **Directions** picks two nodes and chains the
 instructions along the shortest route (any edge, or only observed or verified ones). Nodes and edges show their
-status with **Verify** / **Hide** buttons (they save the review), reference images by role with their heading,
-and relations.
+status with **Verify** / **Hide** buttons and a folded **Edit** form (they save the review): a spot's name, kind,
+description and **Merge into** another spot (undo under "Merged by the review"), an edge's instructions both ways.
+Also reference images by role with their heading, and relations.
 
 ## nav-api: the live API
 

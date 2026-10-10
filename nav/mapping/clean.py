@@ -4,7 +4,8 @@ The LLM's `confidence` does not follow the evidence (Itnig: a "high" bathroom se
 from the walks, after the review (review.py) and before publishing:
 
 1. Inferred edges (no walk went directly between their nodes) go.
-2. One edge per pair of spots: the strongest (verified, walks, confidence, shorter).
+2. One edge per pair of spots: the strongest (verified, walks, confidence, shorter). A weaker one stays when it was
+   walked a way the stronger one wasn't (after a merge, two one-way edges can join the same spots).
 3. A weak spot on the way (seen by fewer than `min_node_walks` walks, not protected, exactly two edges) is folded
    into one edge between its neighbours: steps chained, distances added, `via` lists it.
 4. Edges walked by at least `min_edge_walks` walks (either way) are the core. Weaker edges come back only where the
@@ -58,6 +59,15 @@ def _score(e: PlaceEdge) -> tuple:
 def _ends(e: PlaceEdge) -> frozenset:
     """The spots an edge joins: two edges to different parts of a merged area are not duplicates."""
     return frozenset((e.source_part or e.source, e.target_part or e.target))
+
+
+def _ways(e: PlaceEdge) -> set[tuple[str, str]]:
+    """The directions an edge was walked (or verified), as (from spot, to spot)."""
+    a, b = e.source_part or e.source, e.target_part or e.target
+    out = {(a, b)} if e.status in ("observed", "verified") else set()
+    if e.bidirectional and e.reverse_status in ("observed", "verified"):
+        out.add((b, a))
+    return out
 
 
 def _flipped(e: PlaceEdge) -> PlaceEdge:
@@ -200,7 +210,7 @@ class _Cleaner:
                 continue
             win, lose = sorted([best[k], e], key=lambda x: (self.safe(x), *_score(x)), reverse=True)
             best[k] = win
-            if self.safe(lose):  # two verified ways between the same spots: both stay
+            if self.safe(lose) or _ways(lose) - _ways(win):  # verified, or walked a way the stronger one wasn't
                 best[frozenset((lose.id,))] = lose
             else:
                 self.pruned[lose.id] = f"same spots as {win.id}, which is stronger"

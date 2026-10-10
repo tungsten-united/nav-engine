@@ -58,6 +58,16 @@ def test_inferred_and_duplicate_edges_go():
     assert len(m.edges) == 4  # the input is untouched
 
 
+def test_a_duplicate_walked_the_other_way_stays():
+    # after a merge, e1 (n1 -> n2 walked twice) and e2 (n2 -> n1 walked once) join the same spots, each one way
+    m = pmap([node("n1"), node("n2")], [edge("e1", "n1", "n2", 2, 0), edge("e2", "n2", "n1", 1, 0)])
+    c = clean_map(m)
+    assert ids(c)[1] == ["e1", "e2"] and plan_route(c, "n2", "n1", "observed")
+    # walked back as well, the stronger one covers both ways: the weaker goes
+    m.edges[0].reverse_status, m.edges[0].walked_back = "observed", 1
+    assert ids(clean_map(m))[1] == ["e1"]
+
+
 def test_a_weak_spot_on_the_way_is_folded_into_one_edge():
     refs = [ReferenceImage(id="r1", node="n1", edge="e1", toward="n2", role="outgoing", image="x", rec_id="r0",
                            t_ms=0, heading_deg=None),
