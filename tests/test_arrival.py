@@ -1,5 +1,6 @@
-"""Node confirmation (nav/navigation/arrival.py): votes over consecutive localizations, the dead-reckoning gate and the
-heading decide arrival or pass-through; nothing is skipped; off-route and manual confirmation."""
+"""Node confirmation (nav/navigation/arrival.py): votes over consecutive localizations (the confirmer's own score and
+margin), the walked-distance gate (nav-api's `plausible`, else dead reckoning) decide arrival; the heading only gates
+passing through; nothing is skipped; off-route is a warning; manual confirmation."""
 
 import pytest
 
@@ -19,8 +20,8 @@ def route() -> list[Hop]:
 
 
 def loc(best: str | None, role: str = "at", toward: str | None = None, score: float = 0.8, margin: float = 0.2,
-        heading: float | None = None) -> Localization:
-    cands = [] if best is None else [NodeMatch(node=best, name=best.upper(), score=score, refs=[
+        heading: float | None = None, plausible: bool | None = None) -> Localization:
+    cands = [] if best is None else [NodeMatch(node=best, name=best.upper(), score=score, plausible=plausible, refs=[
         RefMatch(id="r1", score=score, role=role, toward=toward, image="x.jpg")])]
     return Localization(map_id="t", model="m", frames=1, status="confirmed" if score >= 0.6 else "uncertain",
                         reason="", best=best, margin=margin, candidates=cands, thresholds=TH, took_ms={},
@@ -39,7 +40,7 @@ def walk(c: NodeConfirmer, steps: int, heading: float) -> list:
     return [e for e in (c.on_step(heading) for _ in range(steps)) if e]
 
 
-def test_arrival_needs_votes_dead_reckoning_and_heading():
+def test_arrival_needs_votes_and_dead_reckoning():
     c = confirmer()
     assert (c.previous, c.expected) == ("a", "b")
     # b recognised from the start (seen from afar): no arrival while the gate is closed
@@ -55,7 +56,7 @@ def test_arrival_needs_votes_dead_reckoning_and_heading():
     assert ev.evidence["pdr"]["remaining_m"] < 2
 
 
-def test_one_frame_is_not_enough_and_wrong_heading_blocks_arrival():
+def test_one_frame_is_not_enough_and_the_heading_does_not_block_arrival():
     c = confirmer()
     walk(c, 10, 90.0)
     assert c.on_localization(0, loc("b", heading=90)) is None
@@ -63,8 +64,37 @@ def test_one_frame_is_not_enough_and_wrong_heading_blocks_arrival():
     assert c.on_localization(2, loc("b", heading=90)) is None  # 2 of 3
     c2 = confirmer()
     walk(c2, 10, 90.0)
-    for t in range(4):  # recognised, near, but facing back where you came from
-        assert c2.on_localization(t, loc("b", heading=270)) is None
+    evs = [c2.on_localization(t, loc("b", heading=270)) for t in range(3)]  # camera pointed back: still there
+    assert evs[-1].kind == "arrived" and evs[-1].node == "b"
+
+
+def test_votes_use_the_confirmers_thresholds_not_nav_apis():
+    c = confirmer(ArrivalParams(k=2, n=3))
+    walk(c, 10, 90.0)
+    # 0.35 is below nav-api's confirm score (status "uncertain") but leads clearly: it votes
+    assert c.on_localization(0, loc("b", score=0.35, margin=0.08)) is None
+    assert c.on_localization(1, loc("b", score=0.35, margin=0.08)).kind == "arrived"
+    c2 = confirmer(ArrivalParams(k=2, n=3))
+    walk(c2, 10, 90.0)
+    for t, (score, margin) in enumerate([(0.25, 0.1), (0.5, 0.02), (0.25, 0.1), (0.5, 0.02)]):
+        assert c2.on_localization(t, loc("b", score=score, margin=margin)) is None  # too low, or too close
+
+
+def test_navapis_walked_distance_gate_replaces_dead_reckoning():
+    c = confirmer(ArrivalParams(k=2, n=3))
+    walk(c, 2, 0.0)  # steps the compass says go north: the tracker has hardly progressed on an eastward hop
+    assert c.on_localization(0, loc("b", "approach", plausible=False)) is None  # nav-api: not walked that far
+    assert c.on_localization(1, loc("b", "approach", plausible=False)) is None
+    assert list(c.votes) == ["far", "far"]
+    assert c.on_localization(2, loc("b", "approach", plausible=True)) is None
+    assert c.on_localization(3, loc("b", "approach", plausible=True)).kind == "arrived"
+
+
+def test_a_node_next_to_the_hop_is_not_elsewhere():
+    nb = {"b": {"x"}, "x": {"b"}}
+    c = NodeConfirmer(route(), None, ArrivalParams(k=2, n=3), nb)
+    assert all(c.on_localization(t, loc("x")) is None for t in range(4))
+    assert list(c.votes) == [None, None, None]
 
 
 def test_no_dead_reckoning_needs_all_n_votes():
@@ -93,23 +123,26 @@ def test_nothing_is_skipped():
     walk(c, 2, 90.0)  # 1.4 m of 7: c, the node after b, recognised clearly is not a reason to confirm anything
     for t in range(6):
         assert c.on_localization(t, loc("c", heading=180)) is None
-    assert c.expected == "b" and c.votes.count("far") == 4 and not c.off_route
+    assert c.expected == "b" and c.votes.count("far") == 4
     walk(c, 8, 90.0)  # now at b: seeing c from there means b was reached; b is confirmed (passed), never c
     evs = [c.on_localization(10 + t, loc("c", heading=180)) for t in range(3)]
     assert evs[-1].kind == "passed" and evs[-1].node == "b" and c.expected == "c"
     assert all(e is None for e in evs[:-1])
 
 
-def test_off_route_after_k_votes_elsewhere():
+def test_off_route_is_a_warning_once_per_hop():
     c = confirmer()
     walk(c, 5, 0.0)  # d (two nodes ahead) or any node off the route: elsewhere
     assert c.on_localization(0, loc("z")) is None
     assert c.on_localization(1, loc("z")) is None
     ev = c.on_localization(2, loc("z"))
-    assert ev.kind == "off_route" and ev.node == "z" and c.off_route
-    assert c.on_localization(3, loc("b", heading=90)) is None  # stopped until reroute
+    assert ev.kind == "off_route" and ev.node == "z"
+    assert c.on_localization(3, loc("z")) is None  # said once
+    walk(c, 5, 90.0)
+    evs = [c.on_localization(4 + t, loc("b", heading=90)) for t in range(3)]  # confirmation went on
+    assert evs[-1].kind == "arrived" and evs[-1].node == "b"
     c.reroute(route()[1:])
-    assert (c.previous, c.expected) == ("b", "c") and not c.off_route
+    assert (c.previous, c.expected) == ("b", "c")
 
 
 def test_uncertain_once_when_walking_past_and_manual_confirm_relearns_step_length():

@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from nav.navigation.arrival import CONFIRM_KINDS, ArrivalParams, NodeConfirmer
+from nav.navigation.arrival import CONFIRM_KINDS, ArrivalParams, NodeConfirmer, neighbours
 from nav.navigation.localize import RefIndex, localize
 from nav.navigation.pdr import GraphTracker, map_step_length, route_start_ms, user_steps, walk_route
 from nav.schemas.map import PlaceMap
@@ -124,7 +124,8 @@ def nav_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, t
     hops = [h for h, _ in route]
     arrivals = [t for _, t in route]
     tracker = GraphTracker(hops, step_length=map_step_length(pmap))
-    conf = NodeConfirmer(hops, tracker, params)
+    nb = neighbours(pmap)
+    conf = NodeConfirmer(hops, tracker, params, nb)
     start = route_start_ms(pmap, rec_id, route)
     # Every every_s the app grabs `burst` frames: the next usable video frames from that moment (at LIVE_FPS they
     # span (burst - 1) / LIVE_FPS s; the phone's 250 ms apart are closer, so this is a little harsher).
@@ -140,7 +141,7 @@ def nav_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, t
     timeline = sorted([(float(t) * 1000, "step", None) for t in user_steps(rec_dir, step_scale) if t * 1000 >= start]
                       + bursts, key=lambda x: x[0])
     per_hop = [{"kind": "-", "t": None, "uncertain": 0, "off_route": 0, "score": None, "step": None} for _ in hops]
-    state = {"offset": 0, "conf": conf}  # after an off_route, a confirmer over the rest of the route
+    state = {"offset": 0, "conf": conf}
 
     def record(ev) -> None:
         if ev is None:
@@ -151,13 +152,8 @@ def nav_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, t
             slot["kind"], slot["t"], slot["step"] = ev.kind, ev.t, state["conf"].tracker.step_length
         elif ev.kind == "uncertain":
             slot["uncertain"] += 1
-        elif ev.kind == "off_route":  # the walk *is* on the route: relocalize where it is and go on
+        elif ev.kind == "off_route":  # a warning (the walk *is* on the route): the confirmer goes on
             slot["off_route"] += 1
-            old = state["conf"]
-            k = state["offset"] + old.hop_index
-            state["offset"] = k
-            state["conf"] = NodeConfirmer(hops[k:], GraphTracker(hops[k:], step_length=old.tracker.step_length),
-                                          params)
 
     for t_ms, kind, i in timeline:
         c = state["conf"]

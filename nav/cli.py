@@ -333,8 +333,10 @@ def map_nav_replay(map_id: str, rec_id: str,
                    every: float = typer.Option(1.0, help="... every this many seconds."),
                    k: int = typer.Option(None, help="Votes needed (ArrivalParams.k)."),
                    n: int = typer.Option(None, help="... among the last n localizations (ArrivalParams.n)."),
-                   heading_tol: float = typer.Option(None, help="Heading tolerance, degrees."),
-                   confirm_score: float = typer.Option(None, help="Override NAV_LOC_CONFIRM_SCORE."),
+                   heading_tol: float = typer.Option(None, help="Heading tolerance when passing, degrees."),
+                   score: float = typer.Option(None, help="A vote needs this score (ArrivalParams.vote_score) ..."),
+                   margin: float = typer.Option(None, help="... and this lead (ArrivalParams.vote_margin)."),
+                   confirm_score: float = typer.Option(None, help="Override NAV_LOC_CONFIRM_SCORE (nav-api's status)."),
                    confirm_margin: float = typer.Option(None, help="Override NAV_LOC_CONFIRM_MARGIN.")) -> None:
     """Replay a mapping walk as a user navigating its route with the whole live loop: steps -> dead reckoning,
     frames -> localization against the map's references (frames near the walk's own references left out), and the
@@ -348,8 +350,8 @@ def map_nav_replay(map_id: str, rec_id: str,
     _logging()
     store = _map_store()
     params = ArrivalParams()
-    params = replace(params, **{f: v for f, v in (("k", k), ("n", n), ("heading_tol_deg", heading_tol))
-                                if v is not None})
+    params = replace(params, **{f: v for f, v in (("k", k), ("n", n), ("heading_tol_deg", heading_tol),
+                                                  ("vote_score", score), ("vote_margin", margin)) if v is not None})
     th = Thresholds(confirm_score=confirm_score if confirm_score is not None else config.LOC_CONFIRM_SCORE,
                     confirm_margin=confirm_margin if confirm_margin is not None else config.LOC_CONFIRM_MARGIN,
                     lost_score=config.LOC_LOST_SCORE)
@@ -359,8 +361,8 @@ def map_nav_replay(map_id: str, rec_id: str,
         print(f"{rec_id} doesn't walk any edge of {map_id}, or the map has no reference embeddings")
         raise typer.Exit(1)
     print(f"frames {res.frames_used} (+{res.frames_excluded} left out near the walk's own references) · "
-          f"bursts of {burst} every {every:g} s · k={params.k}/n={params.n} · score>={th.confirm_score} "
-          f"margin>={th.confirm_margin}")
+          f"bursts of {burst} every {every:g} s · k={params.k}/n={params.n} · vote: score>={params.vote_score} "
+          f"lead>={params.vote_margin}")
     print(f"{'#':>2} {'to':<24} {'len':>5} {'reached':>8} {'how':<8} {'delay':>6} {'unc':>4} {'off':>4} "
           f"{'score':>6} {'step':>6}")
     for r in res.rows:

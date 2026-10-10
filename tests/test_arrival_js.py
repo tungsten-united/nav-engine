@@ -24,7 +24,8 @@ const det = new A.StepDetector();
 const steps = [];
 s.accel.forEach(([t, ax, ay, az]) => { if (det.update(t, [ax, ay, az])) steps.push(t); });
 const tracker = new A.GraphTracker(s.route, { stepLength: 0.7 });
-const c = new A.NodeConfirmer(s.route, tracker, s.params);
+const nb = Object.fromEntries(Object.entries(s.neighbours).map(([k, v]) => [k, new Set(v)]));
+const c = new A.NodeConfirmer(s.route, tracker, s.params, nb);
 const out = [];
 for (const op of s.ops) {
   let ev = null;
@@ -38,7 +39,9 @@ console.log(JSON.stringify({ steps, events: out, stepLength: tracker.stepLength,
 
 
 def scenario() -> tuple[list, list]:
-    """A walk along route(): far sightings, steps, arrivals, a pass-through, a gap, a manual confirm."""
+    """A walk along route(): a node off the route (a warning) and one next to it (no vote), far sightings, steps,
+    an arrival on scores under nav-api's confirm score and the camera pointed back, a pass-through with nav-api's
+    walked-distance gate closed once, a gap, a manual confirm."""
     ops: list = []
     t = 0.0
 
@@ -54,12 +57,14 @@ def scenario() -> tuple[list, list]:
             t += 0.5
             ops.append(["loc", t, it])
 
+    locs(loc("z"), loc("x"), loc("z"))  # z: off the route (warned once); x: next to b, no vote
     locs(loc("b", "approach", heading=90), loc("b", heading=90))  # b from afar: far votes
     steps(9, 90.0)
-    locs(loc("b", heading=90), loc(None), loc("b", heading=90), loc("b", heading=90))  # arrives at b
+    locs(loc("b", score=0.35, margin=0.08, heading=90), loc(None), loc("b", score=0.35, margin=0.08, heading=270),
+         loc("b", heading=90))  # arrives at b
     steps(8, 180.0)
-    locs(loc("c", "outgoing", toward="d", heading=180), loc("d", heading=180), loc("d", "approach", heading=180),
-         loc("d", heading=180))  # passes c: its outgoing views, then d's
+    locs(loc("c", "outgoing", toward="d", heading=180), loc("d", heading=180, plausible=False),
+         loc("d", "approach", heading=180), loc("d", heading=180))  # passes c: its outgoing views, then d's
     steps(30, 180.0)  # walks far past d without seeing it: uncertain once
     ops.append(["manual", t + 1])
     return ops, [loc_dict(op) for op in ops]
@@ -69,12 +74,15 @@ def loc_dict(op):
     return [op[0], op[1], op[2].model_dump(mode="json")] if op[0] == "loc" else op
 
 
+NEIGHBOURS = {"b": {"x"}, "x": {"b"}}
+
+
 def run_python(ops, accel):
     t, acc = accel
     steps = detect_steps(t, acc)
     hops = route()
     tracker = GraphTracker(hops, step_length=0.7)
-    c = NodeConfirmer(hops, tracker, ArrivalParams())
+    c = NodeConfirmer(hops, tracker, ArrivalParams(), NEIGHBOURS)
     events = []
     for op in ops:
         ev = None
@@ -98,13 +106,14 @@ def test_js_port_matches_python():
     p = ArrivalParams()
     payload = {"route": [h.__dict__ | {"steps": []} for h in route()], "ops": json_ops,
                "accel": np.c_[t, acc].tolist(),
-               "params": {"k": p.k, "n": p.n, "gateP": p.gate_p, "gateSigmas": p.gate_sigmas,
-                          "looseFrac": p.loose_frac, "headingTol": p.heading_tol_deg}}
+               "neighbours": {k: sorted(v) for k, v in NEIGHBOURS.items()},
+               "params": {"k": p.k, "n": p.n, "score": p.vote_score, "margin": p.vote_margin, "gateP": p.gate_p,
+                          "gateSigmas": p.gate_sigmas, "looseFrac": p.loose_frac, "headingTol": p.heading_tol_deg}}
     out = subprocess.run([NODE, "-e", RUNNER, str(JS)], input=json.dumps(payload), capture_output=True, text=True,
                          check=True)
     js = json.loads(out.stdout)
     assert [e[:3] for e in js["events"]] == [e[:3] for e in py["events"]]
-    assert [e[0] for e in py["events"]] == ["arrived", "passed", "uncertain", "manual"]
+    assert [e[0] for e in py["events"]] == ["off_route", "arrived", "passed", "uncertain", "manual"]
     assert js["steps"] == pytest.approx(py["steps"]) and len(py["steps"]) > 10
     assert js["stepLength"] == pytest.approx(py["stepLength"])
     assert (js["expected"], js["done"]) == (py["expected"], py["done"])
