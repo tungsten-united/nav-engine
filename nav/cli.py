@@ -98,7 +98,8 @@ def _print_build(result) -> None:
     print(f"  {len(c.candidates)} candidates")
     if m := result.map:
         llm = m.build.llm
-        print(f"map: {len(m.nodes)} nodes, {len(m.edges)} edges  ({llm.model}, {llm.duration_s} s, ${llm.cost_usd or 0:.2f})")
+        print(f"map: {len(m.nodes)} nodes, {len(m.edges)} edges  ({llm.model} {llm.effort or ''}, {llm.duration_s} s, "
+              f"${llm.cost_usd or 0:.2f} at API list price)")
         for w in m.warnings:
             print(f"  warning: {w}")
         print(f"view: /viz/#{m.map_id}")
@@ -118,6 +119,7 @@ def map_setup(transcribe: bool = True) -> None:
 def map_build(place: str = typer.Argument(..., help="Place name as recorded (case-insensitive)."),
               llm: bool = typer.Option(True, help="Run the LLM step; --no-llm stops after selecting candidates."),
               model: str = typer.Option(config.MAP_LLM_MODEL, help="Claude Code model (alias or id)."),
+              effort: str = typer.Option(config.MAP_LLM_EFFORT, help="Claude Code effort: low, medium, high, xhigh, max."),
               language: str = typer.Option(config.MAP_LANGUAGE, help="Language of the map's text."),
               budget: float = typer.Option(config.MAP_LLM_BUDGET_USD, help="Max USD for the Claude Code job."),
               max_candidates: int = typer.Option(60, help="Most frames shown to the LLM."),
@@ -130,13 +132,14 @@ def map_build(place: str = typer.Argument(..., help="Place name as recorded (cas
     result = build_map(place, recordings_root=config.RECORDINGS_DIR, maps_root=config.MAPS_DIR,
                        cache_root=config.CACHE_DIR, params=SelectParams(max_candidates=max_candidates),
                        embed_model=config.EMBED_MODEL, transcribe_model=config.TRANSCRIBE_MODEL if transcribe else None,
-                       llm_model=model, language=language, budget_usd=budget, run_llm=llm)
+                       llm_model=model, language=language, budget_usd=budget, run_llm=llm, effort=effort)
     _print_build(result)
 
 
 @maps.command("llm")
 def map_llm(map_id: str, build_id: str = typer.Argument(None, help="Default: the latest build."),
-            model: str = typer.Option(config.MAP_LLM_MODEL), language: str = typer.Option(config.MAP_LANGUAGE),
+            model: str = typer.Option(config.MAP_LLM_MODEL), effort: str = typer.Option(config.MAP_LLM_EFFORT),
+            language: str = typer.Option(config.MAP_LANGUAGE),
             budget: float = typer.Option(config.MAP_LLM_BUDGET_USD)) -> None:
     """Rerun only the LLM step on an existing build (same candidates), e.g. after changing the prompt."""
     from nav.mapping.build import run_llm_on_build
@@ -144,7 +147,7 @@ def map_llm(map_id: str, build_id: str = typer.Argument(None, help="Default: the
     _logging()
     builds = _map_store().dir(map_id) / "builds"
     build_dir = builds / build_id if build_id else max(builds.glob("*/candidates.json")).parent
-    _print_build(run_llm_on_build(build_dir, llm_model=model, language=language, budget_usd=budget))
+    _print_build(run_llm_on_build(build_dir, llm_model=model, language=language, budget_usd=budget, effort=effort))
 
 
 @maps.command("refinish")

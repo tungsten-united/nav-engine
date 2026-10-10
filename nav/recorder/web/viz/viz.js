@@ -252,6 +252,7 @@ function pinCard() {
         h("span", { class: `chip ${n.confidence}` }, `${n.confidence} confidence`), n.floor && h("span", { class: "chip" }, `floor ${n.floor}`),
         h("span", { class: "chip" }, n.id)),
       h("p", {}, n.description), ...items("Landmarks", n.landmarks), ...items("Hazards", n.hazards, "hazards"),
+      ...items("Visual cues (sighted helpers, camera)", n.visual_cues, "visual"),
       h("h4", {}, `Seen in ${recs.length} walk${recs.length === 1 ? "" : "s"}`),
       h("dl", { class: "kv" }, recs.map((r) => [h("dt", {}, h("a", { href: `/dash/#${r}` }, r)),
         h("dd", {}, n.evidence.filter((e) => e.rec_id === r).map((e) => fmtT(e.t_ms)).join(", "))])),
@@ -266,6 +267,7 @@ function pinCard() {
     h("div", { class: "instruction" }, e.instruction),
     e.reverse_instruction && [h("h4", {}, `Back: ${b.name} → ${a.name}`), h("div", { class: "instruction" }, e.reverse_instruction)],
     ...items("Along the way", e.landmarks), ...items("Hazards", e.hazards, "hazards"),
+    ...items("Visual cues (sighted helpers, camera)", e.visual_cues, "visual"),
     e.candidates.length ? frames(e.candidates) : null);
 }
 
@@ -332,7 +334,7 @@ function renderPanel() {
       h("dt", {}, "Built"), h("dd", {}, `${fmtDate(b.built_at_utc)} · ${b.build_id}`),
       h("dt", {}, "Walks"), h("dd", {}, m.recordings.map((r) => [h("a", { href: `/dash/#${r}` }, r), " "])),
       h("dt", {}, "Candidates"), h("dd", {}, `${b.candidates} frames shown to the LLM`),
-      h("dt", {}, "LLM"), h("dd", {}, `${b.llm.model} via ${b.llm.backend.replace("_", " ")}` + (b.llm.cost_usd != null ? ` · $${b.llm.cost_usd.toFixed(2)}` : "") + (b.llm.duration_s ? ` · ${Math.round(b.llm.duration_s)} s` : "")),
+      h("dt", {}, "LLM"), h("dd", {}, `${b.llm.model}${b.llm.effort ? ` (${b.llm.effort} effort)` : ""} via ${b.llm.backend.replace("_", " ")}` + (b.llm.cost_usd != null ? ` · $${b.llm.cost_usd.toFixed(2)} at API list price` : "") + (b.llm.duration_s ? ` · ${Math.round(b.llm.duration_s)} s` : "")),
       h("dt", {}, "Embeddings"), h("dd", {}, `${b.embed_model}${b.embed_dim ? ` · ${b.embed_dim}-d` : ""}`),
       h("dt", {}, "Voice"), h("dd", {}, b.transcribe_model || "not transcribed"),
       h("dt", {}, "Files"), h("dd", {}, ["candidates.json", "job/prompt.md", "job/claude.json"].map((f) => [h("a", { href: frameUrl(`builds/${b.build_id}/${f}`) }, f), " "])))

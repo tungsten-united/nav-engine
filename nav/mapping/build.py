@@ -9,6 +9,7 @@
 
 import json
 import logging
+import re
 import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -119,11 +120,35 @@ def select_candidates(place: str, preps: list[Prepared], p: SelectParams, embed_
     return cset
 
 
+# Words that only make sense to someone who can see. Spoken fields shouldn't need them (visual_cues is for that).
+VISUAL_WORDS = re.compile(
+    r"\b(see|sees|seen|seeing|visible|look|looks|looking|appear|appears|colou?r(?:s|ful|ed)?|red|yellow|green|blue|"
+    r"white|black|grey|gray|pink|orange|purple|brown|painted|mural|bright|dim|dark|sign|signs|signage|screen|"
+    r"projection|logo|letters|lit)\b", re.IGNORECASE)
+
+
+def visual_word_warnings(draft: MapDraft) -> list[str]:
+    """One warning per node/edge (and the summary) whose spoken text uses visual words."""
+    out = []
+
+    def check(owner: str, texts: list[str | None]) -> None:
+        words = sorted({w.lower() for t in texts if t for w in VISUAL_WORDS.findall(t)})
+        if words:
+            out.append(f"{owner} uses visual words in spoken text: {', '.join(words)}")
+
+    check("summary", [draft.summary])
+    for n in draft.nodes:
+        check(f"node {n.id}", [n.description, *n.landmarks])
+    for e in draft.edges:
+        check(f"edge {e.id}", [e.instruction, e.reverse_instruction, *e.landmarks])
+    return out
+
+
 def finish_map(draft: MapDraft, cset: CandidateSet, build: BuildInfo, build_rel: str,
                tracks: dict[str, list] | None = None) -> PlaceMap:
     """Check the draft against the candidates and add what code knows: evidence, positions, measured distances,
     and (given the walks' dead-reckoned tracks) the walked path of each edge."""
-    warnings: list[str] = []
+    warnings: list[str] = visual_word_warnings(draft)
     cands = {c.id: c for c in cset.candidates}
 
     def known(owner: str, ids: list[str]) -> list[str]:
@@ -256,7 +281,7 @@ def _measured(a: PlaceNode, b: PlaceNode, cands: dict[str, Candidate]) -> float 
 
 def build_map(place: str, *, recordings_root: Path, maps_root: Path, cache_root: Path, params: SelectParams,
               embed_model: str, transcribe_model: str | None, llm_model: str, language: str, budget_usd: float,
-              run_llm: bool = True) -> BuildResult:
+              run_llm: bool = True, effort: str = "medium") -> BuildResult:
     rec_dirs = recordings_for(recordings_root, place)
     if not rec_dirs:
         raise ValueError(f"no finished recordings with video for place {place!r}")
@@ -271,15 +296,16 @@ def build_map(place: str, *, recordings_root: Path, maps_root: Path, cache_root:
     log.info("%s: %d recordings -> %d candidates in %s", place, len(preps), len(cset.candidates), build_dir)
     if not run_llm:
         return BuildResult(build_dir, cset, None)
-    return run_llm_on_build(build_dir, llm_model=llm_model, language=language, budget_usd=budget_usd)
+    return run_llm_on_build(build_dir, llm_model=llm_model, language=language, budget_usd=budget_usd, effort=effort)
 
 
-def run_llm_on_build(build_dir: Path, *, llm_model: str, language: str, budget_usd: float) -> BuildResult:
+def run_llm_on_build(build_dir: Path, *, llm_model: str, language: str, budget_usd: float,
+                     effort: str = "medium") -> BuildResult:
     """LLM + finish for a build folder that has candidates.json; publishes its map as the place's map.json."""
     from nav.mapping.llm import run_claude_code
 
     cset = CandidateSet.model_validate_json((build_dir / "candidates.json").read_text())
-    draft, run = run_claude_code(build_dir, cset.place, language, llm_model, budget_usd)
+    draft, run = run_claude_code(build_dir, cset.place, language, llm_model, budget_usd, effort)
     return publish(build_dir, cset, draft, run)
 
 
@@ -302,7 +328,8 @@ def refinish_build(build_dir: Path) -> BuildResult:
     draft, run = parse_claude_result(build_dir / "job" / "claude.json")
     old = build_dir / "map.json"
     if old.is_file():  # keep the original duration (the saved result doesn't have wall-clock time)
-        run.duration_s = PlaceMap.model_validate_json(old.read_text()).build.llm.duration_s
+        prev = PlaceMap.model_validate_json(old.read_text()).build.llm
+        run.duration_s, run.effort = prev.duration_s, prev.effort
     return publish(build_dir, cset, draft, run)
 
 

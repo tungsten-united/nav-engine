@@ -162,9 +162,9 @@ def candidate_set() -> CandidateSet:
 
 def draft(**over) -> MapDraft:
     node = lambda i, c: {"id": i, "name": i, "kind": "room", "description": "", "landmarks": [], "hazards": [],
-                         "floor": None, "candidates": c, "confidence": "high"}
+                         "visual_cues": [], "floor": None, "candidates": c, "confidence": "high"}
     edge = lambda i, a, b: {"id": i, "source": a, "target": b, "kind": "walk", "bidirectional": True, "distance_m": 8,
-                            "instruction": "go", "reverse_instruction": "back", "landmarks": [], "hazards": [],
+                            "instruction": "go", "reverse_instruction": "back", "landmarks": [], "hazards": [], "visual_cues": [],
                             "candidates": [], "confidence": "medium"}
     d = {"place": "Test", "language": "en", "summary": "s", "notes": [],
          "nodes": [node("n1", ["c01"]), node("n2", ["c02", "c99"])],
@@ -213,6 +213,7 @@ def test_llm_job_with_fake_claude(tmp_path, monkeypatch):
     assert res.map.build.llm.model == "claude-x" and res.map.build.llm.cost_usd == 0.5
     args = (build / "job" / "args.txt").read_text()
     assert "--json-schema" in args and "--tools Read,Glob" in args and "--safe-mode" in args
+    assert "--effort medium" in args and res.map.build.llm.effort == "medium"
     assert "Spanish" in (build / "job" / "stdin.txt").read_text()
     assert json.loads((build / "job" / "schema.json").read_text()) == draft_json_schema()
     published = json.loads((tmp_path / "maps" / "test" / "map.json").read_text())
@@ -247,3 +248,35 @@ def test_llm_job_failure_is_reported(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     with pytest.raises(LlmError, match="error_max_budget_usd"):
         run_llm_on_build(build, llm_model="opus", language="en", budget_usd=0.01)
+
+
+def test_visual_words_in_spoken_text_are_flagged():
+    from nav.mapping.build import visual_word_warnings
+
+    d = draft()
+    d.nodes[0].description = "A white counter under a big yellow sign; you will see the screen."
+    d.nodes[0].visual_cues = ["red fire cabinet"]  # visual detail belongs here: not flagged
+    d.nodes[1].description = "A humming fridge against the wall, the floor turns to carpet."
+    d.edges[0].instruction = "Walk 5 m with the wall on your left until the floor turns to carpet."
+    warns = visual_word_warnings(d)
+    assert warns == ["node n1 uses visual words in spoken text: screen, see, sign, white, yellow"]
+    m = finish_map(d, candidate_set(), BUILD, "builds/x")
+    assert warns[0] in m.warnings
+    assert m.nodes[0].visual_cues == ["red fire cabinet"]
+
+
+def test_old_maps_and_answers_without_visual_cues_still_load(tmp_path):
+    from nav.mapping.llm import parse_claude_result
+    from nav.schemas.map import PlaceMap
+
+    old = draft().model_dump()
+    for x in old["nodes"] + old["edges"]:
+        del x["visual_cues"]
+    path = tmp_path / "claude.json"
+    path.write_text(json.dumps({"subtype": "success", "is_error": False, "structured_output": old}))
+    d, _ = parse_claude_result(path)
+    assert d.nodes[0].visual_cues == []
+    stored = finish_map(d, candidate_set(), BUILD, "b").model_dump()
+    for x in stored["nodes"] + stored["edges"]:
+        del x["visual_cues"]
+    assert PlaceMap.model_validate(stored).nodes[0].visual_cues == []

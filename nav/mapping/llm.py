@@ -53,9 +53,16 @@ people. The app will use it to tell people where they are and to give spoken, st
 - `distance_m` on an edge is the sum of `from_prev_m` between its nodes along a walk, rounded to the metre. Step
   counting misses slow steps, so it is approximate; null if unknown. Use `turn_deg` for left/right, but trust the
   photos where they disagree (the walker may have panned the phone).
-- Instructions are egocentric (ahead, left, right, behind), short and concrete: direction, roughly how far, what
-  you pass, what you can hear or feel (floor changes, door frames, the noise of a kitchen), and how you know you
-  have arrived. Mention hazards: steps, cables on the floor, low tables, glass doors.
+- Everything the app will say (`summary`, `description`, `landmarks`, `instruction`, `reverse_instruction`) is for
+  someone who cannot see, so it has no visual detail: no colours, signs, screens, murals, lights, "you will see" or
+  "looks like". Describe what a cane, feet or hands find (walls and edges you can trail, counters, door frames,
+  floor changes from concrete to carpet, a step up), what you hear (echo of a big hall, a humming fridge, the noise
+  of people working, a kitchen) and smell, distances and body directions. Sounds and smells are inferred from photos:
+  say "likely" where it is a guess. Put the visual details, which help sighted helpers and camera-based localization,
+  in `visual_cues` instead.
+- Instructions are egocentric (ahead, left, right, behind; "turn so the wall is on your left"), short and concrete:
+  direction, roughly how far, what you pass and can touch or hear, and how you know you have arrived. Mention hazards:
+  steps, cables on the floor, low tables, glass doors.
 - People, bags, laptops and other things that move are not landmarks. Fixed furniture, counters, walls, pillars,
   screens, signs and floor changes are.
 - Names are what the app will say: 1-4 words, unique, using the walker's words where possible. Put the details in
@@ -77,7 +84,7 @@ class LlmError(RuntimeError):
 
 
 def run_claude_code(build_dir: Path, place: str, language: str, model: str, budget_usd: float,
-                    timeout_s: int = 1800) -> tuple[MapDraft, LlmRun]:
+                    effort: str = "medium", timeout_s: int = 1800) -> tuple[MapDraft, LlmRun]:
     """Run the job in build_dir (which holds candidates.json and frames/); job files go to build_dir/job/."""
     claude = shutil.which("claude")
     if not claude:
@@ -88,11 +95,11 @@ def run_claude_code(build_dir: Path, place: str, language: str, model: str, budg
     schema = json.dumps(draft_json_schema())
     (job / "prompt.md").write_text(prompt)
     (job / "schema.json").write_text(json.dumps(draft_json_schema(), indent=2))
-    cmd = [claude, "-p", "--output-format", "json", "--json-schema", schema, "--model", model,
+    cmd = [claude, "-p", "--output-format", "json", "--json-schema", schema, "--model", model, "--effort", effort,
            "--tools", "Read,Glob", "--permission-mode", "dontAsk", "--safe-mode", "--strict-mcp-config",
            "--no-session-persistence", "--max-budget-usd", str(budget_usd)]
     (job / "command.txt").write_text(" ".join(c if c != schema else "<schema.json>" for c in cmd) + "\n")
-    log.info("running Claude Code (%s) in %s", model, build_dir)
+    log.info("running Claude Code (%s, %s effort) in %s", model, effort, build_dir)
     started = time.monotonic()
     with (job / "claude.log").open("w") as err:
         proc = subprocess.run(cmd, input=prompt, cwd=build_dir, stdout=subprocess.PIPE, stderr=err, text=True,
@@ -102,7 +109,7 @@ def run_claude_code(build_dir: Path, place: str, language: str, model: str, budg
     if not proc.stdout.strip():
         raise LlmError(f"Claude Code exited {proc.returncode} without a result; see {job / 'claude.log'}")
     draft, run = parse_claude_result(job / "claude.json", model)
-    run.duration_s = round(duration, 1)
+    run.duration_s, run.effort = round(duration, 1), effort
     return draft, run
 
 
@@ -114,7 +121,10 @@ def parse_claude_result(path: Path, model: str = "?") -> tuple[MapDraft, LlmRun]
         raise LlmError(f"no JSON result in {path}; see claude.log next to it")
     if result.get("is_error") or result.get("subtype") != "success" or result.get("structured_output") is None:
         raise LlmError(f"Claude Code failed ({result.get('subtype')}): {str(result.get('result'))[:500]}")
-    draft = MapDraft.model_validate(result["structured_output"])
+    out = result["structured_output"]
+    for item in out.get("nodes", []) + out.get("edges", []):
+        item.setdefault("visual_cues", [])  # answers saved before the field existed
+    draft = MapDraft.model_validate(out)
     usage = result.get("modelUsage") or {}
     main_model = max(usage, key=lambda k: usage[k].get("costUSD") or 0) if usage else model
     return draft, LlmRun(backend="claude_code", model=main_model, cost_usd=result.get("total_cost_usd"),

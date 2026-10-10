@@ -141,16 +141,19 @@ uv run nav map pull [<map_id> …]
    near-identical frames (cosine ≥ 0.92) across walks and revisits into one candidate with several views, and flag
    look-alikes (≥ 0.80) as possibly the same place; at most 60. Thresholds: `SelectParams` in
    [`nav/mapping/select.py`](nav/mapping/select.py).
-3. **LLM**: a headless **Claude Code** job runs in the build folder with read-only tools (`Read`, `Glob`), opens
+3. **LLM**: a headless **Claude Code** job (Opus, medium effort) runs in the build folder with read-only tools (`Read`, `Glob`), opens
    `candidates.json` and every frame, and must answer in the `MapDraft` JSON Schema (`claude -p --json-schema`).
-   The prompt is in [`nav/mapping/llm.py`](nav/mapping/llm.py). The schema is written to also be valid for the
+   Everything the app will say (summary, descriptions, landmarks, instructions) is written without visual detail,
+   for someone who cannot see; colours, signs, screens and the like go into `visual_cues`, for sighted helpers and
+   camera-based localization. The prompt is in [`nav/mapping/llm.py`](nav/mapping/llm.py). The schema is written to also be valid for the
    Anthropic structured-outputs API (closed objects, all fields required, no numeric/length constraints), which can
    replace the job later.
-4. **Finish**: check node, edge and candidate ids (problems go into `warnings`), attach evidence (recording, time,
+4. **Finish**: check node, edge and candidate ids and flag visual words left in spoken text (both go into
+   `warnings`), attach evidence (recording, time,
    frame) to every node, place nodes at their dead-reckoned position (walks aligned through shared nodes), measure
    each edge's walked distance and keep its walked path for drawing.
 
-Defaults can be changed with `NAV_EMBED_MODEL`, `NAV_TRANSCRIBE_MODEL`, `NAV_MAP_LLM_MODEL` (default `opus`),
+Defaults can be changed with `NAV_EMBED_MODEL`, `NAV_TRANSCRIBE_MODEL`, `NAV_MAP_LLM_MODEL` (default `opus`), `NAV_MAP_LLM_EFFORT` (default `medium`),
 `NAV_MAP_LANGUAGE` (default `en`), `NAV_MAP_LLM_BUDGET_USD` (default 5) and `NAV_GCS_MAPS_URL`. A build of a
 2-minute walk takes about 15 s of preprocessing on the GPU plus 4 minutes and about $1 of Claude Code.
 

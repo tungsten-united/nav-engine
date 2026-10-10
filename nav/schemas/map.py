@@ -67,10 +67,14 @@ class MapNode(_Closed):
     name: str = Field(description='Short spoken label, 1-4 words, unique in the map: "Main entrance", "Kitchen", '
                                   '"Stage", "Mural tables".')
     kind: NodeKind
-    description: str = Field(description="What is here, written for a blind person: layout, size, what is on each "
-                                         "side, floor surface, sounds, light. 1-3 sentences.")
-    landmarks: list[str] = Field(description="Cues that confirm you have arrived: tactile, audible or very visible.")
+    description: str = Field(description="What is here, for a blind person, without visual detail: layout and size, "
+                                         "what is on each side within reach, floor surface, sounds, smells, "
+                                         "temperature. 1-3 sentences.")
+    landmarks: list[str] = Field(description="Non-visual cues that confirm you have arrived: things a cane, feet or "
+                                             "hands can find, sounds, smells, floor changes.")
     hazards: list[str] = Field(description="Obstacles or dangers here: steps, glass doors, low furniture ...")
+    visual_cues: list[str] = Field(description="What a sighted helper or a camera would recognise here: colours, "
+                                               "signs, screens, murals, lights. Kept apart from what is spoken.")
     floor: str | None = Field(description='Floor or level if known ("ground", "1", "-1"), else null.')
     candidates: list[str] = Field(description="Ids of the candidate frames that show this node (at least one).")
     confidence: Confidence
@@ -84,11 +88,12 @@ class MapEdge(_Closed):
     bidirectional: bool = Field(description="True if it can be walked both ways (almost always).")
     distance_m: float | None = Field(description="Walking distance in metres from the motion data, or null.")
     instruction: str = Field(description="How to get from source to target, egocentric and step by step, as you "
-                                         "would tell a blind person: direction, distance, what you pass, "
-                                         "what tells you that you have arrived.")
+                                         "would tell a blind person, without visual detail: direction, distance, "
+                                         "what you pass and can touch or hear, how you know you have arrived.")
     reverse_instruction: str | None = Field(description="Same for target -> source, or null if not bidirectional.")
-    landmarks: list[str] = Field(description="Things passed along the way that help to keep track.")
+    landmarks: list[str] = Field(description="Non-visual things passed along the way that help to keep track.")
     hazards: list[str]
+    visual_cues: list[str] = Field(description="What a sighted helper or a camera would recognise along the way.")
     candidates: list[str] = Field(description="Ids of candidate frames seen while walking this edge.")
     confidence: Confidence
 
@@ -96,8 +101,8 @@ class MapEdge(_Closed):
 class MapDraft(_Closed):
     place: str
     language: str = Field(description='Language of all the text in the map, BCP 47 ("en", "es").')
-    summary: str = Field(description="Overview of the place for a blind person: shape, main areas, how they connect, "
-                                     "where the entrances are. 2-5 sentences.")
+    summary: str = Field(description="Overview of the place for a blind person, without visual detail: shape and "
+                                     "size, main areas, how they connect, where the entrances are. 2-5 sentences.")
     nodes: list[MapNode]
     edges: list[MapEdge]
     notes: list[str] = Field(description="Uncertainties, places that were merged or left apart and why, "
@@ -192,12 +197,14 @@ class Point(BaseModel):
 
 class PlaceNode(MapNode):
     model_config = ConfigDict(extra="ignore")
+    visual_cues: list[str] = []  # default: maps built before the field existed
     evidence: list[Evidence] = []
     position: Point | None = None  # dead-reckoned, recordings aligned through shared nodes; approximate
 
 
 class PlaceEdge(MapEdge):
     model_config = ConfigDict(extra="ignore")
+    visual_cues: list[str] = []
     measured_distance_m: float | None = None  # walked between the two nodes' frames (centre to centre) in one recording
     path: list[Point] = []  # the dead-reckoned walk between the two nodes, for drawing (same frame as positions)
     walked_at_ms: float | None = None  # when the walk that `path` comes from left the source (recording clock)
@@ -207,6 +214,7 @@ class PlaceEdge(MapEdge):
 class LlmRun(BaseModel):
     backend: Literal["claude_code", "anthropic_api"]
     model: str
+    effort: str | None = None
     cost_usd: float | None = None
     duration_s: float | None = None
     session_id: str | None = None
