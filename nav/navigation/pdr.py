@@ -136,7 +136,8 @@ class GraphTracker:
         if node_id != self.hop.target:
             raise ValueError(f"expected {self.hop.target}, got {node_id}")
         if self._steps_on_hop >= 5 and self.progress_m > 0 and self.hop.length_m:
-            implied = float(np.clip(self.step_length * self.hop.length_m / self.progress_m, 0.4, 1.0))
+            # slow walks while filming measured ~0.3 m per step (Itnig), so the floor is 0.25 m
+            implied = float(np.clip(self.step_length * self.hop.length_m / self.progress_m, 0.25, 1.0))
             self.step_length = 0.7 * self.step_length + 0.3 * implied
         self.history.append((node_id, self._steps_on_hop, self.progress_m))
         self.hop_index = min(self.hop_index + 1, len(self.route) - 1)
@@ -188,7 +189,10 @@ def user_steps(rec_dir: Path, step_scale: float = 1.0) -> np.ndarray:
 
 
 def map_step_length(pmap: PlaceMap) -> float:
-    return pmap.frame.step_length_m if pmap.frame and pmap.frame.step_length_m else 0.7
+    """The tracker's starting step length: the map's live one (metres per step of this module's causal detector),
+    else the mapping pipeline's (per step of its band-pass detector, which counts more), else 0.7 m."""
+    f = pmap.frame
+    return (f.live_step_length_m or f.step_length_m or 0.7) if f else 0.7
 
 
 def route_start_ms(pmap: PlaceMap, rec_id: str, route: list[tuple[Hop, float]]) -> float:

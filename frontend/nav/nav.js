@@ -6,6 +6,7 @@
 // and checkpoint recognition.
 "use strict";
 
+const BURST = 2;  // frames per /localize call while following a route (every 1 s by default): one confirmer vote
 const N = { map: null, names: {}, route: null, hop: 0, confirmed: null, busy: false, timer: null,
             confirmer: null, steps: new ArrivalNav.StepDetector() };
 const zoom = zoomer();
@@ -74,7 +75,7 @@ function startConfirmer() {
   const hops = N.route?.found ? N.route.hops.slice(N.hop) : [];
   const live = Frames.kind === "camera";
   const tracker = live && hops.length
-    ? new ArrivalNav.GraphTracker(hops, { stepLength: N.map?.frame?.step_length_m || 0.7 }) : null;
+    ? new ArrivalNav.GraphTracker(hops, { stepLength: N.map?.frame?.live_step_length_m || N.map?.frame?.step_length_m || 0.7 }) : null;
   N.confirmer = new ArrivalNav.NodeConfirmer(hops, tracker);
   showPdr();
 }
@@ -181,7 +182,7 @@ async function run() {
   $("#once").disabled = true;
   $("#error").textContent = "";
   try {
-    const blobs = await Frames.burst(1);
+    const blobs = await Frames.burst(BURST);
     const hop = current();
     const res = await localize(N.map.map_id, blobs, {
       previous: N.confirmed, expected: hop?.target || null, heading: Frames.heading(), topK: 3 });
@@ -198,7 +199,8 @@ async function run() {
     }
     $("#result").replaceChildren(resultCard(res, { names: N.names, compact: true, onZoom: zoom }));
     History.render($("#history"), N.names);
-    const steady = History.steady();
+    const auto = $("#autoconfirm").checked;  // with auto-confirm the confirmer's votes (#pdr) are the temporal check
+    const steady = auto ? null : History.steady();
     $("#steady").textContent = steady ? `steady: ${N.names[steady]}` : "";
     if (hop && res.status === "confirmed" && res.best === hop.target) {
       $("#arrive").textContent = `${N.names[hop.target]} recognised${steady === hop.target ? " (steady)" : ""}: confirm arrival when you are there.`;

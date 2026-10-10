@@ -160,21 +160,28 @@ class Fused:
     track: MotionTrack
     video_share: float  # fraction of the walked metres measured by the floor odometry
     step_length_m: float | None  # video metres / steps where both measured the walking; None if too few steps
+    live_step_length_m: float | None = None  # ... / the causal (phone) detector's steps; None without them
+
+
+def _per_step(segments: list[FloorSegment], steps_ms: np.ndarray, min_steps: int) -> float | None:
+    n = int(sum(((steps_ms >= s.t0_ms) & (steps_ms < s.t1_ms)).sum() for s in segments))
+    return float(np.clip(sum(s.distance_m for s in segments) / n, 0.25, 1.0)) if n >= min_steps else None
 
 
 def fuse(track: MotionTrack, segments: list[FloorSegment] | None, step_length_m: float,
-         min_steps: int = 20) -> Fused:
+         min_steps: int = 20, live_steps_ms: np.ndarray | None = None) -> Fused:
     """The track with walked_m and the dead-reckoned x/y from the floor odometry where it is valid, steps x step
-    length elsewhere. The step length is re-estimated from the video (used where the floor can't be seen, and by
-    the live tracker as its starting value)."""
+    length elsewhere. The step length is re-estimated from the video (used where the floor can't be seen).
+    `live_steps_ms`: the causal detector's steps (navigation/pdr.detect_steps, what the phone counts); video metres
+    per one of those is the live tracker's starting step length. The two detectors count differently (Itnig: 153
+    band-pass vs ~97 causal), so each needs its own length."""
     if not segments:
         return Fused(replace(track, distance_source="steps"), 0.0, None)
     steps = track.step_t_ms
     valid = [s for s in segments if s.valid]
     walking = [s for s in valid if track.moving[track.index((s.t0_ms + s.t1_ms) / 2)] and s.distance_m >= JITTER_M]
-    n_steps = int(sum(((steps >= s.t0_ms) & (steps < s.t1_ms)).sum() for s in walking))
-    est = (float(np.clip(sum(s.distance_m for s in walking) / n_steps, 0.25, 1.0)) if n_steps >= min_steps
-           else None)
+    est = _per_step(walking, steps, min_steps)
+    live = None if live_steps_ms is None else _per_step(walking, np.asarray(live_steps_ms, float), min_steps)
     step_len = est or step_length_m
 
     # Per-grid-sample increments: video where valid, else the steps' own increments rescaled to step_len.
@@ -196,4 +203,5 @@ def fuse(track: MotionTrack, segments: list[FloorSegment] | None, step_length_m:
     share = video_m / walked[-1] if walked[-1] > 0 else 0.0
     share = round(float(share), 3)
     return Fused(replace(track, walked_m=walked, x_m=x, y_m=y, distance_source="video" if share >= 0.5 else "steps",
-                         step_length_m=round(step_len, 3), video_share=share), share, est)
+                         step_length_m=round(step_len, 3), video_share=share,
+                         live_step_length_m=None if live is None else round(live, 3)), share, est, live)

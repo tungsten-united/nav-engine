@@ -30,9 +30,12 @@ Two services, two base URLs (both set in `config.js`; OpenAPI at `/docs` on each
   `nav/navigation/pdr.py` and `arrival.py`). Feed it each `/localize` result (`onLocalization`), each step from
   DeviceMotion (`onStep` with the heading in the map frame: compass − `map.frame.heading_zero_abs_deg`) and the
   user's "I'm here" (`confirmManual`); send its `previous` / `expected` with the next `/localize`. It returns
-  arrived / passed / uncertain / off_route events. Route hops carry `arrival_deg` for its heading check. The `/nav/`
-  page's "auto-confirm" uses it (dead reckoning only with the camera as source: a recording's video has no live
-  steps).
+  arrived / passed / uncertain / off_route events. Route hops carry `arrival_deg` for its heading check. Start the
+  tracker from `map.frame.live_step_length_m` (metres per step of this detector; `step_length_m` is per step of the
+  map pipeline's, which counts more). Send a burst of 2 frames every second: each burst is one vote, 2 of the last
+  3 confirm (measured on Itnig: it confirms far more nodes than 3 frames every 2 s, with no false ones). The
+  `/nav/` page's "auto-confirm" uses it (dead reckoning only with the camera as source: a recording's video has no
+  live steps).
 
 ## Running these pages
 - Hosted: map-api serves them at `/`, `/dash/`, `/viz/`, `/loc/` and `/nav/`, and so does helium-nav (behind

@@ -43,6 +43,9 @@ class MotionTrack:
     distance_source: str = "steps"  # steps | video (floor odometry, odometry.py) | time (video_motion)
     step_length_m: float | None = None  # the step length used (re-estimated from the video when it could be)
     video_share: float = 0.0  # fraction of walked_m measured by the floor odometry
+    # metres per step of the *causal* detector the phone runs (navigation/pdr.StepDetector), measured against the
+    # floor odometry: the live tracker's starting step length (it counts fewer steps than the band-pass above)
+    live_step_length_m: float | None = None
 
     @property
     def heading_kind(self) -> str:

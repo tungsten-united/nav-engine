@@ -104,11 +104,30 @@ def _odometry(rec_dir: Path, m: Manifest, cache: Path, video_start: float, fkey:
         segs = floor_odometry(video, video_start, cal.offset_ms, cal.fov_deg, track, m.holding)
         path.write_text(json.dumps(None if segs is None else [s.as_dict() for s in segs]))
     data = json.loads(path.read_text())
-    fused = fuse(track, None if data is None else [FloorSegment(**d) for d in data], m.step_length_m)
+    fused = fuse(track, None if data is None else [FloorSegment(**d) for d in data], m.step_length_m,
+                 live_steps_ms=_live_steps_ms(rec_dir))
     if data is not None:
-        log.info("%s: walked %.1f m (%.0f%% floor odometry; steps x %.2f m said %.1f m)", m.rec_id,
-                 fused.track.walked_m[-1], 100 * fused.video_share, m.step_length_m, track.walked_m[-1])
+        log.info("%s: walked %.1f m (%.0f%% floor odometry; steps x %.2f m said %.1f m); live step %s m", m.rec_id,
+                 fused.track.walked_m[-1], 100 * fused.video_share, m.step_length_m, track.walked_m[-1],
+                 fused.live_step_length_m)
     return fused.track
+
+
+def _live_steps_ms(rec_dir: Path) -> np.ndarray | None:
+    """The steps the phone would count (nav/navigation/pdr.py's causal detector) on this walk's IMU, sensor clock."""
+    import pyarrow.parquet as pq
+
+    from nav.navigation.pdr import detect_steps
+
+    path = rec_dir / "imu.parquet"
+    if not path.is_file():
+        return None
+    imu = pq.read_table(path).to_pydict()
+    if not all(k in imu for k in ("t_ms", "ax", "ay", "az")):
+        return None
+    acc = np.stack([np.asarray([np.nan if v is None else v for v in imu[k]], float) for k in ("ax", "ay", "az")],
+                   axis=1)
+    return detect_steps(np.asarray(imu["t_ms"], float) / 1000, acc) * 1000
 
 
 def load_walk(rec_dir: Path, cache_root: Path, p: SelectParams) -> Walk:

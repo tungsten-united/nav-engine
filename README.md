@@ -147,7 +147,7 @@ uv run nav map review itnig           # write an editable review file; --apply <
 uv run nav map measure itnig "Main entrance" "Drinks area" 7 --sigma 0.3   # a distance measured on site: sets the scale
 uv run nav map route itnig "Main entrance" Stage [--trust verified|observed|any]
 uv run nav map pdr-replay itnig <rec_id> [--step-scale 0.85]  # replay a walk through the live dead-reckoning tracker
-uv run nav map nav-replay itnig <rec_id> [--step-scale 0.85] [--k 3 --n 4]  # ... through the whole live loop
+uv run nav map nav-replay itnig <rec_id> [--step-scale 0.85] [--burst 2 --every 1 --k 2 --n 3]  # ... the whole live loop
 uv run nav map schema [--out docs/map.schema.json]            # JSON Schema of the published map, for nav-api's callers
 uv run nav rec import walk.mp4 --place "Itnig"                # a recording from a video alone (no sensors)
 uv run nav map list | show <map_id>
@@ -262,9 +262,16 @@ direction. It also reports `uncertain` (walked past without recognising it) and 
 recognised); nothing is ever skipped, and a manual confirmation is always accepted.
 [`frontend/nav/arrival.js`](frontend/nav/arrival.js) is its 1:1 JS port (with the step detector and tracker; a test
 checks they agree), used by the `/nav/` debugger's "auto-confirm". `nav map nav-replay` plays a walk back through the
-whole loop (steps → tracker, video at 2 fps → localization → confirmer; frames near the walk's own references left
-out). Itnig, its own mapping walk: 6 of 9 nodes confirmed by the camera, 0 false, 0 off-route alarms; the misses
-are two spots 3 m apart that look alike (Corridor end / Kitchen) and a kitchen scoring under 0.6.
+whole loop (steps → tracker, the video in bursts of 2 frames every second → localization → confirmer; frames near
+the walk's own references left out). The app sends the same: a burst of 2 frames every second, each burst one
+vote, 2 of the last 3 to confirm; how often a vote comes matters more than frames per vote (Itnig: 2 every 1 s
+confirmed 7/9 nodes, 3 every 1 s 6/9, single frames every 0.5 s 5/9, 3 every 2 s 3/9; all with 0 false and 0
+off-route alarms). On Itnig's own mapping walk (odometry distances, the 7 m measurement applied) that is 7 of 9
+nodes confirmed by the camera, a median 2.5 s after getting there, 0 false (6 of 9 for a user with 15% shorter
+steps and a 10° compass bias); the misses are two spots 3 m apart that look alike (Corridor end / Kitchen) and a
+kitchen scoring under 0.6. The tracker starts from the map's `frame.live_step_length_m`: metres per step of the
+causal detector the phone runs (video metres ÷ its steps), not `step_length_m`, which is per step of the map
+pipeline's band-pass detector (it counts more: Itnig 0.33 m vs 0.25 m).
 Design: [`docs/main_idea.md`](docs/main_idea.md), [`docs/navigation_stack.md`](docs/navigation_stack.md)
 (by LPA); the map's JSON Schema for nav-api's callers is [`docs/map.schema.json`](docs/map.schema.json) (also
 `GET /api/v1/schema/map`).

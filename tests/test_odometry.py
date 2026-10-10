@@ -102,3 +102,32 @@ def test_measured_distances_rescale_the_published_map():
 
     t = json.loads(json.dumps(template(raw, review), default=str))
     assert from_template(t).distances == review.distances
+
+
+def test_fuse_measures_a_live_step_length_for_the_phones_detector():
+    """The phone's causal detector counts fewer steps than the band-pass one: video metres per *its* step is the live
+    tracker's starting length (MapFrame.live_step_length_m), separate from the pipeline's step_length_m."""
+    track = _walk_track()  # band-pass: a step every 0.5 s while walking (2-18 s), 0.3 m of video each
+    segs = [FloorSegment(t0, t0 + 500, 0.3 if 2000 <= t0 < 18000 else 0.03, 1.0, 200)
+            for t0 in np.arange(0, 20000, 500.0)]
+    live_steps = np.arange(2000, 18000, 750.0)  # the causal detector: one step every 0.75 s
+    f = fuse(track, segs, step_length_m=0.7, live_steps_ms=live_steps)
+    assert f.step_length_m == pytest.approx(0.3, abs=0.01)
+    walked = 32 * 0.3  # the walking half-seconds' video metres
+    assert f.live_step_length_m == pytest.approx(walked / len(live_steps), abs=0.001) == f.track.live_step_length_m
+    assert f.live_step_length_m > f.step_length_m  # fewer steps counted -> longer steps
+    assert fuse(track, segs, step_length_m=0.7).live_step_length_m is None  # no IMU steps given
+
+
+def test_the_live_step_length_is_scaled_and_preferred_by_the_tracker():
+    from nav.navigation.pdr import map_step_length
+
+    draft, cset, tracks = lshape()
+    for r in cset.recordings:
+        r.live_step_length_m = 0.5
+    raw = finish_map(draft, cset, BUILD, "builds/b", tracks)
+    assert raw.frame.live_step_length_m == pytest.approx(0.5) and map_step_length(raw) == pytest.approx(0.5)
+    m = apply_review(raw, Review(distances=[MeasuredDistance(between=("n1", "n2"), meters=7.0)]))  # e1: 10 m
+    assert m.frame.live_step_length_m == pytest.approx(0.35) and map_step_length(m) == pytest.approx(0.35)
+    raw.frame.live_step_length_m = None  # a map built before it: the pipeline's step length
+    assert map_step_length(raw) == pytest.approx(raw.frame.step_length_m)

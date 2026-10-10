@@ -136,6 +136,7 @@ def select_candidates(place: str, preps: list[Prepared], p: SelectParams, embed_
         recordings.append(RecordingInfo(
             rec_id=m.rec_id, created_at_utc=m.created_at_utc, duration_s=m.duration_ms and round(m.duration_ms / 1000, 1),
             notes=m.notes, step_length_m=prep.track.step_length_m or m.step_length_m,
+            live_step_length_m=prep.track.live_step_length_m,
             distance=prep.track.distance_source, video_distance_share=prep.track.video_share,
             motion="video" if prep.track.source == "video" else "imu",
             heading=prep.track.heading_kind, fov_deg=prep.calibration.fov_deg,
@@ -263,8 +264,10 @@ def map_frame(recordings: list[RecordingInfo]) -> MapFrame | None:
         return None
     kinds = {r.heading for r in recordings}
     source = "compass" if kinds == {"compass"} else "unknown" if None in kinds else "relative"
+    live = [r.live_step_length_m for r in recordings if r.live_step_length_m]
     return MapFrame(heading_source=source, heading_zero_abs_deg=0.0 if source == "compass" else None,
-                    step_length_m=round(float(np.mean([r.step_length_m for r in recordings])), 2))
+                    step_length_m=round(float(np.mean([r.step_length_m for r in recordings])), 2),
+                    live_step_length_m=round(float(np.mean(live)), 3) if live else None)
 
 
 def _direction(rel_deg: float) -> Direction:
@@ -726,7 +729,7 @@ def _fill_recording_info(cset: CandidateSet, recordings_root: Path | None, cache
     params = SelectParams(**{k: v for k, v in cset.params.items() if k in SelectParams.__dataclass_fields__})
     for r in cset.recordings:
         rec_dir = (recordings_root or config.RECORDINGS_DIR) / r.rec_id
-        if r.heading is not None or not (rec_dir / "manifest.json").is_file():
+        if (r.heading is not None and r.live_step_length_m is not None) or not (rec_dir / "manifest.json").is_file():
             continue
         try:
             walk = load_walk(rec_dir, cache_root or config.CACHE_DIR, params)
@@ -735,6 +738,7 @@ def _fill_recording_info(cset: CandidateSet, recordings_root: Path | None, cache
             continue
         r.heading, r.fov_deg = walk.track.heading_kind, walk.calibration.fov_deg
         r.motion = "video" if walk.track.source == "video" else "imu"
+        r.live_step_length_m = walk.track.live_step_length_m
 
 
 def publish(build_dir: Path, cset: CandidateSet, draft: MapDraft, run, recordings_root: Path | None = None,

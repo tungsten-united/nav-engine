@@ -92,6 +92,15 @@ the live inference host out of it.
   that counts as passing it. Votes from before the gate opened never count (else a place seen from afar adds up to
   an arrival as soon as you get near). Replays need frames *between* the stored 1 fps ones (2 fps from the video):
   excluding the stored frames near the walk's own references leaves almost nothing.
+- Frames to /localize: how often a vote comes matters more than frames per vote. At ~0.5 m/s the user is near a
+  node for seconds; Itnig nav-replay, 2-of-3 votes: 2 frames every 1 s -> 7/9 confirmed by the camera, 3 every 2 s
+  -> 3/9 (0 false in both). Default: bursts of 2 every second.
+- Two step lengths: the map pipeline's band-pass detector (motion.py) counts more steps than the causal one the phone
+  runs (pdr.py): Itnig 153 vs ~97. `MapFrame.step_length_m` is per band-pass step (0.25 m there), so the live
+  tracker starts from `MapFrame.live_step_length_m` (video metres / causal steps, 0.33 m), scaled by measured
+  distances like every other length.
+- `nav map refinish` does not recompute distances: edges' metres come from the candidates' saved `motion`
+  (candidates.json, written by the selection). A map built before odometry needs a new build (or new candidates).
 - Chrome's MP4 MediaRecorder only emits data at keyframes (in practice at stop); WebM honours the timeslice.
   Keep WebM first in `VIDEO_MIMES` and `videoKeyFrameIntervalDuration: 1000`.
 - Cloudflare edge-caches `.js/.css` and the zone forces a 4 h browser TTL. `index.html` is served with
