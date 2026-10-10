@@ -19,7 +19,9 @@ import pyarrow.parquet as pq
 
 from nav.schemas.recording import (
     REC_ID_RE,
+    CameraInfo,
     Counts,
+    DeviceInfo,
     FileInfo,
     FinishRequest,
     ImuSample,
@@ -164,6 +166,26 @@ class RecordingStore:
             m.finish, m.duration_ms, m.status = req, req.duration_ms, "finalizing"
             self._save(m)
             return m
+
+    def import_video(self, video: Path, place: str, notes: str = "", step_length_m: float = 0.7,
+                     holding: str = "handheld_portrait", created_by: str | None = "import") -> Manifest:
+        """A recording from a video file alone (no sensors, voice or tags): the map pipeline takes its heading from
+        the video and guesses distances from time. Goes through the same finalize as a phone upload."""
+        import mimetypes
+
+        info = _probe(video)
+        mime = mimetypes.guess_type(video.name)[0] or "video/mp4"
+        req = RecordingCreate(place=place, notes=notes, holding=holding, step_length_m=step_length_m,
+                              t0_epoch_ms=int(video.stat().st_mtime * 1000),
+                              device=DeviceInfo(user_agent=f"import: {video.name}"),
+                              camera=CameraInfo(width=info["width"] or 0, height=info["height"] or 0, mime=mime))
+        m = self.create(req, created_by)
+        raw = self.root / m.rec_id / "raw" / "video"
+        raw.mkdir(parents=True)
+        shutil.copyfile(video, raw / "000000.bin")
+        self.finish(m.rec_id, FinishRequest(duration_ms=round((info["duration_s"] or 0) * 1000), video_chunks=1,
+                                            sample_batches=0, voice_clips=0))
+        return self.finalize(m.rec_id)
 
     # --- finalize ---------------------------------------------------------------------------------------------
     def finalize(self, rec_id: str) -> Manifest:

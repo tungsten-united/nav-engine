@@ -2,7 +2,8 @@
 
     cache/<rec_id>/
       frames-<key>/NNNNNNN.jpg  sampled frames, named by t_ms
-      frames-<key>.json         [{t_ms, sharpness, brightness, file}]
+      frames-<key>.json         [{t_ms, sharpness, brightness, file}]  (t_ms: video clock, before calibration)
+      calib-<key>.json          sensor-to-video offset, field of view, and the video yaw (calibrate.py)
       emb-<key>.npy             frame embeddings (DINOv2), same order
       place-<key>.npy           place embeddings (MegaLoc), same order
       voice-<key>.json          {clip: text}
@@ -21,8 +22,9 @@ import numpy as np
 from PIL import Image
 
 from nav.infer.errors import InferenceUnavailable
+from nav.mapping.calibrate import CALIB_VERSION, Calibration, calibrate, default_fov, video_yaw
 from nav.mapping.inference import embed_files, place_files, transcribe_file
-from nav.mapping.motion import MotionTrack, load_motion
+from nav.mapping.motion import MotionTrack, load_motion, video_motion
 from nav.mapping.select import Frame, SelectParams
 from nav.schemas.recording import Event, Manifest
 
@@ -41,6 +43,19 @@ class Prepared:
     frames: list[Frame]
     marks: list[dict]  # [{t_ms, tag}]
     voice: list[dict]  # [{t_ms, t_end_ms, clip, text}]
+    calibration: Calibration
+
+
+@dataclass
+class Walk:
+    """A recording's motion and sampled frames, on the sensor clock (frame times corrected by the calibration)."""
+
+    manifest: Manifest
+    events: list[Event]
+    track: MotionTrack
+    frames_dir: Path
+    rows: list[dict]  # [{t_ms, sharpness, brightness, file}], t_ms corrected
+    calibration: Calibration
 
 
 def load_events(rec_dir: Path) -> list[Event]:
@@ -48,8 +63,35 @@ def load_events(rec_dir: Path) -> list[Event]:
     return [Event.model_validate_json(line) for line in path.read_text().splitlines() if line] if path.is_file() else []
 
 
-def prepare(rec_dir: Path, cache_root: Path, p: SelectParams, embed_model: str, place_model: str,
-            transcribe_model: str | None) -> Prepared:
+def _video(rec_dir: Path, m: Manifest) -> Path:
+    return rec_dir / (m.video.file if m.video else "video.mp4")
+
+
+def _calibration(rec_dir: Path, m: Manifest, cache: Path, video_start: float, fkey: str, track: MotionTrack,
+                 enabled: bool) -> tuple[Calibration, dict | None]:
+    """Calibration (and the video yaw, which a recording without sensors needs as its heading), cached."""
+    video = _video(rec_dir, m)
+    needs_yaw = track.source == "none"
+    if not video.is_file() or not (enabled or needs_yaw):
+        return Calibration(offset_ms=0, fov_deg=default_fov(m.holding)), None
+    path = cache / f"calib-{_key(CALIB_VERSION, fkey, m.holding, track.source)}.json"
+    if not path.is_file():
+        log.info("%s: video yaw for calibration", m.rec_id)
+        t_v, yaw = video_yaw(video, video_start)
+        cal = (calibrate(track.t_ms, track.heading_deg, t_v, yaw, m.holding) if track.source == "imu"
+               else Calibration(offset_ms=0, fov_deg=default_fov(m.holding)))
+        path.write_text(json.dumps({"calibration": cal.as_dict(),
+                                    "yaw": {"t_ms": [round(float(t), 1) for t in t_v],
+                                            "units": [round(float(u), 5) for u in yaw]}}))
+    data = json.loads(path.read_text())
+    cal = Calibration(**data["calibration"])
+    if not enabled:
+        cal = Calibration(offset_ms=0, fov_deg=default_fov(m.holding))
+    return cal, data["yaw"]
+
+
+def load_walk(rec_dir: Path, cache_root: Path, p: SelectParams) -> Walk:
+    """Frames (sampled once, cached), motion, and calibration of one recording."""
     m = Manifest.model_validate_json((rec_dir / "manifest.json").read_text())
     cache = cache_root / m.rec_id
     cache.mkdir(parents=True, exist_ok=True)
@@ -58,7 +100,7 @@ def prepare(rec_dir: Path, cache_root: Path, p: SelectParams, embed_model: str, 
     track = load_motion(rec_dir, m.step_length_m, m.duration_ms, m.device.user_agent)
 
     # frames
-    video = rec_dir / (m.video.file if m.video else "video.mp4")
+    video = _video(rec_dir, m)
     fkey = _key(FRAMES_VERSION, p.fps, p.image_long_side, video_start, video.stat().st_size if video.is_file() else 0)
     fdir, fmeta = cache / f"frames-{fkey}", cache / f"frames-{fkey}.json"
     if not fmeta.is_file():
@@ -74,6 +116,20 @@ def prepare(rec_dir: Path, cache_root: Path, p: SelectParams, embed_model: str, 
                 rows.append({"t_ms": sf.t_ms, "sharpness": sf.sharpness, "brightness": sf.brightness, "file": name})
         fmeta.write_text(json.dumps(rows))
     rows = json.loads(fmeta.read_text())
+
+    cal, yaw = _calibration(rec_dir, m, cache, video_start, fkey, track, p.calibrate)
+    if track.source == "none" and yaw and yaw["t_ms"]:  # no sensors: the video's own yaw is the heading
+        track = video_motion(np.array(yaw["t_ms"]), np.array(yaw["units"]), cal.fov_deg, m.duration_ms)
+    rows = [{**r, "t_ms": round(r["t_ms"] - cal.offset_ms, 1)} for r in rows]
+    return Walk(m, events, track, fdir, rows, cal)
+
+
+def prepare(rec_dir: Path, cache_root: Path, p: SelectParams, embed_model: str, place_model: str,
+            transcribe_model: str | None) -> Prepared:
+    w = load_walk(rec_dir, cache_root, p)
+    m, events, track, fdir, rows = w.manifest, w.events, w.track, w.frames_dir, w.rows
+    cache = cache_root / m.rec_id
+    fkey = fdir.name.removeprefix("frames-")
 
     # embeddings
     ekey = _key(fkey, embed_model)
@@ -113,12 +169,15 @@ def prepare(rec_dir: Path, cache_root: Path, p: SelectParams, embed_model: str, 
     marks = [{"t_ms": e.t_ms, "tag": e.data.get("tag", "?")} for e in events if e.type == "mark"]
     voice = [{"t_ms": v.t_start_ms, "t_end_ms": v.t_end_ms, "clip": v.clip, "text": texts.get(str(v.clip), "")}
              for v in m.voice]
-    return Prepared(m, track, frames, marks, voice)
+    return Prepared(m, track, frames, marks, voice, w.calibration)
 
 
-def load_motion_only(rec_id: str, recordings_root: Path | None = None) -> MotionTrack:
+def load_motion_only(rec_id: str, recordings_root: Path | None = None, cache_root: Path | None = None) -> MotionTrack:
     from nav import config
 
     rec_dir = (recordings_root or config.RECORDINGS_DIR) / rec_id
     m = Manifest.model_validate_json((rec_dir / "manifest.json").read_text())
-    return load_motion(rec_dir, m.step_length_m, m.duration_ms, m.device.user_agent)
+    track = load_motion(rec_dir, m.step_length_m, m.duration_ms, m.device.user_agent)
+    if track.source == "none" and _video(rec_dir, m).is_file():  # no sensors: needs the video yaw (cached)
+        track = load_walk(rec_dir, cache_root or config.CACHE_DIR, SelectParams()).track
+    return track

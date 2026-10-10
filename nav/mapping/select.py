@@ -44,6 +44,7 @@ class SelectParams:
     min_inliers: int = 300
     revisit_min_s: float = 30  # within one walk, only frames this far apart in time count as a revisit
     max_candidates: int = 60
+    calibrate: bool = True  # align frame times with the sensors and measure the field of view (calibrate.py)
 
     def as_dict(self) -> dict:
         return asdict(self)

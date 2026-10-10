@@ -6,6 +6,8 @@
   offset to the compass (the camera-axis heading the phone computed from deviceorientationabsolute) is taken as
   the circular mean over the whole walk. Indoors the compass is disturbed, so this is only roughly north-aligned.
 - Pitch is the camera axis elevation (device -z against gravity): 0 = level, -90 = looking at the floor.
+- Without sensors (an imported video), `video_motion` makes a track from the video's own yaw (calibrate.py):
+  heading relative to the start, and walked metres guessed from time at VIDEO_SPEED_M_S.
 """
 
 from dataclasses import dataclass
@@ -20,6 +22,7 @@ STEP_FLOOR = 0.15  # m/s^2, minimum peak prominence
 STEP_FRAC = 0.8  # x rolling std of the band-passed signal
 BOUT_GAP_S = 1.5  # steps further apart than this start a new bout
 BOUT_MIN = 4  # steps
+VIDEO_SPEED_M_S = 1.0  # assumed walking speed when only the video is known
 
 
 @dataclass
@@ -34,6 +37,11 @@ class MotionTrack:
     step_t_ms: np.ndarray
     has_compass: bool
     gyro_layout: str  # which rotationRate axis layout matched (see load_motion)
+    source: str = "imu"  # imu | video (no sensors: heading from the video, distance from time) | none
+
+    @property
+    def heading_kind(self) -> str:
+        return {"imu": "compass" if self.has_compass else "gyro", "video": "video"}.get(self.source, "none")
 
     def index(self, t_ms: float) -> int:
         return int(np.clip(np.searchsorted(self.t_ms, t_ms), 0, len(self.t_ms) - 1))
@@ -42,7 +50,7 @@ class MotionTrack:
         i = self.index(t_ms)
         h = self.heading_deg[i]
         return {"walked_m": round(float(self.walked_m[i]), 2),
-                "heading_deg": None if np.isnan(h) else round(float(h) % 360, 1),
+                "heading_deg": None if np.isnan(h) else round(float(h), 1) % 360,
                 "x_m": round(float(self.x_m[i]), 2), "y_m": round(float(self.y_m[i]), 2),
                 "pitch_deg": None if np.isnan(self.pitch_deg[i]) else round(float(self.pitch_deg[i]), 1),
                 "moving": bool(self.moving[i])}
@@ -94,7 +102,7 @@ def load_motion(rec_dir: Path, step_length_m: float, duration_ms: float | None =
     if len(t_imu) < 2 * RATE_HZ:  # no motion data: stand still, heading unknown
         z = np.zeros(n)
         nan = np.full(n, np.nan)
-        return MotionTrack(t, z, nan, z, z.copy(), nan, np.zeros(n, bool), np.array([]), False, "none")
+        return MotionTrack(t, z, nan, z, z.copy(), nan, np.zeros(n, bool), np.array([]), False, "none", "none")
 
     acc = np.stack([_interp(t, t_imu, _col(imu, k)) for k in ("ax", "ay", "az")], axis=1)
     gyro = np.nan_to_num(np.stack([_interp(t, t_imu, _col(imu, k)) for k in ("gx", "gy", "gz")], axis=1))
@@ -155,3 +163,22 @@ def load_motion(rec_dir: Path, step_length_m: float, duration_ms: float | None =
     x = np.cumsum(steps * step_length_m * np.sin(hr))
     y = np.cumsum(steps * step_length_m * np.cos(hr))
     return MotionTrack(t, walked, heading, x, y, pitch, moving, t[peaks], has_compass, layout)
+
+
+def video_motion(t_video_ms: np.ndarray, yaw_units: np.ndarray, fov_deg: float, duration_ms: float | None = None,
+                 speed_m_s: float = VIDEO_SPEED_M_S) -> MotionTrack:
+    """A track for a recording without sensors: heading = the video's yaw x field of view (0 = the starting
+    direction, clockwise), walking all the time at `speed_m_s`, dead-reckoned along that heading."""
+    end = max(duration_ms or 0, float(t_video_ms[-1]) if len(t_video_ms) else 0, 1000.0)
+    t = np.arange(0, end + 1, 1000 / RATE_HZ)
+    n = len(t)
+    if len(t_video_ms) >= 2:
+        heading = np.interp(t, t_video_ms, yaw_units * fov_deg) % 360
+    else:
+        heading = np.zeros(n)
+    step = speed_m_s / RATE_HZ
+    walked = np.arange(n) * step
+    hr = np.radians(heading)
+    x, y = np.cumsum(step * np.sin(hr)), np.cumsum(step * np.cos(hr))
+    return MotionTrack(t, walked, heading, x, y, np.full(n, np.nan), np.ones(n, bool), np.array([]), False, "none",
+                       "video")
