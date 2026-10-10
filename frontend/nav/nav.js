@@ -8,7 +8,11 @@
 
 const BURST = 2;  // frames per /localize call while following a route (every 1 s by default): one confirmer vote
 const N = { map: null, names: {}, route: null, hop: 0, confirmed: null, busy: false, timer: null,
-            confirmer: null, steps: new ArrivalNav.StepDetector() };
+            confirmer: null, steps: new ArrivalNav.StepDetector(), stepCount: 0, prevSteps: 0 };
+// The step count when the user's node last changed: /localize turns new steps into metres walked from it.
+const markNode = () => { N.prevSteps = N.stepCount; };
+// Motion is sent with live camera frames only (a recording's video has no live steps).
+const liveMotion = () => (Frames.kind === "camera" ? phoneMotion(N.stepCount) : null);
 const zoom = zoomer();
 const picker = sourcePicker($("#video"), $("#image"), { images: false });
 
@@ -56,6 +60,7 @@ async function plan() {
   }
   N.hop = 0;
   N.confirmed = N.route.start;
+  markNode();
   History.items = [];
   startConfirmer();
   render();
@@ -104,8 +109,9 @@ function onConfirmerEvent(ev) {
 
 addEventListener("devicemotion", (e) => {
   const a = e.accelerationIncludingGravity;
-  if (!a || a.x == null || !N.confirmer?.tracker || !$("#autoconfirm").checked) return;
-  if (N.steps.update(e.timeStamp / 1000, [a.x, a.y, a.z])) {
+  if (!a || a.x == null || !N.steps.update(e.timeStamp / 1000, [a.x, a.y, a.z])) return;
+  N.stepCount += 1;
+  if (N.confirmer?.tracker && $("#autoconfirm").checked) {
     onConfirmerEvent(N.confirmer.onStep(headingMap(), e.timeStamp / 1000));
     showPdr();
   }
@@ -155,6 +161,7 @@ function advance(prefix) {
   const hop = current();
   if (!hop) return;
   N.confirmed = hop.target;
+  markNode();
   N.hop += 1;
   render();
   const next = current();
@@ -172,6 +179,7 @@ function backOne() {
   if (N.hop === 0) return;
   N.hop -= 1;
   N.confirmed = current().source;
+  markNode();
   startConfirmer();
   render();
 }
@@ -185,7 +193,8 @@ async function run() {
     const blobs = await Frames.burst(BURST);
     const hop = current();
     const res = await localize(N.map.map_id, blobs, {
-      previous: N.confirmed, expected: hop?.target || null, heading: Frames.heading(), topK: 3 });
+      previous: N.confirmed, expected: hop?.target || null, heading: Frames.heading(), topK: 3,
+      motion: liveMotion(), previousStepCount: N.prevSteps });
     History.push(res);
     if ($("#autoconfirm").checked && N.confirmer && hop) {
       if ((Frames.kind === "camera") !== !!N.confirmer.tracker) startConfirmer();  // the source changed

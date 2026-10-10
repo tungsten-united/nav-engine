@@ -7,7 +7,7 @@ images (docs/navigation_stack.md, 4 and 6).
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from nav.schemas.map import ImageRole, Status, Step
 
@@ -62,12 +62,45 @@ class NodeMatch(BaseModel):
     name: str
     score: float  # its best reference
     refs: list[RefMatch]  # best first
+    distance_m: float | None = None  # shortest walk from `previous` over the map's edges (with previous + motion)
+    plausible: bool | None = None  # walked far enough to be there (None: not checked)
 
 
 class Thresholds(BaseModel):
     confirm_score: float  # the best node scores at least this ...
     confirm_margin: float  # ... and at least this much more than the second ...
     lost_score: float  # below this nothing is recognised
+    # With the phone's motion (each part only applies when its data is sent):
+    max_abs_pitch_deg: float = 55.0  # frames looking more up/down than this are left out (the map has none)
+    gate_slack_m: float = 2.0  # a node d metres from `previous` is plausible once walked >= d - max(slack_m, ...
+    gate_slack_frac: float = 0.35  # ... slack_frac x d)
+    heading_weight: float = 0.0  # similarity penalty for a reference facing away from the phone (0 = off) ...
+    heading_free_deg: float = 60.0  # ... beyond this difference, growing to the full weight at 180
+    heading_max_accuracy_deg: float = 45.0  # a compass reporting a worse accuracy is not used
+
+
+class LiveOrientation(BaseModel):
+    alpha: float
+    beta: float
+    gamma: float
+    absolute: bool = False
+
+
+class LiveMotion(BaseModel):
+    """The phone's motion when a frame was taken, as the Orient app sends it (project-description docs/contracts.md,
+    "Motion"): camelCase on the wire. Every field is optional; unknown fields are ignored."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    speed_mps: float | None = Field(None, alias="speedMps")
+    cadence_hz: float | None = Field(None, alias="cadenceHz")
+    step_count: int | None = Field(None, alias="stepCount")  # since Start, the phone's detector (pdr.StepDetector)
+    step_length_m: float | None = Field(None, alias="stepLengthM")  # the phone's guess; the map's is used instead
+    heading_deg: float | None = Field(None, alias="headingDeg")  # rear-camera axis, clockwise from north
+    heading_source: str | None = Field(None, alias="headingSource")
+    heading_accuracy_deg: float | None = Field(None, alias="headingAccuracyDeg")
+    orientation: LiveOrientation | None = None
+    measured_at: float | None = Field(None, alias="measuredAt")
 
 
 class Localization(BaseModel):
@@ -84,5 +117,10 @@ class Localization(BaseModel):
     expected_score: float | None = None  # how the expected node scored (it may not be in candidates)
     expected_rank: int | None = None  # 1 = best
     heading_map_deg: float | None = None  # the live compass heading in the map frame, when the map is compass-referenced
+    heading_used: bool = False  # the heading penalised references facing away (thresholds.heading_weight > 0)
+    frames_used: int | None = None  # frames scored, after leaving out those pointed at the floor or ceiling
+    pitch_deg: list[float | None] = []  # camera elevation per frame (from the motion's orientation), 0 = level
+    walked_m: float | None = None  # since `previous`: (stepCount - previous_step_count) x the map's live step length
+    moving: bool | None = None  # the newest motion: cadence or speed above 0
     thresholds: Thresholds
     took_ms: dict[str, float]  # embed (the inference host), match, total

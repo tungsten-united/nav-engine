@@ -15,28 +15,26 @@ const ArrivalNav = (() => {
     return s * y;
   }
 
-  // --- pdr.StepDetector ----------------------------------------------------------------------------------------
-  const STEP = { gravityTau: 1.0, smoothTau: 0.08, minInterval: 0.4, threshold: 0.15, adaptive: 0.3 };
+  // --- pdr.StepDetector: the phone's (Orient app tracker.ts, recorder app.js) -----------------------------------
+  const STEP = { lpMs: 60, baseMs: 1500, varMs: 3000, frac: 0.4, floor: 0.1, minGapMs: 400 };
   class StepDetector {
-    constructor(c = STEP) { this.c = c; this.gravity = null; this.v = 0; this.prev = [0, 0]; this.lastT = null; this.lastStepT = -1e9; this.peak = 0; }
+    constructor(c = STEP) { this.c = c; this.last = null; this.lp = 0; this.base = 0; this.variance = 0.04; this.armed = true; this.lastStep = null; }
     // t in seconds, acc = [ax, ay, az] accelerationIncludingGravity (device axes); true on a step
     update(t, acc) {
-      const dt = this.lastT == null ? 0 : Math.max(t - this.lastT, 1e-3);
-      this.lastT = t;
-      if (!this.gravity) { this.gravity = acc.slice(); return false; }
-      const kg = dt / (this.c.gravityTau + dt);
-      for (let i = 0; i < 3; i++) this.gravity[i] += kg * (acc[i] - this.gravity[i]);
-      const g = Math.hypot(...this.gravity) || 1;
-      const vertical = (acc[0] * this.gravity[0] + acc[1] * this.gravity[1] + acc[2] * this.gravity[2]) / g - g;
-      this.v += dt / (this.c.smoothTau + dt) * (vertical - this.v);
-      const [p2, p1] = this.prev;
-      this.prev = [p1, this.v];
-      const isPeak = p1 > p2 && p1 >= this.v;
-      const threshold = Math.max(this.c.threshold, this.c.adaptive * this.peak);
-      if (isPeak && p1 > threshold && t - this.lastStepT >= this.c.minInterval) {
-        this.lastStepT = t;
-        this.peak = this.peak ? 0.8 * this.peak + 0.2 * p1 : p1;
-        return true;
+      const ts = t * 1000, mag = Math.hypot(acc[0], acc[1], acc[2]);
+      if (this.last == null) { this.lp = this.base = mag; this.last = ts; return false; }
+      const dt = Math.max(ts - this.last, 1), k = (tau) => 1 - Math.exp(-dt / tau);
+      this.last = ts;
+      this.lp += k(this.c.lpMs) * (mag - this.lp);
+      this.base += k(this.c.baseMs) * (this.lp - this.base);
+      const d = this.lp - this.base;
+      this.variance += k(this.c.varMs) * (d * d - this.variance);
+      const hi = Math.max(this.c.floor, this.c.frac * Math.sqrt(this.variance));
+      if (this.armed && d > hi) {
+        this.armed = false;
+        if (this.lastStep == null || ts - this.lastStep > this.c.minGapMs) { this.lastStep = ts; return true; }
+      } else if (!this.armed && d < -0.3 * hi) {
+        this.armed = true;
       }
       return false;
     }

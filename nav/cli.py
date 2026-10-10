@@ -374,6 +374,37 @@ def map_nav_replay(map_id: str, rec_id: str,
           f"off-route alarms: {sum(r.off_route for r in res.rows)}")
 
 
+@maps.command("orchestrator-replay")
+def map_orchestrator_replay(map_id: str, rec_id: str,
+                            motion: bool = typer.Option(True, help="Send the phone's motion with each frame."),
+                            heading_weight: float = typer.Option(None, help="Override NAV_LOC_HEADING_WEIGHT."),
+                            step_scale: float = typer.Option(1.0, help="0.85 = a user with 15% shorter steps."),
+                            heading_bias: float = typer.Option(0.0, help="Compass bias of the phone, degrees.")) -> None:
+    """Replay a mapping walk the way the Orient orchestrator calls nav-api: frames one at a time, localize with the
+    last 4 and the last confirmed node, the user moves on the first `confirmed`. Reports which nodes got confirmed,
+    how late, and confirmations of a node the walk wasn't at."""
+    from nav.navigation.replay import orchestrator_replay
+
+    _logging()
+    store = _map_store()
+    th = config.loc_thresholds(heading_weight=heading_weight)
+    res = orchestrator_replay(store.get(map_id), store.dir(map_id), config.RECORDINGS_DIR / rec_id, config.CACHE_DIR,
+                              th, use_motion=motion, step_scale=step_scale, heading_bias_deg=heading_bias)
+    if res is None:
+        print(f"{rec_id} doesn't walk any edge of {map_id}, or the map has no reference embeddings")
+        raise typer.Exit(1)
+    print(f"motion {'on' if motion else 'off'} · heading weight {th.heading_weight} · {res.evaluations} localizations, "
+          f"{res.confirmations} confirmed")
+    for n in res.nodes:
+        how = "-" if n["delay_s"] is None else f"{n['delay_s']:+.1f} s"
+        print(f"  {n['node']:>4} {n['name'][:24]:<24} reached {n['arrival_s']:>6.1f}s  confirmed {how}")
+    for w in res.wrong:
+        print(f"  WRONG at {w['t_s']:.1f}s: {w['name']} ({w['node']}), the walk was at {', '.join(w['truth']) or '?'}")
+    delays = sorted(n["delay_s"] for n in res.nodes if n["delay_s"] is not None)
+    median = f"{delays[len(delays) // 2]:+.1f} s" if delays else "-"
+    print(f"nodes confirmed: {res.found}/{len(res.nodes)} · wrong confirmations: {len(res.wrong)} · median delay {median}")
+
+
 @maps.command("schema")
 def map_schema(out: Path = typer.Option(None, help="Write here instead of printing.")) -> None:
     """JSON Schema of the published map (PlaceMap), for nav-api's callers (committed as docs/map.schema.json)."""

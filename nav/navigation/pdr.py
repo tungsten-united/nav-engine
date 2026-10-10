@@ -1,8 +1,8 @@
 """Pedestrian dead reckoning along a route: live steps + heading -> progress towards the next node.
 
-- `StepDetector`: causal peak detector on vertical acceleration (DeviceMotion accelerationIncludingGravity, ~60 Hz),
-  constant memory, so it ports 1:1 to other languages. (The map pipeline counts steps offline with a band-pass filter,
-  nav/mapping/motion.py; this one can't look ahead.)
+- `StepDetector`: the phone's causal step detector (the Orient app's tracker.ts and the recorder's app.js, same
+  constants) on |accelerationIncludingGravity|, constant memory. (The map pipeline counts steps offline with a
+  band-pass filter, nav/mapping/motion.py; this one can't look ahead.)
 - `GraphTracker`: follows a route of `Hop`s (route.py). Only the component of each step along the hop's bearing
   counts as progress; it reports the remaining distance, an uncertainty that grows with the distance walked, and
   the probability of being within `arrival_radius_m` of the next node. It only *predicts* arrival: the caller
@@ -25,46 +25,57 @@ from nav.schemas.map import PlaceMap
 
 @dataclass
 class StepDetectorConfig:
-    gravity_tau_s: float = 1.0  # low-pass time constant for the gravity estimate
-    smooth_tau_s: float = 0.08  # low-pass on vertical acceleration (removes jitter)
-    # Tuned on 20261009T202101Z_7f42 (gentle handheld walk, ~1.2 steps/s): 102 steps vs 105 from a spectral cadence.
-    min_interval_s: float = 0.4  # refractory period (at most 2.5 steps/s)
-    threshold: float = 0.15  # m/s^2, minimum peak of vertical acceleration
-    adaptive: float = 0.3  # the threshold is also at least this x the recent peak level
+    """The phone's step detector: the constants of the Orient app (project-description apps/web/src/motion/
+    tracker.ts `STEP`) and of the recorder (frontend/app.js), so every live step count agrees."""
+
+    lp_ms: float = 60  # low-pass on |acceleration including gravity|
+    base_ms: float = 1500  # slow baseline
+    var_ms: float = 3000  # running variance of low-pass minus baseline
+    frac: float = 0.4  # a step is a bounce above this x the running std ...
+    floor: float = 0.1  # ... and above this many m/s^2
+    min_gap_ms: float = 400  # at most 2.5 steps/s
 
 
 class StepDetector:
-    """Feed raw accelerometer samples including gravity (device axes); `update` is True on the sample where a step
-    is recognised."""
+    """Feed raw accelerometer samples including gravity (device axes, any rate); `update` is True on the sample where
+    a step is recognised. It counts what the phone counts: on Itnig 137 steps, hand sway while standing and talking
+    included (a phone step is calibrated per map as `MapFrame.live_step_length_m`, video metres per such step)."""
 
     def __init__(self, config: StepDetectorConfig | None = None) -> None:
         self.c = config or StepDetectorConfig()
-        self.gravity: np.ndarray | None = None
-        self.v = 0.0
-        self.prev = (0.0, 0.0)  # last two smoothed values, for local-max detection
-        self.last_t: float | None = None
-        self.last_step_t = -1e9
-        self.peak_level = 0.0
+        self.last_ms: float | None = None
+        self.lp = 0.0
+        self.base = 0.0
+        self.var = 0.04
+        self.armed = True
+        self.last_step_ms: float | None = None
 
     def update(self, t: float, acc: tuple[float, float, float]) -> bool:
-        a = np.asarray(acc, dtype=float)
-        dt = 0.0 if self.last_t is None else max(t - self.last_t, 1e-3)
-        self.last_t = t
-        if self.gravity is None:
-            self.gravity = a.copy()
+        """`t` in seconds."""
+        ts = t * 1000.0
+        mag = math.sqrt(acc[0] ** 2 + acc[1] ** 2 + acc[2] ** 2)
+        if self.last_ms is None:
+            self.lp = self.base = mag
+            self.last_ms = ts
             return False
-        self.gravity += dt / (self.c.gravity_tau_s + dt) * (a - self.gravity)
-        g_norm = float(np.linalg.norm(self.gravity)) or 1.0
-        vertical = float(a @ self.gravity) / g_norm - g_norm  # dynamic acceleration along "up"
-        self.v += dt / (self.c.smooth_tau_s + dt) * (vertical - self.v)
-        p2, p1 = self.prev
-        self.prev = (p1, self.v)
-        is_peak = p1 > p2 and p1 >= self.v  # the previous sample was a local max
-        threshold = max(self.c.threshold, self.c.adaptive * self.peak_level)
-        if is_peak and p1 > threshold and t - self.last_step_t >= self.c.min_interval_s:
-            self.last_step_t = t
-            self.peak_level = 0.8 * self.peak_level + 0.2 * p1 if self.peak_level else p1
-            return True
+        dt = max(ts - self.last_ms, 1.0)
+        self.last_ms = ts
+
+        def k(tau: float) -> float:
+            return 1.0 - math.exp(-dt / tau)
+
+        self.lp += k(self.c.lp_ms) * (mag - self.lp)
+        self.base += k(self.c.base_ms) * (self.lp - self.base)
+        d = self.lp - self.base
+        self.var += k(self.c.var_ms) * (d * d - self.var)
+        hi = max(self.c.floor, self.c.frac * math.sqrt(self.var))
+        if self.armed and d > hi:
+            self.armed = False
+            if self.last_step_ms is None or ts - self.last_step_ms > self.c.min_gap_ms:
+                self.last_step_ms = ts
+                return True
+        elif not self.armed and d < -0.3 * hi:
+            self.armed = True
         return False
 
 

@@ -186,3 +186,112 @@ def nav_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, t
                              None if slot["score"] is None else round(slot["score"], 3),
                              round(slot["step"] or state["conf"].tracker.step_length, 3)))
     return NavReplay(out, len(rows), excluded)
+
+
+# --- the orchestrator's loop -----------------------------------------------------------------------------------
+@dataclass
+class OrchestratorResult:
+    nodes: list[dict]  # per route node after the start: {node, name, arrival_s, confirmed_s, delay_s}
+    wrong: list[dict]  # confirmations of a node the walk was not at: {t_s, node, truth}
+    evaluations: int
+    confirmations: int
+
+    @property
+    def found(self) -> int:
+        return sum(n["delay_s"] is not None for n in self.nodes)
+
+
+ORCH_FPS = 2.0  # the phone uploads the next frame after the previous 202: about 2 a second
+ORCH_BUFFER = 4  # the orchestrator localizes with the session's last 4 frames
+TRUTH_S = 3.0  # a node counts as "there" from this long before the walk reached it until the next node
+
+
+def orchestrator_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, thresholds: Thresholds,
+                        use_motion: bool = True, step_scale: float = 1.0, heading_bias_deg: float = 0.0,
+                        exclude_ms: float = 400.0) -> OrchestratorResult | None:
+    """The walk replayed the way the Orient orchestrator calls nav-api (project-description docs/contracts.md §2):
+    one frame at a time into a buffer of the last 4, `localize` on each with `previous` = the last confirmed node,
+    and the user's node moves on the first `confirmed`. With `use_motion` each frame carries the phone's motion
+    (its step detector's stepCount, compass heading, orientation angles, from the recording) and `previous_step_count`
+    is the stepCount when `previous` was confirmed."""
+    import pyarrow.parquet as pq
+
+    from nav.mapping.prepare import load_walk
+    from nav.mapping.select import SelectParams
+    from nav.navigation.pdr import StepDetector
+    from nav.schemas.navigation import LiveMotion, LiveOrientation
+
+    rec_id = rec_dir.name
+    route = walk_route(pmap, rec_id)
+    if not route or pmap.embedding is None:
+        return None
+    index = RefIndex.build(pmap, np.load(map_dir / pmap.embedding.file))
+    model = pmap.embedding.model
+    walk = load_walk(rec_dir, cache_root, SelectParams())
+    own_refs = [r.t_ms for r in pmap.references if r.rec_id == rec_id]
+    live = [r for r in _live_frames(rec_dir, walk, cache_root / rec_id)]
+    step = max(1, round(LIVE_FPS / ORCH_FPS))
+    rows = [r for r in live[::step] if all(abs(r["t_ms"] - t) > exclude_ms for t in own_refs)]
+    emb = _live_embeddings([Path(r["file"]) for r in rows], model, cache_root / rec_id)
+
+    # the phone's sensors along the walk
+    imu = pq.read_table(rec_dir / "imu.parquet").to_pydict()
+    det, step_times, carry = StepDetector(), [], 0.0
+    for t, ax, ay, az in zip(imu["t_ms"], imu["ax"], imu["ay"], imu["az"]):
+        if None not in (ax, ay, az) and det.update(t / 1000, (ax, ay, az)):
+            carry += 1.0 / step_scale
+            while carry >= 1.0:
+                step_times.append(t)
+                carry -= 1.0
+    step_times = np.asarray(step_times)
+    ori = pq.read_table(rec_dir / "orientation.parquet").to_pydict()
+    ori_t = np.asarray(ori["t_ms"], float)
+
+    def motion_at(t_ms: float) -> LiveMotion:
+        i = int(np.clip(np.searchsorted(ori_t, t_ms), 0, len(ori_t) - 1))
+        h = ori["heading_deg"][i]
+        a, b, g = ori["alpha"][i], ori["beta"][i], ori["gamma"][i]
+        recent = int(((step_times > t_ms - 4000) & (step_times <= t_ms)).sum())
+        return LiveMotion(step_count=int((step_times <= t_ms).sum()), cadence_hz=recent / 4 if recent >= 3 else 0.0,
+                          heading_deg=None if h is None else (h + heading_bias_deg) % 360,
+                          heading_source=None if h is None else "orientation_absolute",
+                          orientation=None if None in (a, b, g) else LiveOrientation(alpha=a, beta=b, gamma=g,
+                                                                                      absolute=True))
+
+    names = {n.id: n.name for n in pmap.nodes}
+    truth = [(route[0][0].source, route_start_ms(pmap, rec_id, route) - 60_000)] + [(h.target, t) for h, t in route]
+
+    def truth_at(t_ms: float) -> set[str]:
+        here = {n for k, (n, t0) in enumerate(truth)
+                if t0 - TRUTH_S * 1000 <= t_ms < (truth[k + 1][1] if k + 1 < len(truth) else float("inf"))}
+        return here
+
+    previous, prev_steps = None, None
+    first_seen: dict[str, float] = {}
+    wrong, evaluations, confirmations = [], 0, 0
+    for i, r in enumerate(rows):
+        lo = max(0, i - ORCH_BUFFER + 1)
+        motions = [motion_at(x["t_ms"]) for x in rows[lo:i + 1]] if use_motion else None
+        loc = localize(index, emb[lo:i + 1], thresholds, previous=previous, model=model, motions=motions,
+                       previous_step_count=prev_steps if use_motion else None)
+        evaluations += 1
+        if loc.status != "confirmed" or loc.best is None:
+            continue
+        confirmations += 1
+        if loc.best not in truth_at(r["t_ms"]):
+            wrong.append({"t_s": round(r["t_ms"] / 1000, 1), "node": loc.best, "name": names.get(loc.best, loc.best),
+                          "truth": sorted(truth_at(r["t_ms"]))})
+        elif loc.best != previous:
+            first_seen.setdefault(loc.best, r["t_ms"])
+        if loc.best != previous:  # the step count is kept from when the user's node changed, not re-confirmations
+            prev_steps = motions[-1].step_count if motions else None
+        previous = loc.best
+
+    nodes = []
+    for node, t in truth[1:]:
+        seen = first_seen.get(node)
+        nodes.append({"node": node, "name": names.get(node, node), "arrival_s": round(t / 1000, 1),
+                      "confirmed_s": None if seen is None else round(seen / 1000, 1),
+                      "delay_s": None if seen is None else round((seen - t) / 1000, 1)})
+    return OrchestratorResult(nodes, wrong, evaluations, confirmations)
+

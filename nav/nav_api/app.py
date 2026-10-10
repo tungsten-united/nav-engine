@@ -9,7 +9,8 @@ The models run on the inference host (helium nav-infer, NAV_INFER_URL), like map
     GET  /api/v1/schema/map                   its JSON Schema
     GET  /api/v1/maps/{map_id}/files/{path}   the published build's reference images, frames and embeddings
     POST /api/v1/maps/{map_id}/route          RouteRequest -> Route
-    POST /api/v1/maps/{map_id}/localize       images[] (1-4 JPEGs), previous?, expected?, heading_deg?, top_k?
+    POST /api/v1/maps/{map_id}/localize       images[] (1-4 JPEGs), previous?, expected?, heading_deg?, top_k?,
+                                              motion[]? (the phone's Motion JSON per image), previous_step_count?
                                               -> Localization
 
 Same pattern as map-api (nav/web.py): NAV_API_TOKEN on /api/* (its own token), CORS, no frontend. Recordings, map
@@ -23,6 +24,7 @@ import time
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import JSONResponse, RedirectResponse
+from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -32,7 +34,7 @@ from nav.nav_api.maps import MapCache
 from nav.navigation.localize import localize
 from nav.navigation.route import plan_route
 from nav.schemas.map import MAP_SCHEMA_VERSION, MapSummary, PlaceMap
-from nav.schemas.navigation import Localization, Route, RouteHop, RouteRequest, Thresholds
+from nav.schemas.navigation import LiveMotion, Localization, Route, RouteHop, RouteRequest, Thresholds
 
 log = logging.getLogger(__name__)
 _DEFAULT = object()
@@ -70,8 +72,7 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
     cors_origins = config.CORS_ORIGINS if cors_origins is _DEFAULT else cors_origins
     cors_origin_regex = config.CORS_ORIGIN_REGEX if cors_origin_regex is _DEFAULT else cors_origin_regex
     frontend_url = config.FRONTEND_URL if frontend_url is _DEFAULT else frontend_url
-    thresholds = thresholds or Thresholds(confirm_score=config.LOC_CONFIRM_SCORE,
-                                          confirm_margin=config.LOC_CONFIRM_MARGIN, lost_score=config.LOC_LOST_SCORE)
+    thresholds = thresholds or config.loc_thresholds()
     app = FastAPI(title="nav-engine nav-api", version=f"map-schema-{MAP_SCHEMA_VERSION}",
                   description="The live API for Orient's orchestrator: published maps, routes, localization.")
     app.state.maps = maps
@@ -140,7 +141,13 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
             previous: str | None = Form(None, description="the last confirmed node: a jump elsewhere stays uncertain"),
             expected: str | None = Form(None, description="the next checkpoint: its score and rank are reported"),
             heading_deg: float | None = Form(None, description="absolute compass heading of the phone, if known"),
-            top_k: int = Form(5, ge=1, le=20)) -> Localization:
+            top_k: int = Form(5, ge=1, le=20),
+            motion: list[str] | None = Form(None, description="the phone's Motion (JSON, the Orient app's contract) "
+                                            "for each image, in the same order; `null` for a frame without one"),
+            previous_step_count: int | None = Form(None, description="the phone's stepCount when the user's node "
+                                                   "became `previous` (not reset by re-confirming it): with "
+                                                   "motion, the walked distance gates confirmations")
+            ) -> Localization:
         """Which node of the map the frames show (visual place recognition on the map's reference images): ranked
         nodes with their best matching references, and confirmed / uncertain / lost (nav/navigation/localize.py).
         Stateless: the caller (the orchestrator) keeps the last confirmed node and combines consecutive results."""
@@ -150,6 +157,14 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
         data = [await f.read(MAX_FRAME_BYTES + 1) for f in images]
         if any(len(d) > MAX_FRAME_BYTES for d in data) or not all(data):
             raise HTTPException(413, f"each image must be 1 byte .. {MAX_FRAME_BYTES // 1024 // 1024} MiB")
+        motions: list[LiveMotion | None] = []
+        for part in motion or []:
+            try:
+                motions.append(None if part.strip() in ("", "null") else LiveMotion.model_validate_json(part))
+            except ValidationError as e:
+                raise HTTPException(422, f"motion: {e.errors()[0]['msg']}")
+        if len(motions) > len(images):
+            raise HTTPException(422, "more motion parts than images")
         index = await run_in_threadpool(maps.index, map_id)
         model = index.pmap.embedding.model if index.pmap.embedding else ""
         took: dict[str, float] = {}
@@ -167,7 +182,8 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
             took["embed"] = round((time.perf_counter() - t) * 1000, 1)
         t = time.perf_counter()
         res = localize(index, queries if queries is not None else [[0.0]], thresholds, top_k=top_k, previous=previous,
-                       expected=expected, heading_abs_deg=heading_deg, model=model)
+                       expected=expected, heading_abs_deg=heading_deg, model=model, motions=motions or None,
+                       previous_step_count=previous_step_count)
         res.frames = len(data)
         took["match"] = round((time.perf_counter() - t) * 1000, 1)
         took["total"] = round((time.perf_counter() - t0) * 1000, 1)

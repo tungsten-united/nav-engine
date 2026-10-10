@@ -72,3 +72,20 @@ MAP_RELOAD_S = float(os.environ.get("NAV_MAP_RELOAD_S", "30"))  # how often nav-
 LOC_CONFIRM_SCORE = float(os.environ.get("NAV_LOC_CONFIRM_SCORE", "0.45"))
 LOC_CONFIRM_MARGIN = float(os.environ.get("NAV_LOC_CONFIRM_MARGIN", "0.05"))
 LOC_LOST_SCORE = float(os.environ.get("NAV_LOC_LOST_SCORE", "0.35"))
+# With the phone's motion (nav/navigation/localize.py): leave out frames pointed at the floor/ceiling, require the
+# walked distance from the last confirmed node, penalise references facing away (0 = off; tuned with nav-replay).
+LOC_MAX_ABS_PITCH_DEG = float(os.environ.get("NAV_LOC_MAX_ABS_PITCH_DEG", "55"))
+LOC_GATE_SLACK_M = float(os.environ.get("NAV_LOC_GATE_SLACK_M", "2.0"))
+LOC_GATE_SLACK_FRAC = float(os.environ.get("NAV_LOC_GATE_SLACK_FRAC", "0.35"))
+LOC_HEADING_WEIGHT = float(os.environ.get("NAV_LOC_HEADING_WEIGHT", "0"))
+
+
+def loc_thresholds(**overrides):
+    """nav-api's localization thresholds from the environment (NAV_LOC_*), with overrides."""
+    from nav.schemas.navigation import Thresholds
+
+    values = dict(confirm_score=LOC_CONFIRM_SCORE, confirm_margin=LOC_CONFIRM_MARGIN, lost_score=LOC_LOST_SCORE,
+                  max_abs_pitch_deg=LOC_MAX_ABS_PITCH_DEG, gate_slack_m=LOC_GATE_SLACK_M,
+                  gate_slack_frac=LOC_GATE_SLACK_FRAC, heading_weight=LOC_HEADING_WEIGHT)
+    values.update({k: v for k, v in overrides.items() if v is not None})
+    return Thresholds(**values)

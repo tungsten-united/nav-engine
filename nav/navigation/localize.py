@@ -10,15 +10,29 @@ Status, preferring a missed confirmation to a false one:
 - confirmed: best score >= `confirm_score`, margin >= `confirm_margin`, and, when the last confirmed node is known,
   the best node is that node or one edge away from it (graph consistency);
 - uncertain: anything else.
+
+With the phone's motion (`motions`, one per frame, the Orient app's `Motion`; all optional):
+- frames pointed at the floor or ceiling (|camera elevation| > max_abs_pitch_deg, from the orientation angles) are
+  left out of the mean, as the map's references are; with none left the result is lost;
+- walked-distance gate: with `previous` and `previous_step_count` (the phone's stepCount when the user's node became
+  `previous`; re-confirming the same node doesn't reset it), walked = new steps x the map's live step length
+  (metres per phone step). A node d metres away along the map's edges is plausible once
+  walked >= d - max(gate_slack_m, gate_slack_frac d); a best node not plausible stays uncertain. That is what keeps
+  a place recognised from afar from moving the user there. It replaces the "one edge from previous" rule: a node
+  two edges away is fine once walked that far, so a missed checkpoint no longer stalls the rest of the route;
+- heading: with heading_weight > 0 and a compass heading (map compass-referenced), a reference facing more than
+  heading_free_deg away from the phone loses up to heading_weight of similarity.
 The default thresholds are placeholders until tuned on venue images (env NAV_LOC_*; nav/config.py).
 """
 
+import heapq
+import math
 from dataclasses import dataclass
 
 import numpy as np
 
 from nav.schemas.map import PlaceMap
-from nav.schemas.navigation import Localization, NodeMatch, RefMatch, Thresholds
+from nav.schemas.navigation import LiveMotion, Localization, NodeMatch, RefMatch, Thresholds
 
 
 def angle_diff(a: float, b: float) -> float:
@@ -49,6 +63,29 @@ class RefIndex:
         vectors = embeddings[rows].astype(np.float32) if rows else np.zeros((0, dim), np.float32)
         return cls(pmap, vectors, refs)
 
+    def distances_from(self, node: str, unknown_m: float = 10.0) -> dict[str, float]:
+        """Shortest walk (metres) from `node` to every node over the map's edges, either direction."""
+        graph: dict[str, list[tuple[str, float]]] = {}
+        for e in self.pmap.edges:
+            length = e.distance_m if e.distance_m is not None else unknown_m
+            graph.setdefault(e.source, []).append((e.target, length))
+            graph.setdefault(e.target, []).append((e.source, length))
+        best = {node: 0.0}
+        queue = [(0.0, node)]
+        while queue:
+            d, n = heapq.heappop(queue)
+            if d > best.get(n, math.inf):
+                continue
+            for m, length in graph.get(n, []):
+                if d + length < best.get(m, math.inf):
+                    best[m] = d + length
+                    heapq.heappush(queue, (d + length, m))
+        return best
+
+    def live_step_length(self) -> float | None:
+        f = self.pmap.frame
+        return (f.live_step_length_m or f.step_length_m) if f else None
+
     def neighbours(self, node: str) -> set[str]:
         out = {node}
         for e in self.pmap.edges:
@@ -59,30 +96,99 @@ class RefIndex:
         return out
 
 
+def camera_pitch(o) -> float | None:
+    """Elevation of the rear-camera axis (device -z) from W3C Euler angles: 0 = level, -90 = at the floor."""
+    if o is None:
+        return None
+    r = math.pi / 180
+    return round(math.degrees(math.asin(max(-1.0, min(1.0, -math.cos(o.beta * r) * math.cos(o.gamma * r))))), 1)
+
+
+def _usable_heading(m: LiveMotion | None, th: Thresholds) -> float | None:
+    if m is None or m.heading_deg is None or m.heading_source is None:
+        return None
+    if m.heading_accuracy_deg is not None and m.heading_accuracy_deg > th.heading_max_accuracy_deg:
+        return None
+    return m.heading_deg
+
+
 def localize(index: RefIndex, queries: np.ndarray, thresholds: Thresholds, *, top_k: int = 5, refs_per_node: int = 3,
              previous: str | None = None, expected: str | None = None, heading_abs_deg: float | None = None,
-             model: str = "", took_ms: dict[str, float] | None = None) -> Localization:
-    """`queries`: [F, D] unit place embeddings of the live frames (a burst of F >= 1)."""
+             model: str = "", took_ms: dict[str, float] | None = None, motions: list[LiveMotion | None] | None = None,
+             previous_step_count: int | None = None) -> Localization:
+    """`queries`: [F, D] unit place embeddings of the live frames (a burst of F >= 1), oldest first; `motions`: the
+    phone's motion for each frame, aligned with `queries` (shorter or None: unknown)."""
     pmap = index.pmap
     q = np.atleast_2d(np.asarray(queries, dtype=np.float32))
     names = {n.id: n.name for n in pmap.nodes}
+    motions = list(motions or [])[:len(q)]
+    motions += [None] * (len(q) - len(motions))
+    newest = next((m for m in reversed(motions) if m is not None), None)
+
+    # heading: the newest motion's compass (when trustworthy), else the explicit heading_deg
+    live_heading = _usable_heading(newest, thresholds)
+    if live_heading is None:
+        live_heading = heading_abs_deg
     heading_map = None
-    if heading_abs_deg is not None and pmap.frame and pmap.frame.heading_zero_abs_deg is not None:
-        heading_map = round((heading_abs_deg - pmap.frame.heading_zero_abs_deg) % 360, 1)
+    if live_heading is not None and pmap.frame and pmap.frame.heading_zero_abs_deg is not None:
+        heading_map = round((live_heading - pmap.frame.heading_zero_abs_deg) % 360, 1)
+
+    # frames pointed at the floor or ceiling are left out
+    pitches = [camera_pitch(m.orientation) if m else None for m in motions]
+    keep = [i for i, p in enumerate(pitches) if p is None or abs(p) <= thresholds.max_abs_pitch_deg]
+
+    # walked since the last confirmed node, from the phone's step count
+    walked = None
+    step_len = index.live_step_length()
+    if previous is not None and previous_step_count is not None and newest and newest.step_count is not None and step_len:
+        walked = round(max(newest.step_count - previous_step_count, 0) * step_len, 2)
+    moving = None
+    if newest is not None and (newest.cadence_hz is not None or newest.speed_mps is not None):
+        moving = bool((newest.cadence_hz or 0) > 0 or (newest.speed_mps or 0) > 0)
+
     base = dict(map_id=pmap.map_id, model=model, frames=len(q), previous=previous, expected=expected,
-                heading_map_deg=heading_map, thresholds=thresholds, took_ms=took_ms or {})
+                heading_map_deg=heading_map, thresholds=thresholds, took_ms=took_ms or {},
+                frames_used=len(keep), pitch_deg=pitches if any(p is not None for p in pitches) else [],
+                walked_m=walked, moving=moving)
     if not index.refs:
         return Localization(**base, status="lost", reason="the map has no reference images", candidates=[])
+    if not keep:
+        return Localization(**base, status="lost", reason="the camera points at the floor or ceiling: hold it up",
+                            candidates=[])
 
-    sims = (index.vectors @ q.T).mean(axis=1)  # [N]
+    sims = (index.vectors @ q[keep].T).mean(axis=1)  # [N]
+    heading_used = False
+    if heading_map is not None and thresholds.heading_weight > 0:
+        span = max(180.0 - thresholds.heading_free_deg, 1.0)
+        for i, r in enumerate(index.refs):
+            if r.heading_deg is not None:
+                off = abs(angle_diff(heading_map, r.heading_deg)) - thresholds.heading_free_deg
+                if off > 0:
+                    sims[i] -= thresholds.heading_weight * off / span
+        heading_used = True
+    base["heading_used"] = heading_used
     by_node: dict[str, list[tuple[float, object]]] = {}
     for s, r in zip(sims.tolist(), index.refs):
         by_node.setdefault(r.node, []).append((s, r))
     ranked = sorted(((max(s for s, _ in v), node) for node, v in by_node.items()), reverse=True)
 
+    dist = index.distances_from(previous) if walked is not None and previous in names else None
+
+    def plausible(node: str) -> bool | None:
+        if dist is None:
+            return None
+        if node == previous:
+            return True
+        d = dist.get(node)
+        if d is None:
+            return False
+        return walked >= d - max(thresholds.gate_slack_m, thresholds.gate_slack_frac * d)
+
     def node_match(score: float, node: str) -> NodeMatch:
         best_refs = sorted(by_node[node], key=lambda x: -x[0])[:refs_per_node]
-        return NodeMatch(node=node, name=names.get(node, node), score=round(score, 4), refs=[
+        return NodeMatch(node=node, name=names.get(node, node), score=round(score, 4),
+                         distance_m=None if dist is None or node not in dist else round(dist[node], 1),
+                         plausible=plausible(node), refs=[
             RefMatch(id=r.id, score=round(s, 4), role=r.role, edge=r.edge, toward=r.toward, heading_deg=r.heading_deg,
                      heading_diff_deg=None if heading_map is None or r.heading_deg is None
                      else round(angle_diff(heading_map, r.heading_deg), 1),
@@ -96,8 +202,11 @@ def localize(index: RefIndex, queries: np.ndarray, thresholds: Thresholds, *, to
         status, reason = "uncertain", f"best score {best_score:.2f} < {thresholds.confirm_score:.2f}"
     elif margin < thresholds.confirm_margin:
         status, reason = "uncertain", f"{names.get(ranked[1][1], ranked[1][1])} scores close (margin {margin:.2f})"
-    elif previous and previous in names and best not in index.neighbours(previous):
+    elif dist is None and previous and previous in names and best not in index.neighbours(previous):
         status, reason = "uncertain", f"not next to the last confirmed node ({names[previous]})"
+    elif plausible(best) is False:
+        status, reason = "uncertain", (f"{names.get(best, best)} is {dist.get(best, float('nan')):.0f} m from "
+                                       f"{names[previous]}, only {walked:.0f} m walked")
     else:
         status, reason = "confirmed", (f"clear: score >= {thresholds.confirm_score:.2f}, margin >= "
                                        f"{thresholds.confirm_margin:.2f}" + (", next to the last confirmed node"

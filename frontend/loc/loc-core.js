@@ -88,9 +88,17 @@ const Compass = {
         await DeviceOrientationEvent.requestPermission();
     } catch {}  // denied: localization still works, without heading
     const on = (e) => {
-      if (e.webkitCompassHeading != null) this.heading = e.webkitCompassHeading;
-      else if ((e.type === "deviceorientationabsolute" || e.absolute) && e.alpha != null)
+      if (e.alpha != null && e.beta != null && e.gamma != null)
+        this.angles = { alpha: e.alpha, beta: e.beta, gamma: e.gamma, absolute: e.type === "deviceorientationabsolute" || !!e.absolute };
+      if (e.webkitCompassHeading != null) {
+        this.heading = e.webkitCompassHeading;
+        this.source = "compass_ios";
+        this.accuracy = e.webkitCompassAccuracy ?? null;
+      } else if ((e.type === "deviceorientationabsolute" || e.absolute) && e.alpha != null) {
         this.heading = cameraHeading(e.alpha, e.beta, e.gamma) ?? this.heading;
+        this.source = this.heading == null ? null : "orientation_absolute";
+        this.accuracy = null;
+      }
     };
     addEventListener("deviceorientationabsolute", on);
     addEventListener("deviceorientation", on);
@@ -186,9 +194,19 @@ const Frames = {
   },
 };
 
-async function localize(mapId, blobs, { previous, expected, heading, topK = 5 } = {}) {
+// The phone's motion as the Orient app sends it with a frame (project-description docs/contracts.md "Motion"):
+// nav-api's /localize uses the step count (with previous_step_count), the compass and the camera's tilt.
+function phoneMotion(stepCount) {
+  return { speedMps: null, cadenceHz: null, stepCount, stepLengthM: 0.7, headingDeg: Compass.heading,
+           headingSource: Compass.heading == null ? null : Compass.source, headingAccuracyDeg: Compass.accuracy ?? null,
+           orientation: Compass.angles || null, measuredAt: Date.now() };
+}
+
+async function localize(mapId, blobs, { previous, expected, heading, topK = 5, motion = null, previousStepCount = null } = {}) {
   const fd = new FormData();
   blobs.forEach((b, i) => fd.append("images", b, `frame${i}.jpg`));
+  if (motion) blobs.forEach(() => fd.append("motion", JSON.stringify(motion)));
+  if (motion && previous && previousStepCount != null) fd.append("previous_step_count", String(previousStepCount));
   if (previous) fd.append("previous", previous);
   if (expected) fd.append("expected", expected);
   if (heading != null) fd.append("heading_deg", heading.toFixed(1));
