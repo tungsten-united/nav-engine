@@ -135,3 +135,14 @@ def test_walked_distance_replaces_one_edge_from_previous(tmp_path):
         assert j["status"] == "uncertain" and "only 7 m walked" in j["reason"]
         j = localize(c, map_id, previous="n1", motion=motion(steps=20), previous_step_count="0").json()  # 14 m
         assert j["status"] == "confirmed" and j["best"] == "n3"  # >= 20 - 7
+
+
+def test_the_motion_gate_reaches_the_log_line(tmp_path, capsys):
+    c, places, map_id = client(tmp_path)
+    with c:
+        places.answer = axis(2)[None]
+        localize(c, map_id, previous="n1", motion=motion(steps=5), previous_step_count="0")
+    [e] = [json.loads(x) for x in capsys.readouterr().out.splitlines() if x.startswith("{")]
+    assert e["kind"] == "nav_localize" and e["status"] == "uncertain" and "only 4 m walked" in e["message"]
+    assert e["walkedM"] == pytest.approx(3.5) and e["distanceM"] == pytest.approx(10) and e["plausible"] is False
+    assert e["framesUsed"] == 1

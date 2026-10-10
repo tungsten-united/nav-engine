@@ -326,6 +326,27 @@ stall the route. A step count below `previous_step_count` (the phone restarted c
 `nav map orchestrator-replay` replays a walk the way the orchestrator calls nav-api, with and without motion
 (`NAV_LOC_MAX_ABS_PITCH_DEG`, `NAV_LOC_GATE_SLACK_M`, `NAV_LOC_GATE_SLACK_FRAC`).
 
+**Logs.** Each `localize` and `route` call prints one JSON line ([`nav/nav_api/log.py`](nav/nav_api/log.py)), in
+the same format as the orchestrator's trace, so Cloud Logging stores it as a structured entry. `kind` is
+`nav_localize` or `nav_route`, `service` is `nav-api`, and the fields are `mapId`, the result (`status`, `best`,
+`score`, `margin`, `reason`, `expectedRank`, `tookMs`, with motion `framesUsed`, `walkedM`, `distanceM`, `plausible`;
+or `found`, `hops`, `lengthM`), `httpStatus` and `error`
+when the call failed, and `commit` / `version` (`deploy/cloudrun.sh` sets `NAV_COMMIT`). `message` is the summary
+line in the Logs tab, with the service as its prefix:
+`[nav-api] localize itnig · confirmed Kitchen 0.71 (±0.08) · 812 ms`, `[nav-api] route itnig · Entrance → Kitchen
+(observed) · 3 hops, 24.5 m`. `severity` is `WARNING` for `lost`, no route and the caller's errors, and `ERROR` for
+ours (the inference host down). When the caller sends `X-Client-Id`, `X-Session-Id` or `X-Request-Id`, they come back
+as `clientId`, `sessionId` and `requestId`, the orchestrator's names, so one query shows both sides of a session:
+
+```sh
+# nav-api's decisions, newest first
+gcloud logging read 'resource.labels.service_name="nav-api" AND jsonPayload.service="nav-api"' \
+  --project tungsten-united --freshness 1d --format 'value(timestamp,severity,jsonPayload.message)'
+# One phone, the orchestrator and nav-api together
+gcloud logging read '(resource.labels.service_name="nav-api" OR resource.labels.service_name="orient-orchestrator-staging") AND jsonPayload.clientId="<id>"' \
+  --project tungsten-united --order asc --format 'value(timestamp,jsonPayload.message)'
+```
+
 **Debugging pages**, for testing nav-api by hand; they are not part of Orient (served by map-api and helium-nav,
 calling nav-api): **`/loc/`** localizes frames from the
 camera, a recording's video (with its compass heading) or an image, and shows ranked nodes with their reference

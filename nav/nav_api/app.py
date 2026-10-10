@@ -13,12 +13,12 @@ The models run on the inference host (helium nav-infer, NAV_INFER_URL), like map
                                               motion[]? (the phone's Motion JSON per image), previous_step_count?
                                               -> Localization
 
-Same pattern as map-api (nav/web.py): NAV_API_TOKEN on /api/* (its own token), CORS, no frontend. Recordings, map
+Same pattern as map-api (nav/web.py): NAV_API_TOKEN on /api/* (its own token), CORS, no frontend. Each route and
+localize call prints one structured line for Cloud Logging, `[nav-api] …` (nav/nav_api/log.py). Recordings, map
 builds, reviews and build internals stay on map-api (nav/map_api/app.py), which also serves the debugging pages
 that exercise this API (/loc/, /nav/); with NAV_FRONTEND_URL set, page paths here redirect there.
 """
 
-import logging
 import time
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -30,13 +30,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from nav import config, web
 from nav.infer.errors import InferenceError, InferenceUnavailable
+from nav.nav_api import log
 from nav.nav_api.maps import MapCache
 from nav.navigation.localize import localize
 from nav.navigation.route import plan_route
+from nav.recorder.store import NotFound
 from nav.schemas.map import MAP_SCHEMA_VERSION, MapSummary, PlaceMap
 from nav.schemas.navigation import LiveMotion, Localization, Route, RouteHop, RouteRequest, Thresholds
 
-log = logging.getLogger(__name__)
 _DEFAULT = object()
 MAX_FRAMES = 4  # a short burst
 MAX_FRAME_BYTES = 4 * 1024 * 1024
@@ -47,6 +48,11 @@ def live_place(images: list[bytes], model: str):
     from nav.mapping.inference import place_live
 
     return place_live(images, model, config.LIVE_INFER_DEADLINE_S)
+
+
+def failure(e: HTTPException | NotFound) -> tuple[int, str]:
+    """The status and detail an error ends up as (NotFound: web.setup's handler)."""
+    return (404, f"not found: {e}") if isinstance(e, NotFound) else (e.status_code, str(e.detail))
 
 
 def infer_health() -> dict:
@@ -117,10 +123,20 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
         return web.send_file(request, maps.file(map_id, path))
 
     @app.post(f"{api}/maps/{{map_id}}/route")
-    def route(map_id: str, req: RouteRequest) -> Route:
+    def route(map_id: str, req: RouteRequest, request: Request) -> Route:
         """The shortest route (by distance) over edges trusted enough, in the direction they may be walked
         (nav/navigation/route.py). `found: false` when trusted edges don't connect the two nodes."""
-        pmap = maps.get(map_id)
+        who = log.caller(request)
+        try:
+            pmap = maps.get(map_id)
+            out = plan(map_id, pmap, req)
+        except (HTTPException, NotFound) as e:
+            log.emit(log.failed("route", map_id, *failure(e), who, start=req.start, goal=req.goal, trust=req.trust))
+            raise
+        log.emit(log.routed(out, {n.id: n.name for n in pmap.nodes}, who))
+        return out
+
+    def plan(map_id: str, pmap: PlaceMap, req: RouteRequest) -> Route:
         ids = {n.id for n in pmap.nodes}
         for node in (req.start, req.goal):
             if node not in ids:
@@ -137,6 +153,7 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
     @app.post(f"{api}/maps/{{map_id}}/localize")
     async def localize_frames(
             map_id: str,
+            request: Request,
             images: list[UploadFile] = File(..., description="1-4 JPEG camera frames, taken within a second or so"),
             previous: str | None = Form(None, description="the last confirmed node: a jump elsewhere stays uncertain"),
             expected: str | None = Form(None, description="the next checkpoint: its score and rank are reported"),
@@ -151,6 +168,19 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
         """Which node of the map the frames show (visual place recognition on the map's reference images): ranked
         nodes with their best matching references, and confirmed / uncertain / lost (nav/navigation/localize.py).
         Stateless: the caller (the orchestrator) keeps the last confirmed node and combines consecutive results."""
+        who = log.caller(request)
+        try:
+            res = await locate(map_id, images, previous, expected, heading_deg, top_k, motion, previous_step_count)
+        except (HTTPException, NotFound) as e:
+            log.emit(log.failed("localize", map_id, *failure(e), who, frames=len(images), previous=previous,
+                                expected=expected))
+            raise
+        log.emit(log.localized(res, who))
+        return res
+
+    async def locate(map_id: str, images: list[UploadFile], previous: str | None, expected: str | None,
+                     heading_deg: float | None, top_k: int, motion: list[str] | None,
+                     previous_step_count: int | None) -> Localization:
         t0 = time.perf_counter()
         if not images or len(images) > MAX_FRAMES:
             raise HTTPException(422, f"send 1..{MAX_FRAMES} images")
@@ -174,10 +204,8 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
             try:
                 queries = await run_in_threadpool(place_fn, data, model)
             except InferenceUnavailable as e:
-                log.warning("localize %s: %s", map_id, e)
                 raise HTTPException(503, f"inference host unavailable: {e}", headers={"Retry-After": "2"})
             except InferenceError as e:
-                log.warning("localize %s: %s", map_id, e)
                 raise HTTPException(502, f"inference host: {e}")
             took["embed"] = round((time.perf_counter() - t) * 1000, 1)
         t = time.perf_counter()

@@ -68,6 +68,7 @@ NAV_API_PORT = int(os.environ.get("NAV_NAV_API_PORT", "8452"))  # local default 
 FRONTEND_URL = (os.environ.get("NAV_FRONTEND_URL") or "").rstrip("/") or None
 LIVE_INFER_DEADLINE_S = float(os.environ.get("NAV_LIVE_INFER_DEADLINE_S", "8"))  # a live frame fails fast
 MAP_RELOAD_S = float(os.environ.get("NAV_MAP_RELOAD_S", "30"))  # how often nav-api checks for a newly published map
+COMMIT = os.environ.get("NAV_COMMIT") or None  # the build, in nav-api's log lines (deploy/cloudrun.sh sets it)
 # Localization status (nav/navigation/localize.py): placeholders until tuned on venue images.
 LOC_CONFIRM_SCORE = float(os.environ.get("NAV_LOC_CONFIRM_SCORE", "0.45"))
 LOC_CONFIRM_MARGIN = float(os.environ.get("NAV_LOC_CONFIRM_MARGIN", "0.05"))

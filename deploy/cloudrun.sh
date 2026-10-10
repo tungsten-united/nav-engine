@@ -147,9 +147,13 @@ secrets() {
 
 token() { cat "$(token_file "${1:-map-api}")"; echo; }
 
+commit() {  # the short commit being deployed, -dirty with local changes to what goes into the image
+    echo "$(git rev-parse --short HEAD)$(git diff --quiet HEAD -- nav frontend pyproject.toml uv.lock Dockerfile || echo -dirty)"
+}
+
 image() {  # build the Dockerfile and push it; prints the image reference
     local tag
-    tag="$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short HEAD)$(git diff --quiet HEAD -- nav frontend pyproject.toml uv.lock Dockerfile || echo -dirty)"
+    tag="$(date -u +%Y%m%dT%H%M%SZ)-$(commit)"
     docker build -q -t "$REPO/$IMAGE:$tag" . >&2
     gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin "https://$REGION-docker.pkg.dev" >/dev/null 2>&1
     docker push -q "$REPO/$IMAGE:$tag" >&2
@@ -181,6 +185,7 @@ deploy_one() {  # deploy_one <service> <image>
     ENV_FILES+=("$env_file")
     chmod 600 "$env_file"
     cp "deploy/$svc.env.yaml" "$env_file"
+    echo "NAV_COMMIT: \"$(commit)\"" >> "$env_file"  # in nav-api's log lines (nav/nav_api/log.py)
     if [[ "${SECRETS_FROM:-manager}" == manager ]]; then
         for pair in $(secrets_of "$svc"); do set+="${pair%%=*}=${pair#*=}:latest,"; done
         secret_flags=(--set-secrets "${set%,}")

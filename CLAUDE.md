@@ -14,7 +14,8 @@ phone app talks only to the orchestrator; `frontend/` here is a debugging fronte
     for the public deployment.
   - `nav/nav_api/app.py` — **nav-api**: the lean, read-only live API for Orient's orchestrator: published maps,
     routes, localization (`maps.py`: published maps + reference embeddings cached, reloaded when map.json changes).
-    Formats in `nav/schemas/navigation.py`.
+    Formats in `nav/schemas/navigation.py`. `log.py`: one JSON line per localize/route call for Cloud Logging, `message`
+    prefixed `[nav-api]`, the orchestrator's field names (`clientId` from `X-Client-Id`), `commit` from `NAV_COMMIT`.
 - `nav/recorder/store.py` — recording storage, idempotent uploads, `finalize` (chunks → `video.mp4`, batches →
   parquet/jsonl).
 - `frontend/` — the debugging frontend, for the team and for testing the APIs by hand (not Orient's app):
