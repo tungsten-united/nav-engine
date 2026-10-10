@@ -321,7 +321,7 @@ and `previous_step_count`, the phone's `stepCount` when the user's node became `
 reset it). Frames with the camera more than 55° up or down are left out (none left → `lost`). With `previous`, the
 walked distance (new steps × the map's `frame.live_step_length_m`, metres per step of the phone's detector,
 `pdr.StepDetector`) replaces the one-edge rule: a node `d` m away along the map's edges can be confirmed once walked
-≥ `d` − max(2 m, 0.35 `d`), so a place recognised from afar doesn't move the user there and a missed node doesn't
+≥ `d` − max(1 m, 0.35 `d`), so a place recognised from afar doesn't move the user there and a missed node doesn't
 stall the route. A step count below `previous_step_count` (the phone restarted counting) leaves the gate out.
 `nav map orchestrator-replay` replays a walk the way the orchestrator calls nav-api, with and without motion
 (`NAV_LOC_MAX_ABS_PITCH_DEG`, `NAV_LOC_GATE_SLACK_M`, `NAV_LOC_GATE_SLACK_FRAC`).

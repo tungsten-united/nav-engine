@@ -72,7 +72,7 @@ class Thresholds(BaseModel):
     lost_score: float  # below this nothing is recognised
     # With the phone's motion (each part only applies when its data is sent):
     max_abs_pitch_deg: float = 55.0  # frames looking more up/down than this are left out (the map has none)
-    gate_slack_m: float = 2.0  # a node d metres from `previous` is plausible once walked >= d - max(slack_m, ...
+    gate_slack_m: float = 1.0  # a node d metres from `previous` is plausible once walked >= d - max(slack_m, ...
     gate_slack_frac: float = 0.35  # ... slack_frac x d)
 
 

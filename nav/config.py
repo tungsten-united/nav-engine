@@ -73,9 +73,10 @@ LOC_CONFIRM_SCORE = float(os.environ.get("NAV_LOC_CONFIRM_SCORE", "0.45"))
 LOC_CONFIRM_MARGIN = float(os.environ.get("NAV_LOC_CONFIRM_MARGIN", "0.05"))
 LOC_LOST_SCORE = float(os.environ.get("NAV_LOC_LOST_SCORE", "0.35"))
 # With the phone's motion (nav/navigation/localize.py): leave out frames pointed at the floor/ceiling, and require the
-# walked distance from the last confirmed node (tuned with `nav map orchestrator-replay`).
+# walked distance from the last confirmed node (tuned with `nav map orchestrator-replay`: on Itnig's 1-7 m edges a
+# 2 m slack let every next node through after a step or two; 1 m stopped 3 of 9 early confirmations, lost no node).
 LOC_MAX_ABS_PITCH_DEG = float(os.environ.get("NAV_LOC_MAX_ABS_PITCH_DEG", "55"))
-LOC_GATE_SLACK_M = float(os.environ.get("NAV_LOC_GATE_SLACK_M", "2.0"))
+LOC_GATE_SLACK_M = float(os.environ.get("NAV_LOC_GATE_SLACK_M", "1.0"))
 LOC_GATE_SLACK_FRAC = float(os.environ.get("NAV_LOC_GATE_SLACK_FRAC", "0.35"))
 
 
