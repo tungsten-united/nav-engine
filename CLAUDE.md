@@ -16,11 +16,18 @@ place; the **map pipeline** turns all walks of a place into one semantic topolog
 - `nav/mapping/` — map pipeline: `prepare.py` (per-recording cache: frames, embeddings, transcripts), `frames.py`,
   `motion.py`, `models.py` (DINOv2, MegaLoc, ALIKED+LightGlue, Whisper), `select.py` (candidates), `verify.py`
   (same-place pairs: MegaLoc retrieval + LightGlue check), `llm.py` (Claude Code job + prompt),
-  `build.py` (orchestration + finish), `quality.py` (TypeSafe Jev check), `store.py`.
+  `build.py` (orchestration + finish), `quality.py` (TypeSafe Jev check), `store.py`, `calibrate.py` (video yaw,
+  sensor-to-video offset, FOV), `references.py` (reference images + embeddings for live VPR), `review.py`
+  (human review overlay `maps/<id>/review.json`; published map.json = latest build + review).
+- `nav/navigation/` — reference code for the live side: `route.py` (routes over verified edges), `pdr.py`
+  (causal step detector + GraphTracker, `nav map pdr-replay`).
+- `docs/` — the navigation-side design (`main_idea.md`, `navigation_stack.md`, by LPA, from
+  tungsten-united/demo-repository@navigation) and `map.schema.json` (regenerate: `nav map schema --out ...`; a test checks it).
 - `nav/mapping/inference.py` — every model call on files: local models, or the inference host when `NAV_INFER_URL` is set.
 - `nav/infer/` — inference host: `server.py` (`nav infer serve`: models + Claude Code map job over HTTP, one GPU slot,
   bounded queues, 503 + Retry-After), `client.py` (chunking, retries, Cloudflare service token).
-- `nav/cli.py` — `nav serve`, `nav infer serve`, `nav rec list|show|finalize|push|pull`, `nav map setup|build|llm|refinish|check|list|show|push|pull`.
+- `nav/cli.py` — `nav serve`, `nav infer serve`, `nav rec list|show|finalize|import|push|pull`,
+  `nav map setup|build|llm|refinish|check|review|route|pdr-replay|schema|list|show|push|pull`.
 - `Dockerfile` + `deploy/cloudrun.sh` — the Cloud Run worker; `deploy/nav-infer.service`, `deploy/nav-recorder.service` — helium units.
 - `data/recordings/<rec_id>/` — recordings (gitignored). Shared copy for the team: `gs://tungsten-united-nav-recordings/recordings/<rec_id>/`
   (project `tungsten-united`, not the active gcloud project `kotie-app`), via `nav rec push|pull` (`gcloud storage rsync`, no deletes, skips `raw/`).
@@ -77,6 +84,9 @@ recordings made there land in the team bucket.
 - Cloud Build's default service account has no rights in tungsten-united, so `deploy/cloudrun.sh` builds the image
   with local docker and pushes it to Artifact Registry.
 - Behind Cloud Run IAM, `Authorization` carries Google's identity token, so the app's token is also accepted as `?token=`.
+- Two step detectors disagree on Itnig (offline band-pass in motion.py ~153 steps, causal StepDetector in
+  navigation/pdr.py ~97); the tracker re-learns step length at each node, but a walk with counted steps is needed.
+- Status is per direction: an edge walked target -> source has `status` inferred and `reverse_status` observed.
 - `nvidia-smi` may report "Driver/library version mismatch" after a driver update without reboot; CUDA still works.
 
 ## Product decisions

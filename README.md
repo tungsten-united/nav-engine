@@ -124,6 +124,11 @@ uv run nav map build "Itnig" --no-llm # stop after selecting candidates (free; t
 uv run nav map llm itnig              # rerun only the LLM with the latest build's candidates, as a new build
 uv run nav map refinish itnig         # redo post-processing from the saved LLM answer (no new LLM call)
 uv run nav map check itnig            # rerun the cheap quality check (TypeSafe Jev) on the published map
+uv run nav map review itnig           # write an editable review file; --apply <file> verifies / fixes / hides
+uv run nav map route itnig "Main entrance" Stage [--trust verified|observed|any]
+uv run nav map pdr-replay itnig <rec_id> [--step-scale 0.85]  # replay a walk through the live dead-reckoning tracker
+uv run nav map schema [--out docs/map.schema.json]            # JSON Schema of the published map, for the app
+uv run nav rec import walk.mp4 --place "Itnig"                # a recording from a video alone (no sensors)
 uv run nav map list | show <map_id>
 uv run nav map push [<map_id> …]      # upload to gs://tungsten-united-nav-recordings/maps/<map_id>/ (--dry-run)
 uv run nav map pull [<map_id> …]
@@ -136,6 +141,11 @@ uv run nav map pull [<map_id> …]
      (steps × step length), heading (gyro yaw about gravity, anchored to the compass), camera pitch, and a
      dead-reckoned path;
    - voice notes transcribed locally with **Whisper** (`openai/whisper-large-v3-turbo`);
+   - **calibration** ([`calibrate.py`](nav/mapping/calibrate.py)): the video's own yaw (ORB shift between frames
+     0.1 s apart) cross-correlated with the sensor heading gives the sensor-to-video offset (Itnig: +0.6 s, the
+     encoder starting late) and the camera's horizontal field of view (38°); applied when the correlation is clear.
+     A recording **without sensors** (`nav rec import`) takes its heading from that yaw and guesses distances from
+     time (~1 m/s); the LLM is told, and its distances are not counted as measured;
    - frame **embeddings** with **DINOv2** (`facebook/dinov2-base`, whole frame without cropping, [CLS] + mean patch,
      1536-d, cosine similarity), for "does this look new";
    - **place embeddings** with [**MegaLoc**](https://github.com/gmberton/MegaLoc) (DINOv2 + SALAD head trained for
@@ -172,13 +182,35 @@ uv run nav map pull [<map_id> …]
    for drawing. Edges no walk went along directly (it passed other nodes in between) are marked inferred. Code
    derives each edge's reverse steps and checks its first step against the turn the walk made leaving the source
    (heading at the end of the source pass vs the next 6 s of walking).
-5. **Quality check** (cheap, optional): TypeSafe's **Jev** asks a few narrow questions about every node and edge, in
+   For the navigation side ([`docs/navigation_stack.md`](docs/navigation_stack.md)) it also stores: each direction's
+   **status** (`observed`: a walk went that way; `inferred`: deduced, e.g. the way back) and the walking heading
+   when leaving the source and reaching the target (map frame, compass-referenced: `frame`); **relations** (the
+   LLM says where other places are in a node's photos, `x` across the photo; code makes that a bearing with the
+   calibrated field of view and the photo's heading); and `review_flags`, what a reviewer should check.
+5. **Reference images** ([`references.py`](nav/mapping/references.py)): per node, up to 3 sharp frames each while
+   approaching, at, and leaving along each edge, from every walk that passed (the 1 fps cache), with their camera
+   heading, plus their **MegaLoc** place embeddings in `embeddings.npy`, for live visual place recognition.
+6. **Quality check** (cheap, optional): TypeSafe's **Jev** asks a few narrow questions about every node and edge, in
    parallel: does the spoken text point to something only visible, can a blind person tell they arrived / follow
    the instruction, and does the spoken instruction turn the same way as its first step. Benchmark and the
    justification for it: [`bench/quality/REPORT.md`](bench/quality/REPORT.md). Raw answers are stored per item
    (`quality`), flagged items go into `warnings` and are marked in the viewer. A map costs ~13k input tokens
    (well under a cent) and a second. Needs `TYPESAFE_API_KEY` (in `.env`; also a repo secret); otherwise skipped.
    Questions and thresholds: [`nav/mapping/quality.py`](nav/mapping/quality.py).
+7. **Review** ([`review.py`](nav/mapping/review.py)): a person walks the map and verifies what holds (per edge
+   direction), renames, fixes instructions or hides what is wrong, with `nav map review` or the viewer's buttons
+   (`PUT /api/v1/maps/<map_id>/review`). The review is `review.json` next to the builds, keyed by stable ids, so it
+   survives rebuilds; the published `map.json` is the latest build with it applied (the build's own copy keeps
+   everything). **Real users are routed over verified edges only** ([`route.py`](nav/navigation/route.py)).
+
+### Navigation reference code
+[`nav/navigation/`](nav/navigation/) has the pieces of the live side in Python, small and causal so they port to
+the TypeScript app: `route.plan_route` (shortest route over trusted edges, in the walked direction) and
+`pdr.GraphTracker` (a causal step detector + progress along the route's bearings, the uncertainty growing with
+distance, the probability of being at the next node, and the user's step length re-learned at each confirmed
+node). `nav map pdr-replay` plays a mapping walk back through it. Design: [`docs/main_idea.md`](docs/main_idea.md),
+[`docs/navigation_stack.md`](docs/navigation_stack.md) (by LPA); the map's JSON Schema for the app is
+[`docs/map.schema.json`](docs/map.schema.json) (also `GET /api/v1/schema/map`).
 
 Defaults can be changed with `NAV_EMBED_MODEL`, `NAV_PLACE_MODEL`, `NAV_TRANSCRIBE_MODEL`, `NAV_MAP_LLM_MODEL` (default `opus`), `NAV_MAP_LLM_EFFORT` (default `medium`),
 `NAV_MAP_LANGUAGE` (default `en`), `NAV_QUALITY_MODEL` (default `jev-latest`), `NAV_MAP_LLM_BUDGET_USD` (default 5) and `NAV_GCS_MAPS_URL`. A build of a
@@ -186,9 +218,11 @@ Defaults can be changed with `NAV_EMBED_MODEL`, `NAV_PLACE_MODEL`, `NAV_TRANSCRI
 
 ```
 data/maps/<map_id>/              map_id = slug of the place, e.g. "itnig"
-  map.json                       latest build's PlaceMap
-  builds/<build_id>/             immutable, one per build
+  map.json                       latest build's PlaceMap, with review.json applied
+  review.json                    human review (approvals, fixes, hidden items), keyed by stable ids
+  builds/<build_id>/             one per build
     map.json  candidates.json  tracks.json  frames/c01.jpg …
+    refs/r001.jpg …  embeddings.npy   reference images and their place embeddings
     job/  prompt.md  schema.json  command.txt  claude.json  claude.log
 ```
 
@@ -197,7 +231,9 @@ data/maps/<map_id>/              map_id = slug of the place, e.g. "itnig"
 positions and edges along the walked path (with the whole walk as a faint track), the route in recording order
 with turns, hover previews with the frame, and details pinned on click (description, landmarks, hazards, both
 instructions, frames, the walks and times that show it). **Directions** picks two nodes and chains the
-instructions along the shortest walked route.
+instructions along the shortest route (any edge, or only observed or verified ones). Nodes and edges show their
+status with **Verify** / **Hide** buttons (they save the review), reference images by role with their heading,
+and relations.
 
 ## Deployment
 
