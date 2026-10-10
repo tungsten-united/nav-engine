@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from synthetic import walking_accel
-from test_arrival import TH, loc, route
+from test_arrival import TH, loc, route, two
 
 from nav.navigation.arrival import ArrivalParams, NodeConfirmer
 from nav.navigation.pdr import GraphTracker, detect_steps
@@ -107,7 +107,8 @@ def test_js_port_matches_python():
     payload = {"route": [h.__dict__ | {"steps": []} for h in route()], "ops": json_ops,
                "accel": np.c_[t, acc].tolist(),
                "neighbours": {k: sorted(v) for k, v in NEIGHBOURS.items()},
-               "params": {"k": p.k, "n": p.n, "score": p.vote_score, "margin": p.vote_margin, "gateP": p.gate_p,
+               "params": {"k": p.k, "n": p.n, "score": p.vote_score, "margin": p.vote_margin,
+                          "runnerUp": p.runner_up_margin, "runnerUpExtra": p.runner_up_extra_m, "gateP": p.gate_p,
                           "gateSigmas": p.gate_sigmas, "looseFrac": p.loose_frac, "headingTol": p.heading_tol_deg}}
     out = subprocess.run([NODE, "-e", RUNNER, str(JS)], input=json.dumps(payload), capture_output=True, text=True,
                          check=True)
@@ -118,3 +119,24 @@ def test_js_port_matches_python():
     assert js["stepLength"] == pytest.approx(py["stepLength"])
     assert (js["expected"], js["done"]) == (py["expected"], py["done"])
     assert TH.confirm_score == 0.6  # the scenario's localizations use these thresholds
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_js_port_matches_python_on_the_runner_up_rule():
+    """The source keeps a close lead over the target while the user walks the hop: both ports arrive at the same call."""
+    ops = [["loc", float(t), two("a", "b", 0.62, 0.61, walked=w, dist2=7.0)] for t, w in enumerate([5, 7.5, 8.1, 8.5])]
+    ops += [["loc", 4.0 + t, two("b", "c", 0.6, 0.59, walked=w, dist2=7.0)] for t, w in enumerate([3, 9])]
+    json_ops = [loc_dict(op) for op in ops]
+    t, acc = walking_accel(seconds=2)
+    py = run_python(ops, (t, acc))
+    p = ArrivalParams()
+    payload = {"route": [h.__dict__ | {"steps": []} for h in route()], "ops": json_ops, "accel": np.c_[t, acc].tolist(),
+               "neighbours": {k: sorted(v) for k, v in NEIGHBOURS.items()},
+               "params": {"k": p.k, "n": p.n, "score": p.vote_score, "margin": p.vote_margin,
+                          "runnerUp": p.runner_up_margin, "runnerUpExtra": p.runner_up_extra_m, "gateP": p.gate_p,
+                          "gateSigmas": p.gate_sigmas,
+                          "looseFrac": p.loose_frac, "headingTol": p.heading_tol_deg}}
+    out = subprocess.run([NODE, "-e", RUNNER, str(JS)], input=json.dumps(payload), capture_output=True, text=True,
+                         check=True)
+    js = json.loads(out.stdout)
+    assert [e[:3] for e in js["events"]] == [e[:3] for e in py["events"]] == [["arrived", "b", 0]]

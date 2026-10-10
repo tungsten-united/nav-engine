@@ -336,6 +336,8 @@ def map_nav_replay(map_id: str, rec_id: str,
                    heading_tol: float = typer.Option(None, help="Heading tolerance when passing, degrees."),
                    score: float = typer.Option(None, help="A vote needs this score (ArrivalParams.vote_score) ..."),
                    margin: float = typer.Option(None, help="... and this lead (ArrivalParams.vote_margin)."),
+                   runner_up: float = typer.Option(None, help="Runner-up margin (ArrivalParams.runner_up_margin; 0: off)."),
+                   motion: bool = typer.Option(False, help="Send the phone's motion with each frame, as /nav does."),
                    confirm_score: float = typer.Option(None, help="Override NAV_LOC_CONFIRM_SCORE (nav-api's status)."),
                    confirm_margin: float = typer.Option(None, help="Override NAV_LOC_CONFIRM_MARGIN.")) -> None:
     """Replay a mapping walk as a user navigating its route with the whole live loop: steps -> dead reckoning,
@@ -351,18 +353,19 @@ def map_nav_replay(map_id: str, rec_id: str,
     store = _map_store()
     params = ArrivalParams()
     params = replace(params, **{f: v for f, v in (("k", k), ("n", n), ("heading_tol_deg", heading_tol),
-                                                  ("vote_score", score), ("vote_margin", margin)) if v is not None})
+                                                  ("vote_score", score), ("vote_margin", margin),
+                                                  ("runner_up_margin", runner_up)) if v is not None})
     th = Thresholds(confirm_score=confirm_score if confirm_score is not None else config.LOC_CONFIRM_SCORE,
                     confirm_margin=confirm_margin if confirm_margin is not None else config.LOC_CONFIRM_MARGIN,
                     lost_score=config.LOC_LOST_SCORE)
     res = nav_replay(store.get(map_id), store.dir(map_id), config.RECORDINGS_DIR / rec_id, config.CACHE_DIR, th,
-                     params, step_scale, heading_bias, burst=burst, every_s=every)
+                     params, step_scale, heading_bias, burst=burst, every_s=every, use_motion=motion)
     if res is None:
         print(f"{rec_id} doesn't walk any edge of {map_id}, or the map has no reference embeddings")
         raise typer.Exit(1)
     print(f"frames {res.frames_used} (+{res.frames_excluded} left out near the walk's own references) · "
           f"bursts of {burst} every {every:g} s · k={params.k}/n={params.n} · vote: score>={params.vote_score} "
-          f"lead>={params.vote_margin}")
+          f"lead>={params.vote_margin} runner-up<={params.runner_up_margin} · motion {'on' if motion else 'off'}")
     print(f"{'#':>2} {'to':<24} {'len':>5} {'reached':>8} {'how':<8} {'delay':>6} {'unc':>4} {'off':>4} "
           f"{'score':>6} {'step':>6}")
     for r in res.rows:

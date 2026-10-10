@@ -90,6 +90,36 @@ def test_navapis_walked_distance_gate_replaces_dead_reckoning():
     assert c.on_localization(3, loc("b", "approach", plausible=True)).kind == "arrived"
 
 
+def two(first: str, second: str, s1: float, s2: float, walked: float | None, dist2: float | None) -> Localization:
+    """A result where `first` leads `second` by s1 - s2, `walked` metres from the hop's source."""
+    cands = [NodeMatch(node=n, name=n.upper(), score=sc, distance_m=d, plausible=True,
+                       refs=[RefMatch(id="r", score=sc, role="at", image="x.jpg")])
+             for n, sc, d in ((first, s1, 0.0), (second, s2, dist2))]
+    return Localization(map_id="t", model="m", frames=1, status="uncertain", reason="", best=first,
+                        margin=round(s1 - s2, 4), candidates=cands, thresholds=TH, took_ms={}, walked_m=walked)
+
+
+def test_the_target_close_behind_the_source_counts_once_the_hop_is_walked():
+    """Two spots that look down the same aisle: the source keeps the lead, the target stays a close second. It counts
+    once the steps say 1 m past the target (they also count hand sway while standing)."""
+    c = NodeConfirmer(route(), None, ArrivalParams(k=2, n=3))
+    assert c.on_localization(0, two("a", "b", 0.62, 0.61, walked=5.0, dist2=7.0)) is None  # not walked yet
+    assert c.on_localization(1, two("a", "b", 0.62, 0.61, walked=7.5, dist2=7.0)) is None  # at b: sway steps count
+    assert list(c.votes) == [None, None]
+    assert c.on_localization(2, two("a", "b", 0.62, 0.61, walked=8.1, dist2=7.0)) is None  # 1 m past b
+    ev = c.on_localization(3, two("a", "b", 0.63, 0.615, walked=8.5, dist2=7.0))
+    assert ev.kind == "arrived" and ev.node == "b"
+    # not when the target is further behind, scores too low, the steps are unknown, or the rule is off
+    for loc_, params in [(two("a", "b", 0.62, 0.58, 9.0, 7.0), ArrivalParams()),
+                         (two("a", "b", 0.29, 0.28, 9.0, 7.0), ArrivalParams()),
+                         (two("a", "b", 0.62, 0.61, None, 7.0), ArrivalParams()),
+                         (two("a", "b", 0.62, 0.61, 9.0, 7.0), ArrivalParams(runner_up_margin=0)),
+                         (two("z", "b", 0.62, 0.61, 9.0, 7.0), ArrivalParams())]:  # leader is not the source
+        c = NodeConfirmer(route(), None, params)
+        evs = [c.on_localization(t, loc_) for t in range(4)]
+        assert not any(e is not None and e.kind == "arrived" for e in evs) and c.expected == "b"
+
+
 def test_a_node_next_to_the_hop_is_not_elsewhere():
     nb = {"b": {"x"}, "x": {"b"}}
     c = NodeConfirmer(route(), None, ArrivalParams(k=2, n=3), nb)

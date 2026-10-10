@@ -8,10 +8,10 @@
 "use strict";
 
 const BURST = 2;  // frames per /localize call while following a route (every 1 s by default): one confirmer vote
-// The confirmer's rule, with overrides from the URL (?k=2&n=3&score=0.3&margin=0.04)
+// The confirmer's rule, with overrides from the URL (?k=2&n=3&score=0.3&margin=0.04&runnerUp=0.02&runnerUpExtra=1; runnerUp=0: off)
 const RULE = (() => {
   const q = new URLSearchParams(location.search), out = {};
-  for (const key of ["k", "n", "score", "margin"]) {
+  for (const key of ["k", "n", "score", "margin", "runnerUp", "runnerUpExtra"]) {
     const v = parseFloat(q.get(key));
     if (Number.isFinite(v) && v >= 0) out[key] = key === "k" || key === "n" ? Math.max(1, Math.round(v)) : v;
   }
@@ -98,7 +98,8 @@ function startConfirmer() {
 function showPdr() {
   const c = N.confirmer, s = c?.pdr();
   if (!c || c.done) { $("#pdr").textContent = ""; return; }
-  const rule = `${c.p.k} of ${c.p.n}, score ≥ ${c.p.score.toFixed(2)}, lead ≥ ${c.p.margin.toFixed(2)}`;
+  const rule = `${c.p.k} of ${c.p.n}, score ≥ ${c.p.score.toFixed(2)}, lead ≥ ${c.p.margin.toFixed(2)}` +
+    (c.p.runnerUp > 0 ? `, runner-up ≤ ${c.p.runnerUp.toFixed(2)} after the hop` : "");
   const votes = `votes ${c.votes.map((v) => v ? v[0] : "·").join("")}`;
   $("#pdr").textContent = s
     ? `${fmtM(Math.max(s.remaining_m, 0))} ± ${fmtM(s.sigma_m)} to ${N.names[c.expected]} · ${votes} · ${rule}`
@@ -226,7 +227,7 @@ async function run() {
     $("#steady").textContent = steady ? `steady: ${N.names[steady]}` : "";
     // the confirmer's rule (its own score and lead, nav-api's walked-distance gate), not nav-api's status
     const [vote, info] = N.confirmer?.hop ? N.confirmer.vote(res) : [null, {}];
-    if (hop && vote === "arrive" && res.best === hop.target && info.plausible !== false) {
+    if (hop && vote === "arrive" && info.plausible !== false) {  // the target leads, or is a close second at the end of the hop
       $("#arrive").textContent = `${N.names[hop.target]} recognised${steady === hop.target ? " (steady)" : ""}: confirm arrival when you are there.`;
       $("#arrive").classList.add("match");
     } else if (hop) {

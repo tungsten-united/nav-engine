@@ -97,9 +97,33 @@ def _live_embeddings(paths: list[Path], model: str, cache: Path) -> np.ndarray:
     return np.load(path)
 
 
+def _motion_at(rec_dir: Path, step_ms: np.ndarray):
+    """t_ms -> the phone's LiveMotion then: steps so far (the given step times), compass and orientation angles."""
+    import pyarrow.parquet as pq
+
+    from nav.schemas.navigation import LiveMotion, LiveOrientation
+
+    ori = pq.read_table(rec_dir / "orientation.parquet").to_pydict()
+    ori_t = np.asarray(ori["t_ms"], float)
+
+    def motion_at(t_ms: float) -> LiveMotion:
+        i = int(np.clip(np.searchsorted(ori_t, t_ms), 0, len(ori_t) - 1))
+        h = ori["heading_deg"][i]
+        a, b, g = ori["alpha"][i], ori["beta"][i], ori["gamma"][i]
+        return LiveMotion(step_count=int((step_ms <= t_ms).sum()), heading_deg=h,
+                          heading_source=None if h is None else "orientation_absolute",
+                          orientation=None if None in (a, b, g) else LiveOrientation(alpha=a, beta=b, gamma=g,
+                                                                                      absolute=True))
+    return motion_at
+
+
 def nav_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, thresholds: Thresholds,
                params: ArrivalParams | None = None, step_scale: float = 1.0, heading_bias_deg: float = 0.0,
-               exclude_ms: float = 400.0, burst: int = BURST, every_s: float = EVERY_S) -> NavReplay | None:
+               exclude_ms: float = 400.0, burst: int = BURST, every_s: float = EVERY_S,
+               use_motion: bool = False) -> NavReplay | None:
+    """With `use_motion` each frame goes to localize with the phone's motion, as /nav sends it from the camera: the
+    step count (the causal detector on the walk's IMU), compass and orientation; and the step count when the
+    confirmer last moved on as previous_step_count. nav-api then gates by walked distance (`plausible`, walked_m)."""
     from nav.mapping.prepare import load_walk
     from nav.mapping.select import SelectParams
 
@@ -138,10 +162,11 @@ def nav_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, t
         if group:
             bursts.append((rows[group[-1]]["t_ms"], "frame", group))
         tick += every_s * 1000
-    timeline = sorted([(float(t) * 1000, "step", None) for t in user_steps(rec_dir, step_scale) if t * 1000 >= start]
-                      + bursts, key=lambda x: x[0])
+    step_ms = np.asarray(user_steps(rec_dir, step_scale), float) * 1000
+    timeline = sorted([(float(t), "step", None) for t in step_ms if t >= start] + bursts, key=lambda x: x[0])
+    motion_at = _motion_at(rec_dir, step_ms) if use_motion else None
     per_hop = [{"kind": "-", "t": None, "uncertain": 0, "off_route": 0, "score": None, "step": None} for _ in hops]
-    state = {"offset": 0, "conf": conf}
+    state = {"offset": 0, "conf": conf, "node_steps": int((step_ms <= start).sum()), "now": start}
 
     def record(ev) -> None:
         if ev is None:
@@ -149,6 +174,7 @@ def nav_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, t
         k = state["offset"] + ev.hop_index
         slot = per_hop[k]
         if ev.kind in CONFIRM_KINDS:
+            state["node_steps"] = int((step_ms <= state["now"]).sum())  # previous_step_count from now on
             slot["kind"], slot["t"], slot["step"] = ev.kind, ev.t, state["conf"].tracker.step_length
         elif ev.kind == "uncertain":
             slot["uncertain"] += 1
@@ -160,6 +186,7 @@ def nav_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, t
         if c.done:
             break
         k = state["offset"] + c.hop_index
+        state["now"] = t_ms
         # a person confirms when the confirmer missed it (the walk is GRACE_S past it, or at the next node already)
         deadline = min(arrivals[k] + GRACE_S * 1000, arrivals[k + 1] if k + 1 < len(arrivals) else float("inf"))
         if t_ms > deadline:
@@ -168,8 +195,10 @@ def nav_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, t
         if kind == "step":
             record(c.on_step(heading(t_ms), t_ms / 1000))
         else:
+            motions = [motion_at(rows[j]["t_ms"]) for j in i] if motion_at else None
             loc = localize(index, emb[i], thresholds, previous=c.previous, expected=c.expected,
-                           heading_abs_deg=heading(t_ms), model=model)
+                           heading_abs_deg=heading(t_ms), model=model, motions=motions,
+                           previous_step_count=state["node_steps"] if motion_at else None)
             if abs(t_ms - arrivals[k]) <= 3000 and loc.expected_score is not None:
                 per_hop[k]["score"] = max(per_hop[k]["score"] or 0.0, loc.expected_score)
             record(c.on_localization(t_ms / 1000, loc))

@@ -74,7 +74,8 @@ const ArrivalNav = (() => {
 
   // --- arrival.NodeConfirmer -----------------------------------------------------------------------------------
   // score / margin: the confirmer's own vote thresholds (not nav-api's confirm_score); headingTol: passing only.
-  const PARAMS = { k: 2, n: 3, score: 0.30, margin: 0.04, gateP: 0.2, gateSigmas: 2.0, looseFrac: 0.5, headingTol: 90.0 };
+  // runnerUp: the hop's target this close behind its source, walked runnerUpExtra m past it, votes arrive (0: off)
+  const PARAMS = { k: 2, n: 3, score: 0.30, margin: 0.04, runnerUp: 0.02, runnerUpExtra: 1.0, gateP: 0.2, gateSigmas: 2.0, looseFrac: 0.5, headingTol: 90.0 };
   const CONFIRM_KINDS = ["arrived", "passed", "manual"];
   const r2 = (x) => Math.round(x * 100) / 100;
   const r3 = (x) => Math.round(x * 1000) / 1000;
@@ -128,15 +129,24 @@ const ArrivalNav = (() => {
       const ref = top.refs?.[0] || null;
       const info = { best: loc.best, score: top.score, margin: loc.margin, role: ref ? ref.role : null,
                      toward: ref ? ref.toward : null, plausible: top.plausible ?? null };
-      if (!clear) return [null, info];
+      if (!clear) return [this.runnerUp(loc, top), info];
       if (loc.best === hop.target) {
         if (ref && ref.role === "outgoing") return [nxt && ref.toward === nxt.target ? "pass" : null, info];
         return ["arrive", info];
       }
       if (nxt && loc.best === nxt.target) return [ref && (ref.role === "approach" || ref.role === "at") ? "pass" : null, info];
       const onHop = [hop.source, hop.target, ...(nxt ? [nxt.target] : [])];
-      if (onHop.includes(loc.best) || onHop.some((x) => this.nbrs[x]?.has(loc.best))) return [null, info];
+      if (onHop.includes(loc.best) || onHop.some((x) => this.nbrs[x]?.has(loc.best))) return [this.runnerUp(loc, top), info];
       return ["elsewhere", info];
+    }
+
+    // the hop's source leads and its target is a close second, with the whole hop walked: an arrive vote
+    runnerUp(loc, top) {
+      const hop = this.hop;
+      if (!(this.p.runnerUp > 0) || loc.best !== hop.source || loc.candidates.length < 2) return null;
+      const second = loc.candidates[1], walked = loc.walked_m;
+      return second.node === hop.target && second.score >= this.p.score && top.score - second.score <= this.p.runnerUp
+        && walked != null && second.distance_m != null && walked >= second.distance_m + this.p.runnerUpExtra ? "arrive" : null;
     }
 
     gate(vote, info, pdr) {

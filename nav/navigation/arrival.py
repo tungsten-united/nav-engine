@@ -17,6 +17,10 @@ margin over the second >= vote_margin.
 - arrive: X = T;
 - pass: X = T through an outgoing reference toward U, or X = U through an approach / at reference (in an open space
   the next spot is often what the camera sees from T): the user is at or past T;
+- arrive, runner-up: X = A and T is a close second (within runner_up_margin, score >= vote_score) once the phone's
+  steps say the user walked past T (walked_m >= T's distance from A + runner_up_extra_m: the step count also counts
+  hand sway while standing). Spots a few metres apart that look down the same aisle (Itnig: Drinks area and Stage
+  corridor, margin 0.01-0.02) otherwise never let T lead;
 - elsewhere: X is none of A, T, U nor next to any of them (`neighbours`, the map's edges): a node next to the hop is
   often in view from it, and is no sign of being lost.
 A vote counts only if the user had walked far enough when the frame was taken, so T seen from afar doesn't add up to
@@ -55,6 +59,8 @@ class ArrivalParams:
     n: int = 3  # ... among the last n localizations (one burst a second: about 2-3 s to confirm)
     vote_score: float = 0.30  # the best node votes when it scores at least this ...
     vote_margin: float = 0.04  # ... and leads the second by at least this
+    runner_up_margin: float = 0.02  # T this close behind A, with the whole hop walked, votes too (0: off) ...
+    runner_up_extra_m: float = 1.0  # ... walked at least this beyond T's distance
     gate_p: float = 0.2  # P(within the arrival radius) that opens the dead-reckoning gate ...
     gate_sigmas: float = 2.0  # ... or |remaining| within this many sigma
     loose_frac: float = 0.5  # loose gate: at least (1 - loose_frac) of the hop walked
@@ -160,7 +166,7 @@ class NodeConfirmer:
         info = {"best": loc.best, "score": top.score, "margin": loc.margin, "role": ref.role if ref else None,
                 "toward": ref.toward if ref else None, "plausible": top.plausible}
         if not clear:
-            return None, info
+            return self._runner_up(loc, top), info
         if loc.best == hop.target:
             if ref and ref.role == "outgoing":
                 return ("pass" if nxt is not None and ref.toward == nxt.target else None), info
@@ -169,8 +175,21 @@ class NodeConfirmer:
             return ("pass" if ref and ref.role in ("approach", "at") else None), info
         on_hop = [hop.source, hop.target] + ([nxt.target] if nxt is not None else [])
         if loc.best in on_hop or any(loc.best in self.neighbours.get(x, ()) for x in on_hop):
-            return None, info
+            return self._runner_up(loc, top), info
         return "elsewhere", info
+
+    def _runner_up(self, loc, top) -> str | None:
+        """The hop's source leads and its target is a close second, with the whole hop walked: an arrive vote."""
+        hop = self.hop
+        if self.p.runner_up_margin <= 0 or loc.best != hop.source or len(loc.candidates) < 2:
+            return None
+        second = loc.candidates[1]
+        walked = getattr(loc, "walked_m", None)
+        if (second.node == hop.target and second.score >= self.p.vote_score
+                and top.score - second.score <= self.p.runner_up_margin
+                and walked is not None and second.distance_m is not None and walked >= second.distance_m + self.p.runner_up_extra_m):
+            return "arrive"
+        return None
 
     def _gate(self, vote: str, info: dict, pdr: dict | None) -> bool:
         """Had the user walked far enough for this vote when the frame was taken?"""
