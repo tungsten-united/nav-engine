@@ -192,8 +192,15 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
         return maps.summaries()
 
     @app.get(f"{api}/maps/{{map_id}}")
-    def get_map(map_id: str) -> PlaceMap:
-        return maps.get(map_id)
+    def get_map(map_id: str, clean: bool = True) -> PlaceMap:
+        """The published map. `clean=false`: the same build and review without the cleaner (nav/mapping/clean.py),
+        with everything it leaves out, for the viewer's "Show pruned"."""
+        if clean:
+            return maps.get(map_id)
+        from nav.mapping.build import build_map_of, published_map
+
+        maps.get(map_id)
+        return published_map(maps.dir(map_id), build_map_of(maps.dir(map_id))[1], clean=False)
 
     @app.get(f"{api}/schema/map")
     def map_schema() -> dict:
@@ -214,6 +221,14 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
 
         maps.get(map_id)
         save_review(maps.dir(map_id), review, by=identity(request))
+        return republish(maps.dir(map_id))
+
+    @app.post(f"{api}/maps/{{map_id}}/republish")
+    def republish_map(map_id: str) -> PlaceMap:
+        """Publish the published build again with the current review and cleaner (no LLM call). Returns the map."""
+        from nav.mapping.build import republish
+
+        maps.get(map_id)
         return republish(maps.dir(map_id))
 
     @app.get(f"{api}/maps/{{map_id}}/builds")

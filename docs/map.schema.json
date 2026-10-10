@@ -88,6 +88,41 @@
    "title": "BuildInfo",
    "type": "object"
   },
+  "CleanInfo": {
+   "description": "What the cleaner (nav/mapping/clean.py) kept of the reviewed map: only what the walks back up.",
+   "properties": {
+    "params": {
+     "additionalProperties": true,
+     "title": "Params",
+     "type": "object"
+    },
+    "nodes_before": {
+     "title": "Nodes Before",
+     "type": "integer"
+    },
+    "edges_before": {
+     "title": "Edges Before",
+     "type": "integer"
+    },
+    "nodes": {
+     "title": "Nodes",
+     "type": "integer"
+    },
+    "edges": {
+     "title": "Edges",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "params",
+    "nodes_before",
+    "edges_before",
+    "nodes",
+    "edges"
+   ],
+   "title": "CleanInfo",
+   "type": "object"
+  },
   "EmbeddingInfo": {
    "properties": {
     "model": {
@@ -706,6 +741,14 @@
      ],
      "default": null,
      "title": "Target Part"
+    },
+    "via": {
+     "default": [],
+     "items": {
+      "type": "string"
+     },
+     "title": "Via",
+     "type": "array"
     }
    },
    "required": [
@@ -1452,6 +1495,25 @@
    "default": {},
    "title": "Merged",
    "type": "object"
+  },
+  "pruned": {
+   "additionalProperties": {
+    "type": "string"
+   },
+   "default": {},
+   "title": "Pruned",
+   "type": "object"
+  },
+  "clean": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/CleanInfo"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
   }
  },
  "required": [

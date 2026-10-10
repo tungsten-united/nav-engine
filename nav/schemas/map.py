@@ -32,7 +32,8 @@ map.json at the top is a copy of the latest one, and its image paths point into 
         job/                         prompt.md, schema.json, claude.json (raw Claude Code result), claude.log
       review.json                    human review overlay (nav/mapping/review.py), keyed by stable ids
 
-The top map.json is the latest build's map.json with review.json applied (verified status, edits, hidden items).
+The top map.json is the latest build's map.json with review.json applied (verified status, edits, hidden items),
+then cleaned (nav/mapping/clean.py: only the nodes and edges the walks back up; `pruned` says what was left out).
 
 For the navigation side (docs/navigation_stack.md): headings are degrees clockwise in the map frame (`PlaceMap.frame`;
 compass-referenced when every walk had a compass, so a live absolute heading H is H - frame.heading_zero_abs_deg).
@@ -397,6 +398,8 @@ class PlaceEdge(MapEdge):
     # The node an end was walked to, when the review merged it into `source` / `target` (None: that node itself).
     source_part: str | None = None
     target_part: str | None = None
+    # Spots the cleaner folded into this edge, in walking order (nav/mapping/clean.py): seen by too few walks.
+    via: list[str] = []
 
 
 class LlmRun(BaseModel):
@@ -438,6 +441,16 @@ class Retired(BaseModel):
     build_id: str  # the first build without it
 
 
+class CleanInfo(BaseModel):
+    """What the cleaner (nav/mapping/clean.py) kept of the reviewed map: only what the walks back up."""
+
+    params: dict
+    nodes_before: int
+    edges_before: int
+    nodes: int
+    edges: int
+
+
 class PlaceMap(MapDraft):
     model_config = ConfigDict(extra="ignore")
     schema_version: int = MAP_SCHEMA_VERSION
@@ -456,6 +469,8 @@ class PlaceMap(MapDraft):
     reviewed_at_utc: datetime | None = None  # when review.json was last applied (None: never reviewed)
     hidden: list[str] = []  # node / edge / relation ids hidden by the review (still in the build's map.json)
     merged: dict[str, str] = {}  # node id -> the node the review merged it into (edges keep the part: *_part)
+    pruned: dict[str, str] = {}  # node / edge id -> why the cleaner left it out (still in the build's map.json)
+    clean: CleanInfo | None = None  # None: published without cleaning
 
 
 class MapSummary(BaseModel):

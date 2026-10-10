@@ -32,7 +32,9 @@ calls map-api directly. `frontend/` here is a debugging frontend, not Orient's a
   sensor-to-video offset, FOV), `odometry.py` (metres walked from the floor seen in the video, fused with steps),
   `references.py` (reference images + embeddings for live VPR), `review.py` (human review overlay
   `maps/<id>/review.json`, incl. distances measured on site that set the scale, and `merge_into` to fold nodes into
-  one area; published map.json = latest build + review).
+  one area), `clean.py` (only what the walks back up is published: ≥ 2 walks, weaker edges only to keep the map
+  walkable, weak spots on the way folded into edges; `pruned` says why; published map.json = latest build + review,
+  cleaned).
 - `nav/navigation/` — the live side, small and causal: `route.py` (routes over verified edges by default) and
   `localize.py` (VPR against reference embeddings → ranked nodes, confirmed/uncertain/lost), both served by nav-api;
   `pdr.py` (causal step detector + GraphTracker, `nav map pdr-replay`) and `arrival.py` (node confirmer, ported 1:1
@@ -45,7 +47,7 @@ calls map-api directly. `frontend/` here is a debugging frontend, not Orient's a
   where nav-api's live frames go ahead of queued batch calls, bounded queues, 503 + Retry-After), `client.py`
   (chunking, retries, deadlines, Cloudflare service token).
 - `nav/cli.py` — `nav serve [--app nav-api]`, `nav infer serve`, `nav rec list|show|finalize|import|push|pull`,
-  `nav map setup|build|llm|refinish|check|review|measure|route|pdr-replay|orchestrator-replay|schema|list|show|push|pull`.
+  `nav map setup|build|llm|refinish|check|review|clean|republish|measure|route|pdr-replay|orchestrator-replay|schema|list|show|push|pull`.
 - `Dockerfile` + `deploy/cloudrun.sh` + `deploy/{map-api,nav-api}.env.yaml` — the two Cloud Run services;
   `deploy/nav-infer.service`, `deploy/nav-recorder.service` (helium-nav: map-api serving the debugging pages) — helium units.
 - `data/recordings/<rec_id>/` — recordings (gitignored). Shared copy for the team: `gs://tungsten-united-nav-recordings/recordings/<rec_id>/`
@@ -142,6 +144,10 @@ the live inference host out of it.
 - A merged node (review `merge_into`) is an area whose edges lead to different parts of it: routes and the walked-
   distance gate cross it only in and out of one part (`*_part` on edges). Merging Itnig's three table nodes without
   that left the stage and kitchen unreachable over observed edges from the entrance, or gave 13 m shortcuts.
+- The LLM's `confidence` does not follow the evidence (Itnig: Bathroom "high", seen once by one walk; 10 of 19 edges
+  walked once, 2 never): the cleaner (clean.py) judges by walks instead. Connectivity has to be checked in the walked
+  direction (route.py's `observed`): undirected, it kept Bathroom's edge walked only out of it, and dropped a
+  "shortcut" whose way around was walkable only backwards.
 
 ## Product decisions
 - A recording is a **free walk through a place**, not a route. `place` (required, whitespace-normalised,

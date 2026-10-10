@@ -19,7 +19,11 @@
         </div>
         <div class="tools">
           <select id="maps" aria-label="Map"></select>
-          <button id="walk" type="button" aria-pressed="true">Walked path</button>
+          <span id="style" class="seg" role="group" aria-label="Edge style">
+            <button type="button" data-style="smooth" aria-pressed="true">Smooth</button><button type="button" data-style="straight" aria-pressed="false">Straight</button>
+          </span>
+          <button id="tracks" type="button" aria-pressed="false" title="The whole walks, faint">Tracks</button>
+          <button id="pruned" type="button" aria-pressed="false" title="What the cleaner left out, faint">Pruned</button>
           <button id="fit" type="button">Fit</button>
         </div>
       </header>

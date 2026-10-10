@@ -258,6 +258,33 @@ def map_review(map_id: str,
     print(f"wrote {out}; edit it, then: nav map review {map_id} --apply {out}")
 
 
+@maps.command("clean")
+def map_clean(map_id: str, apply: bool = typer.Option(False, help="Republish the map with the cleaner on.")) -> None:
+    """What the cleaner (nav/mapping/clean.py) leaves out of the published map, and why: only the nodes and edges
+    the walks back up are published. Without --apply nothing is written."""
+    from nav.mapping.build import build_map_of, published_map, republish
+
+    map_dir = _map_store().dir(map_id)
+    _, raw = build_map_of(map_dir)
+    m = republish(map_dir) if apply else published_map(map_dir, raw, clean=True)
+    names = {n.id: n.name for n in raw.nodes}
+    c = m.clean
+    print(f"{'published' if apply else 'would publish'} {map_id}: {c.nodes}/{c.nodes_before} nodes, "
+          f"{c.edges}/{c.edges_before} edges")
+    for i, why in m.pruned.items():
+        print(f"  {i:5} {names.get(i, '')}{' - ' if i in names else ''}{why}")
+
+
+@maps.command("republish")
+def map_republish(map_id: str) -> None:
+    """Publish the published build again with the current review and cleaner (no LLM, no recomputation)."""
+    from nav.mapping.build import republish
+
+    m = republish(_map_store().dir(map_id))
+    print(f"published {map_id}: {len(m.nodes)} nodes, {len(m.edges)} edges"
+          + (f" (cleaned from {m.clean.nodes_before} / {m.clean.edges_before})" if m.clean else ""))
+
+
 @maps.command("measure")
 def map_measure(map_id: str, start: str, goal: str, meters: float,
                 sigma: float = typer.Option(0.5, help="How sure the measurement is, metres."),

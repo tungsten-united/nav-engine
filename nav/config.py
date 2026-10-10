@@ -51,6 +51,8 @@ MAP_LANGUAGE = os.environ.get("NAV_MAP_LANGUAGE", "en")
 MAP_LLM_BUDGET_USD = float(os.environ.get("NAV_MAP_LLM_BUDGET_USD", "5"))
 # map-api rebuilds a place's map when one of its walks finalizes (same map, improved: ids and review carry over).
 AUTO_BUILD = os.environ.get("NAV_AUTO_BUILD", "1") != "0"
+# The published map keeps only what the walks back up (nav/mapping/clean.py); 0 publishes the reviewed build as is.
+MAP_CLEAN = os.environ.get("NAV_MAP_CLEAN", "1") != "0"
 
 # Inference host (nav infer serve): the GPU machine serving the local models and the Claude Code map job over HTTP.
 # Set NAV_INFER_URL on a worker without GPU to use it instead of local models; it goes through Cloudflare Access with
