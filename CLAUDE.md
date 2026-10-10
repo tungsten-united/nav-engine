@@ -33,7 +33,10 @@ phone app talks only to the orchestrator; `frontend/` here is a debugging fronte
   + review).
 - `nav/navigation/` — the live side, small and causal: `route.py` (routes over verified edges by default) and
   `localize.py` (VPR against reference embeddings → ranked nodes, confirmed/uncertain/lost), both served by nav-api;
-  `pdr.py` (causal step detector + GraphTracker, `nav map pdr-replay`), reference code that nothing live runs.
+  `pdr.py` (causal step detector + GraphTracker, `nav map pdr-replay`) and `arrival.py` (node confirmation: votes
+  over consecutive localizations + dead-reckoning gate + heading → arrived / passed / uncertain / off_route),
+  reference code that nothing live runs: the app ports them (mirrored 1:1 in `frontend/nav/arrival.js`, checked by
+  `tests/test_arrival_js.py`); `replay.py` (`nav map nav-replay`: a walk through the whole live loop).
 - `docs/` — the navigation-side design (`main_idea.md`, `navigation_stack.md`, by LPA, from
   tungsten-united/demo-repository@navigation, aligned with Orient's architecture) and `map.schema.json` (regenerate: `nav map schema --out ...`; a test checks it).
 - `nav/mapping/inference.py` — every model call on files: local models, or the inference host when `NAV_INFER_URL` is set.
@@ -41,7 +44,7 @@ phone app talks only to the orchestrator; `frontend/` here is a debugging fronte
   where nav-api's live frames go ahead of queued batch calls, bounded queues, 503 + Retry-After), `client.py`
   (chunking, retries, deadlines, Cloudflare service token).
 - `nav/cli.py` — `nav serve [--app nav-api]`, `nav infer serve`, `nav rec list|show|finalize|import|push|pull`,
-  `nav map setup|build|llm|refinish|check|review|measure|route|pdr-replay|schema|list|show|push|pull`.
+  `nav map setup|build|llm|refinish|check|review|measure|route|pdr-replay|nav-replay|schema|list|show|push|pull`.
 - `Dockerfile` + `deploy/cloudrun.sh` + `deploy/{map-api,nav-api}.env.yaml` — the two Cloud Run services;
   `deploy/nav-infer.service`, `deploy/nav-recorder.service` (helium-nav: map-api serving the debugging pages) — helium units.
 - `data/recordings/<rec_id>/` — recordings (gitignored). Shared copy for the team: `gs://tungsten-united-nav-recordings/recordings/<rec_id>/`
@@ -82,6 +85,13 @@ never the live services: recordings made there land in the team bucket. For /loc
 the live inference host out of it.
 
 ## Things learned the hard way
+- Node confirmation on Itnig (`nav map nav-replay`): requiring dead reckoning *and* camera to both say "near" lost
+  most nodes, because the camera recognises a node from its "at" photos 3-4 m before the tracker gets there (map
+  lengths are off by metres). So at-photo votes only need half the hop walked; approach photos (taken from afar)
+  still need the strict gate. In an open hall the next node is often what the camera sees from the current one:
+  that counts as passing it. Votes from before the gate opened never count (else a place seen from afar adds up to
+  an arrival as soon as you get near). Replays need frames *between* the stored 1 fps ones (2 fps from the video):
+  excluding the stored frames near the walk's own references leaves almost nothing.
 - Chrome's MP4 MediaRecorder only emits data at keyframes (in practice at stop); WebM honours the timeslice.
   Keep WebM first in `VIDEO_MIMES` and `videoKeyFrameIntervalDuration: 1000`.
 - Cloudflare edge-caches `.js/.css` and the zone forces a 4 h browser TTL. `index.html` is served with

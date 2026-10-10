@@ -31,6 +31,10 @@
         <video id="video" playsinline muted hidden></video>
         <img id="image" alt="" hidden>
         <div class="tools">
+          <label title="Confirm checkpoints by themselves from consecutive localizations + steps + compass (arrival.js); off: tap Confirm arrival"><input id="autoconfirm" type="checkbox"> auto-confirm</label>
+          <span id="pdr" class="small muted"></span>
+        </div>
+        <div class="tools">
           <button id="once" type="button">Localize</button>
           <label><input id="auto" type="checkbox"> every
             <select id="every" aria-label="Interval"><option>1</option><option selected>2</option><option>5</option></select> s</label>
@@ -50,6 +54,7 @@
   <footer id="health" class="foot muted small"></footer>
   <script src="../config.js"></script>
   <script src="../loc/loc-core.js"></script>
+  <script src="arrival.js"></script>
   <script src="nav.js"></script>
 </body>
 </html>

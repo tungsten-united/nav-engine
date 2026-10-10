@@ -28,6 +28,7 @@ class RouteHop(BaseModel):
     forward: bool  # True: along the edge (source -> target); False: walking it back
     length_m: float | None
     bearing_deg: float | None  # walking direction when leaving `source`, map frame
+    arrival_deg: float | None = None  # walking direction when reaching `target`, map frame
     instruction: str | None
     steps: list[Step] = []
     status: Status

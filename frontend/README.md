@@ -26,6 +26,13 @@ Two services, two base URLs (both set in `config.js`; OpenAPI at `/docs` on each
 - Localizing a frame: `POST {nav-api}/api/v1/maps/{map_id}/localize` with multipart `images` (1–4 JPEGs, ~768 px),
   optional `previous` (last confirmed node), `expected` (next checkpoint), `heading_deg` (compass) and `top_k`. See
   `loc/loc-core.js` (`localize`, `Frames.grab`).
+- Confirming checkpoints: `nav/arrival.js` (`StepDetector`, `GraphTracker`, `NodeConfirmer`; a 1:1 port of
+  `nav/navigation/pdr.py` and `arrival.py`). Feed it each `/localize` result (`onLocalization`), each step from
+  DeviceMotion (`onStep` with the heading in the map frame: compass − `map.frame.heading_zero_abs_deg`) and the
+  user's "I'm here" (`confirmManual`); send its `previous` / `expected` with the next `/localize`. It returns
+  arrived / passed / uncertain / off_route events. Route hops carry `arrival_deg` for its heading check. The `/nav/`
+  page's "auto-confirm" uses it (dead reckoning only with the camera as source: a recording's video has no live
+  steps).
 
 ## Running these pages
 - Hosted: map-api serves them at `/`, `/dash/`, `/viz/`, `/loc/` and `/nav/`, and so does helium-nav (behind

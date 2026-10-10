@@ -147,6 +147,7 @@ uv run nav map review itnig           # write an editable review file; --apply <
 uv run nav map measure itnig "Main entrance" "Drinks area" 7 --sigma 0.3   # a distance measured on site: sets the scale
 uv run nav map route itnig "Main entrance" Stage [--trust verified|observed|any]
 uv run nav map pdr-replay itnig <rec_id> [--step-scale 0.85]  # replay a walk through the live dead-reckoning tracker
+uv run nav map nav-replay itnig <rec_id> [--step-scale 0.85] [--k 3 --n 4]  # ... through the whole live loop
 uv run nav map schema [--out docs/map.schema.json]            # JSON Schema of the published map, for nav-api's callers
 uv run nav rec import walk.mp4 --place "Itnig"                # a recording from a video alone (no sensors)
 uv run nav map list | show <map_id>
@@ -247,10 +248,24 @@ uv run nav map pull [<map_id> …]
 ### Navigation code
 [`nav/navigation/`](nav/navigation/) is the live side, small and causal. nav-api serves two of its pieces:
 `route.plan_route` (shortest route over trusted edges, in the walked direction) and `localize.localize` (which node
-live frames show). The third, `pdr.GraphTracker` (a causal step detector + progress along the route's bearings, the
-uncertainty growing with distance, the probability of being at the next node, and the user's step length re-learned
-at each confirmed node), is reference code that nothing live runs. `nav map pdr-replay` plays a mapping walk back
-through it. Design: [`docs/main_idea.md`](docs/main_idea.md), [`docs/navigation_stack.md`](docs/navigation_stack.md)
+live frames show). The others are reference code that nothing live runs; the app ports them.
+`pdr.GraphTracker` (a causal step detector + progress along the route's bearings, the uncertainty growing with
+distance, the probability of being at the next node, and the user's step length re-learned at each confirmed
+node); `nav map pdr-replay` plays a mapping walk back through it.
+`arrival.NodeConfirmer` decides that the user reached, or walked through, the next node of the route from
+consecutive localizations (nav-api `/localize`, sent with the confirmer's `previous` / `expected`), the dead
+reckoning and the compass: votes over the last n localizations (T recognised through its approach / at references
+= arrive; through its outgoing references toward the next node, or the next node recognised = passed), each counted
+only if the dead reckoning agreed when the frame was taken (approach photos: near T; at photos and pass votes: half
+the hop walked), so a place seen from afar is never "reached"; the heading must agree with the hop's arrival
+direction. It also reports `uncertain` (walked past without recognising it) and `off_route` (another node
+recognised); nothing is ever skipped, and a manual confirmation is always accepted.
+[`frontend/nav/arrival.js`](frontend/nav/arrival.js) is its 1:1 JS port (with the step detector and tracker; a test
+checks they agree), used by the `/nav/` debugger's "auto-confirm". `nav map nav-replay` plays a walk back through the
+whole loop (steps → tracker, video at 2 fps → localization → confirmer; frames near the walk's own references left
+out). Itnig, its own mapping walk: 6 of 9 nodes confirmed by the camera, 0 false, 0 off-route alarms; the misses
+are two spots 3 m apart that look alike (Corridor end / Kitchen) and a kitchen scoring under 0.6.
+Design: [`docs/main_idea.md`](docs/main_idea.md), [`docs/navigation_stack.md`](docs/navigation_stack.md)
 (by LPA); the map's JSON Schema for nav-api's callers is [`docs/map.schema.json`](docs/map.schema.json) (also
 `GET /api/v1/schema/map`).
 

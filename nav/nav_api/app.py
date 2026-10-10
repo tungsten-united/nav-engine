@@ -126,7 +126,8 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
                 raise HTTPException(404, f"no node {node!r} in {map_id}")
         hops = plan_route(pmap, req.start, req.goal, req.trust)
         out = [RouteHop(edge=h.edge, source=h.source, target=h.target, forward=h.forward, length_m=h.length_m,
-                        bearing_deg=h.bearing_deg, instruction=h.instruction, steps=h.steps, status=h.status)
+                        bearing_deg=h.bearing_deg, arrival_deg=h.arrival_deg, instruction=h.instruction,
+                        steps=h.steps, status=h.status)
                for h in hops or []]
         lengths = [h.length_m for h in out]
         return Route(map_id=map_id, start=req.start, goal=req.goal, trust=req.trust, found=hops is not None, hops=out,
