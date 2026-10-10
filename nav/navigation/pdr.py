@@ -1,7 +1,7 @@
 """Pedestrian dead reckoning along a route: live steps + heading -> progress towards the next node.
 
-- `StepDetector`: the phone's causal step detector (the Orient app's tracker.ts and the recorder's app.js, same
-  constants) on |accelerationIncludingGravity|, constant memory. (The map pipeline counts steps offline with a
+- `StepDetector`: the phone's causal step detector (the Orient app's tracker.ts, which its /map recorder also
+  uses) on |accelerationIncludingGravity|, constant memory. (The map pipeline counts steps offline with a
   band-pass filter, nav/mapping/motion.py; this one can't look ahead.)
 - `GraphTracker`: follows a route of `Hop`s (route.py). Only the component of each step along the hop's bearing
   counts as progress; it reports the remaining distance, an uncertainty that grows with the distance walked, and
@@ -26,7 +26,7 @@ from nav.schemas.map import PlaceMap
 @dataclass
 class StepDetectorConfig:
     """The phone's step detector: the constants of the Orient app (project-description apps/web/src/motion/
-    tracker.ts `STEP`) and of the recorder (frontend/app.js), so every live step count agrees."""
+    tracker.ts `STEP`, used by guidance and by its /map recorder), so every live step count agrees."""
 
     lp_ms: float = 60  # low-pass on |acceleration including gravity|
     base_ms: float = 1500  # slow baseline

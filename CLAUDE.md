@@ -1,10 +1,11 @@
 # nav-engine
 
 Navigation engine of Orient, a voice-first indoor guidance web app for blind users (tungsten-united/project-description).
-The **recorder** (a page of the debugging frontend + map-api) captures free walks through a place; the **map
-pipeline** turns all walks of a place into one semantic topological map; **nav-api** serves the live side (maps,
-routes, localization) to Orient's orchestrator (tungsten-united/orient-orchestrator), its only live caller. Orient's
-phone app talks only to the orchestrator; `frontend/` here is a debugging frontend, not Orient's app.
+The **recorder** (Orient's app at `/map`, project-description `apps/web/src/mapping/`, + map-api) captures free walks
+through a place; the **map pipeline** turns all walks of a place into one semantic topological map; **nav-api** serves
+the live side (maps, routes, localization) to Orient's orchestrator (tungsten-united/orient-orchestrator), its only
+live caller. For guidance Orient's phone app talks only to the orchestrator; its `/map` page (mapping, for the team)
+calls map-api directly. `frontend/` here is a debugging frontend, not Orient's app.
 
 ## Layout
 - `nav/schemas/recording.py` — the recording format (schema_version 1). Source of truth for what is stored.
@@ -19,8 +20,8 @@ phone app talks only to the orchestrator; `frontend/` here is a debugging fronte
 - `nav/recorder/store.py` — recording storage, idempotent uploads, `finalize` (chunks → `video.mp4`, batches →
   parquet/jsonl).
 - `frontend/` — the debugging frontend, for the team and for testing the APIs by hand (not Orient's app):
-  recorder at `/`, `dash/` (recordings, uPlot from jsdelivr), `viz/` (map viewer, SVG), `loc/` and `nav/` (nav-api
-  debuggers; `loc/loc-core.js` is shared). Vanilla JS, no build step. `config.js`: `NAV` = map-api, `NAV.nav` =
+  an index at `/` (links, and the token-carrying link to Orient's `/map`), `dash/` (recordings, uPlot from
+  jsdelivr), `viz/` (map viewer, SVG), `loc/` and `nav/` (nav-api debuggers; `loc/loc-core.js` is shared). Vanilla JS, no build step. `config.js`: `NAV` = map-api, `NAV.nav` =
   nav-api, each with its base (`?api=`, `?navapi=`) and token (`?token=`, `?navtoken=`).
 - `nav/schemas/map.py` — the map format: `MapDraft` (what the LLM writes; its JSON Schema must stay valid for
   Anthropic structured outputs) and `PlaceMap` (stored: draft + evidence, positions, distances, build info).
@@ -80,15 +81,17 @@ Browser end-to-end check: headless `/usr/bin/chromium` via `uvx --from playwrigh
 `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`, sensor permissions granted, synthetic
 `devicemotion` / `deviceorientationabsolute` events dispatched from the page. Run it against a throwaway
 `NAV_DATA_DIR` on other ports (open the page with `?api=http://127.0.0.1:<map-api port>&navapi=...<nav-api port>`),
-never the live services: recordings made there land in the team bucket. For /loc and /nav, copy a published map
+never the live services: recordings made there land in the team bucket. The recorder is Orient's: run its dev server
+with `VITE_MAP_API_URL=http://127.0.0.1:<map-api port>` and open `/map?token=...` (the throwaway map-api's
+`NAV_CORS_ORIGIN_REGEX` must allow the dev origin). For /loc and /nav, copy a published map
 (map.json + its build folder) and a recording into the throwaway dir; a throwaway `nav infer serve --port ...` keeps
 the live inference host out of it.
 
 ## Things learned the hard way
 - Chrome's MP4 MediaRecorder only emits data at keyframes (in practice at stop); WebM honours the timeslice.
-  Keep WebM first in `VIDEO_MIMES` and `videoKeyFrameIntervalDuration: 1000`.
+  Keep WebM first in `VIDEO_MIMES` and `videoKeyFrameIntervalDuration: 1000` (now in Orient's `mapping/recorder.ts`).
 - Cloudflare edge-caches `.js/.css` and the zone forces a 4 h browser TTL. `index.html` is served with
-  `?v=<content hash>` on assets and `Cache-Control: no-cache`; keep it that way or phones get a stale app.js.
+  `?v=<content hash>` on assets and `Cache-Control: no-cache`; keep it that way or phones get a stale script.
 - Chrome now has `DeviceMotionEvent.requestPermission`; a denial must not abort recording (video + voice still useful).
 - Chrome (Android) reports `rotationRate` alpha/beta/gamma around device x/y/z, not z/x/y as the spec says; the
   recorder stores gx/gy/gz = beta/gamma/alpha. `motion.py` picks the layout whose turns match the compass.
@@ -113,7 +116,7 @@ the live inference host out of it.
 - A cold inference host loads MegaLoc on its first place call (~10 s+), longer than nav-api's live deadline (8 s):
   the first frame after nav-infer restarts gets a 503; the next ones take ~30 ms on the GPU.
 - Two step detectors disagree on Itnig (offline band-pass in motion.py ~153 steps; the phone's causal detector,
-  navigation/pdr.py StepDetector = Orient's tracker.ts = the recorder's app.js, 137, hand sway included). The map's
+  navigation/pdr.py StepDetector = Orient's tracker.ts, also its /map recorder, 137, hand sway included). The map's
   `live_step_length_m` is metres per phone step: nav-api turns the phone's stepCount into metres walked with it.
 - Steps x the recorder's 0.7 m overstated Itnig 3x (107 m vs 32 m from floor odometry; Main entrance -> Drinks area
   measured 7 m on site, odometry 5.9 m): the bout gate passes hand sway while standing and talking (moving 94% of
@@ -156,8 +159,9 @@ the live inference host out of it.
   state. Its loop: `localize` (votes over results) until the user is located, `route` once, then hop by hop, each
   `localize` (previous = hop source, expected = hop target, the phone's motion) a vote on reaching the target; lost
   (other nodes win, or nothing recognised for a while), it starts over. `nav map orchestrator-replay` models that loop
-  (replay.py `OrchestratorLoop`) and picks its parameters. The phone never calls nav-engine. map-api and
-  `frontend/` are the team's (mapping, review, debugging). The contract lives in project-description
+  (replay.py `OrchestratorLoop`) and picks its parameters. The phone never calls nav-api. map-api and
+  `frontend/` are the team's (mapping, review, debugging); Orient's `/map` page records walks into map-api with its
+  token (asked once per phone, never built into the public app). The contract lives in project-description
   `docs/contracts.md` §2: change it there first, then here.
 - There is no navigation state machine: route state lives in the orchestrator's session, not here.
 

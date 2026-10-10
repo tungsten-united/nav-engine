@@ -152,8 +152,9 @@ def test_unknown_and_invalid(client):
 
 def test_web_app_served(client):
     r = client.get("/")
-    assert r.status_code == 200 and "Nav Recorder" in r.text
-    assert client.get("/app.js").status_code == 200
+    assert r.status_code == 200 and "Nav tools" in r.text
+    assert "orient.harshdeepsingh.dev/map" in r.text  # recording moved to Orient's app
+    assert client.get("/index.js").status_code == 200
     assert client.get(f"{API}/health").json() == {"ok": True, "service": "map-api", "schema_version": 1}
 
 
@@ -167,8 +168,8 @@ def test_dashboard_served(client):
 
 def test_assets_are_not_cached(client):
     # Cloudflare edge-caches .js/.css unless told otherwise
-    assert client.get("/app.js").headers["cache-control"] == "no-cache"
+    assert client.get("/index.js").headers["cache-control"] == "no-cache"
     page = client.get("/")
     assert page.headers["cache-control"] == "no-cache"
-    assert 'src="app.js?v=' in page.text and 'href="style.css?v=' in page.text
+    assert 'src="index.js?v=' in page.text and 'href="style.css?v=' in page.text
     assert client.get(f"{API}/health").headers["cache-control"] == "no-store"

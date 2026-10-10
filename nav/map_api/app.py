@@ -1,5 +1,6 @@
 """map-api: recordings, map builds, review and map files (/api/v1, OpenAPI docs at /docs), and the debugging
-frontend (frontend/: phone recorder at /, /dash/, /viz/, and /loc/ + /nav/, which exercise nav-api).
+frontend (frontend/: an index at /, /dash/, /viz/, and /loc/ + /nav/, which exercise nav-api). Walks are recorded in
+Orient's app (project-description apps/web, /map), which calls this API from its own origin (NAV_CORS_ORIGINS).
 
 Two deployments, same code:
 - Cloud Run (service map-api, deploy/cloudrun.sh): public, so NAV_API_TOKEN gates /api/* (Bearer header, or ?token=
@@ -44,9 +45,9 @@ from nav.schemas.recording import (
 
 log = logging.getLogger(__name__)
 _DEFAULT = object()
-# The debugging pages: folder -> (assets to cache-bust, what it is). "" is the phone recorder at /.
+# The debugging pages: folder -> (assets to cache-bust, what it is). "" is the team index at /.
 PAGES = {
-    "": (("config.js", "app.js", "style.css"), "Phone recorder"),
+    "": (("config.js", "index.js", "style.css"), "Team tools: links to the pages below and to Orient's /map recorder"),
     "dash": (("../config.js", "dash.js", "dash.css"), "Recordings dashboard: places and walks, video with tags, "
              "voice and sensors on one timeline"),
     "viz": (("../config.js", "viz.js", "viz.css"), "Map viewer: the graph of each place, details, directions"),

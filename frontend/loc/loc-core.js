@@ -35,7 +35,7 @@ const mapJSON = (path, opts) => call(NAV, path, opts);
 const navFileUrl = (mapId, rel) => NAVAPI.url(`${NAVAPI.API}/maps/${encodeURIComponent(mapId)}/files/${rel}`);
 
 // --- page frame ----------------------------------------------------------------------------------------------
-const PAGES = [["/", "Recorder"], ["/dash/", "Recordings"], ["/viz/", "Maps"], ["/loc/", "Localize"], ["/nav/", "Navigate"]];
+const PAGES = [["/", "Tools"], ["/dash/", "Recordings"], ["/viz/", "Maps"], ["/loc/", "Localize"], ["/nav/", "Navigate"]];
 function header(title, current) {
   return h("header", { class: "bar" },
     h("a", { class: "brand", href: current }, title),
@@ -68,7 +68,8 @@ async function loadMaps(select, wanted) {
 }
 
 // --- compass -------------------------------------------------------------------------------------------------
-// Heading of the rear-camera axis (device -z) from W3C Euler angles, as the recorder computes it (frontend/app.js).
+// Heading of the rear-camera axis (device -z) from W3C Euler angles, as Orient's app computes it (project-description
+// apps/web/src/motion/tracker.ts, also used by its /map recorder).
 function cameraHeading(alpha, beta, gamma) {
   const r = Math.PI / 180;
   const cA = Math.cos(alpha * r), sA = Math.sin(alpha * r), cB = Math.cos(beta * r), sB = Math.sin(beta * r);

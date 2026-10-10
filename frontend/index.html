@@ -4,78 +4,25 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#000000">
-  <title>Nav Recorder</title>
+  <title>Nav tools</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Setup -->
-  <main id="setup" class="screen">
-    <h1>Nav Recorder</h1>
-    <p class="hint">Walk around freely and pass by every spot that should be on the map, in any order.
-      Hold the phone upright with the rear camera facing forward.
-      Hold <b>Talk</b> to describe where you are, or tap it to start and tap again to stop.
-      Tap a tag whenever you pass one. Every walk of a place adds to its map: pick the place, start anywhere, walk
-      in any direction, and say where you start.</p>
-    <label for="place-pick">Place</label>
-    <select id="place-pick"><option value="">New place…</option></select>
-    <input id="place" type="text" placeholder="Name of the new place, e.g. Office, 3rd floor" autocomplete="off"
-      aria-label="New place name" hidden>
-    <label for="holding">Phone position</label>
-    <select id="holding">
-      <option value="handheld_portrait">In hand, upright</option>
-      <option value="handheld_landscape">In hand, sideways</option>
-      <option value="chest_mount">Chest mount</option>
-      <option value="lanyard">Lanyard</option>
-      <option value="other">Other</option>
-    </select>
-    <label for="notes">Notes (optional)</label>
-    <input id="notes" type="text" placeholder="Where you start, e.g. at the main entrance" autocomplete="off">
-    <label for="step">Step length (m)</label>
-    <input id="step" type="number" min="0.3" max="1.2" step="0.05" value="0.7" inputmode="decimal">
-    <button id="start" class="big">Start recording</button>
-    <p id="setup-msg" class="msg" role="alert"></p>
-    <details>
-      <summary>Recent walks</summary>
-      <ul id="recent" class="recent"></ul>
-      <p class="hint"><a href="/dash/">Recordings dashboard</a> · <a href="/viz/">Maps</a> ·
-        <a href="/loc/">Localize</a> · <a href="/nav/">Navigate</a></p>
-    </details>
-  </main>
-
-  <!-- Recording -->
-  <main id="rec" class="screen rec" hidden>
-    <div class="topbar">
-      <span id="clock" class="clock" aria-label="Elapsed time">0:00</span>
-      <span id="upload" class="pill" aria-live="polite">uploads ok</span>
-    </div>
-    <video id="preview" playsinline muted autoplay aria-hidden="true"></video>
-    <div class="stats" aria-hidden="true">
-      <span><b id="steps">0</b> steps</span>
-      <span><b id="speed">0.00</b> m/s</span>
-      <span><b id="heading">—</b> heading</span>
-    </div>
-    <p id="status" class="status" aria-live="assertive"></p>
-    <div class="tags" role="group" aria-label="Tags">
-      <button class="tag" data-tag="door">Door</button>
-      <button class="tag" data-tag="junction">Junction</button>
-      <button class="tag" data-tag="stairs">Stairs</button>
-      <button class="tag" data-tag="lift">Lift</button>
-      <button class="tag" data-tag="destination">Destination</button>
-    </div>
-    <button id="talk" class="talk" aria-pressed="false">Talk</button>
-    <button id="stop" class="big stop">Stop</button>
-  </main>
-
-  <!-- Done -->
-  <main id="done" class="screen" hidden>
-    <h1>Recording saved</h1>
-    <p id="done-status" class="status" aria-live="polite"></p>
-    <pre id="done-summary" class="summary"></pre>
-    <button id="again" class="big">New recording</button>
+  <main class="screen">
+    <h1>Nav tools</h1>
+    <p class="hint">The team's pages for mapping and debugging. Recording a walk happens in Orient's app.</p>
+    <a id="record" class="big" href="https://orient.harshdeepsingh.dev/map">Record a walk in Orient →</a>
+    <p class="hint">Opens Orient's <code>/map</code> with this browser's map-api token, so it isn't asked again.</p>
+    <nav class="links" aria-label="Team pages">
+      <a href="/dash/"><b>Recordings</b><span>places and walks, video with tags, voice and sensors</span></a>
+      <a href="/viz/"><b>Maps</b><span>the graph of each place, review, directions</span></a>
+      <a href="/loc/"><b>Localize</b><span>nav-api: camera, recording or image → ranked nodes</span></a>
+      <a href="/nav/"><b>Navigate</b><span>nav-api: routes, instructions, live checkpoints</span></a>
+    </nav>
   </main>
 
   <script src="config.js"></script>
-  <script src="app.js"></script>
+  <script src="index.js"></script>
 </body>
 </html>
