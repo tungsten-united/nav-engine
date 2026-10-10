@@ -7,10 +7,10 @@ indoor route (video, motion sensors, voice notes and tags) so it can be turned i
 
 ## Recorder
 
-A phone web app plus an HTTP API. It runs on Cloud Run at
-**https://nav-api-613464313064.europe-southwest1.run.app**, on the team bucket, gated by an API token (see
-[Deployment](#deployment)). The original copy on helium (https://helium-nav.oscarmartinez.dev, behind Cloudflare
-Access) still runs until the cutover is complete.
+A phone web app plus an HTTP API, both part of **map-api**, which runs on Cloud Run at
+**https://map-api-613464313064.europe-southwest1.run.app** on the team bucket, gated by an API token (see [Deployment](#deployment)). helium serves the same
+debugging pages at https://helium-nav.oscarmartinez.dev (behind Cloudflare Access); they call the Cloud Run services.
+The live side for the app is **nav-api** ([below](#nav-api-the-live-api)).
 
 While you walk, the phone records:
 
@@ -43,7 +43,8 @@ When the phone stops, the server assembles the files in the background, and the 
 ### Run
 ```sh
 uv sync
-uv run nav serve                      # http://127.0.0.1:8450 (NAV_HOST / NAV_PORT / NAV_DATA_DIR)
+uv run nav serve                      # map-api on http://127.0.0.1:8450 (NAV_HOST / NAV_PORT / NAV_DATA_DIR)
+uv run nav serve --app nav-api        # nav-api on http://127.0.0.1:8452 (NAV_APP picks the default)
 tunnel-expose nav 8450                # once: https://helium-nav.oscarmartinez.dev
 ```
 On helium it runs as a user service ([`deploy/nav-recorder.service`](deploy/nav-recorder.service), copied to
@@ -73,12 +74,12 @@ read/write access:
 (use `roles/storage.objectViewer` for read-only).
 
 ### Dashboard
-**https://helium-nav.oscarmartinez.dev/dash/** (same Cloudflare Access login) lists the recordings grouped by place.
+**https://map-api-613464313064.europe-southwest1.run.app/dash/** (or helium-nav's `/dash/`) lists the recordings grouped by place.
 Opening one (`/dash/#<rec_id>`) shows its details, the video, and its tags, voice notes, steps, acceleration,
 rotation, heading and live speed on one timeline. Click the timeline, a chart or a note to jump the video there;
 voice notes play along with the video. Drag on a chart to zoom, double-click to reset.
 
-### API (`/api/v1`, OpenAPI at `/docs`)
+### map-api (`/api/v1`, OpenAPI at `/docs`)
 | method | path | |
 |---|---|---|
 | GET | `/health` | |
@@ -96,6 +97,8 @@ voice notes play along with the video. Drag on a chart to zoom, double-click to 
 | GET | `/maps/{map_id}` | `PlaceMap` (the latest build) |
 | GET | `/maps/{map_id}/builds` | build ids, newest first |
 | GET | `/maps/{map_id}/files/{path}` | frames, `candidates.json`, job files of any build |
+| POST | `/maps/build`, `/maps/{map_id}/refinish` | build / refinish in the background → poll the `status_url` |
+| GET / PUT | `/maps/{map_id}/review` | the human review; PUT republishes the map with it |
 
 From another worker:
 ```sh
@@ -237,7 +240,7 @@ data/maps/<map_id>/              map_id = slug of the place, e.g. "itnig"
 ```
 
 ### Viewer
-**https://helium-nav.oscarmartinez.dev/viz/** shows each map as a navigation graph: nodes at their dead-reckoned
+**https://map-api-613464313064.europe-southwest1.run.app/viz/** shows each map as a navigation graph: nodes at their dead-reckoned
 positions and edges along the walked path (with the whole walk as a faint track), the route in recording order
 with turns, hover previews with the frame, and details pinned on click (description, landmarks, hazards, both
 instructions, frames, the walks and times that show it). **Directions** picks two nodes and chains the
@@ -245,45 +248,97 @@ instructions along the shortest route (any edge, or only observed or verified on
 status with **Verify** / **Hide** buttons (they save the review), reference images by role with their heading,
 and relations.
 
+## nav-api: the live API
+
+What the navigation app hits: read-only on the bucket's published maps, with its own token. Code:
+[`nav/nav_api/app.py`](nav/nav_api/app.py), formats in [`nav/schemas/navigation.py`](nav/schemas/navigation.py).
+It runs on Cloud Run at **https://nav-api-613464313064.europe-southwest1.run.app** (before the split that URL served
+everything; its page paths now redirect to map-api, and recordings and builds answer 404 with a pointer there).
+
+| method | path | |
+|---|---|---|
+| GET | `/health[?deep=1]` | `deep`: also the map count and the inference host |
+| GET | `/maps`, `/maps/{map_id}`, `/schema/map` | as on map-api: the published map (latest build + review) |
+| GET | `/maps/{map_id}/files/{path}` | only the published build's `refs/`, `frames/` and its embeddings |
+| POST | `/maps/{map_id}/route` | `{start, goal, trust}` → hops (verified edges by default; `observed` / `any` for testing) |
+| POST | `/maps/{map_id}/localize` | 1–4 JPEG frames (multipart `images`), `previous?`, `expected?`, `heading_deg?`, `top_k?` → `Localization` |
+
+**Localization** ([`localize.py`](nav/navigation/localize.py)): the frames are embedded with the map's own model
+(MegaLoc) on the inference host, ahead of any queued map-build calls, and compared with the map's reference images. A
+node scores as its best reference (a burst scores each reference by the mean over its frames); the margin is the best
+node's score minus the second's. Status: `lost` under 0.45, `confirmed` at ≥ 0.60 with a margin ≥ 0.05 and, when
+`previous` is given, the node being it or one edge away; `uncertain` otherwise. The thresholds are placeholders until
+tuned on venue images (`NAV_LOC_CONFIRM_SCORE`, `NAV_LOC_CONFIRM_MARGIN`, `NAV_LOC_LOST_SCORE`). It is stateless: the
+app combines consecutive results, and confirms arrival itself (docs/navigation_stack.md 4.2–4.3). Each result lists
+the matched references (role, heading, and the difference with the live compass heading when given), and
+`took_ms`. On Itnig, frames from the walk land on the right node at ~27 ms per frame on the GPU (plus the network);
+the first frame after nav-infer restarts can get a 503 while MegaLoc loads (live calls give up after 8 s,
+`NAV_LIVE_INFER_DEADLINE_S`).
+
+**Debugging pages** (served by map-api and helium-nav, calling nav-api): **`/loc/`** localizes frames from the
+camera, a recording's video (with its compass heading) or an image, and shows ranked nodes with their reference
+images, timings and a history; walks the map was built from match themselves, so held-out walks are the honest
+test. **`/nav/`** plans a route, speaks its instructions and follows it: live frames are checked against the next
+checkpoint, and arrival is confirmed by hand.
+
 ## Deployment
 
 ```
-phone / dash / viz ──HTTPS + API token──▶ nav-api (Cloud Run, tungsten-united, europe-southwest1)
-                                            │  /data = the team bucket (GCS FUSE): recordings/ maps/ cache/
-                                            │  finalize (ffmpeg), map builds, Jev quality check (TypeSafe API)
-                                            ▼  Cloudflare Access service token
+phone recorder / dash / viz ──HTTPS + map-api token──▶ map-api (Cloud Run)  read-write ┐ /data = the team bucket
+/loc /nav, the navigation app ──HTTPS + nav-api token──▶ nav-api (Cloud Run)  read-only  ┘ (GCS FUSE): recordings/ maps/
+              (the debugging pages are served by map-api, and by helium-nav)    │
+                       both, with the Cloudflare Access service token            ▼
                   helium-nav-infer.oscarmartinez.dev ─tunnel─▶ nav-infer on helium (GPU): DINOv2, MegaLoc,
                                                                ALIKED+LightGlue, Whisper, the Claude Code map job
 ```
 
-**nav-api** (Cloud Run): the root `Dockerfile` (no torch), deployed with `deploy/cloudrun.sh`, which builds the
-image here, pushes it and deploys it. Rerun it after every change. It serves `/api/v1` and the debugging frontend
-(`frontend/`).
-- One instance, always on, so in-process locks and background work (finalize, builds) hold.
-- `/api/*` needs the token, as `Authorization: Bearer <token>` or `?token=` (for `<video>`/`<img>` URLs).
-  `deploy/cloudrun.sh token` prints it.
+Both Cloud Run services (tungsten-united, europe-southwest1) run the root `Dockerfile` (one image, no torch; `NAV_APP`
+picks the app), deployed with `deploy/cloudrun.sh [deploy] [map-api|nav-api|all]`, which builds the image here,
+pushes it and deploys. Rerun it after every change.
+
+**map-api** (https://map-api-613464313064.europe-southwest1.run.app): recordings, finalize (ffmpeg), map builds, the
+Jev quality check (TypeSafe API), review, map files, and the debugging frontend (`frontend/`) for the team.
+- One instance, always on, so in-process locks and background work (finalize, builds) hold. Runs as `nav-worker`
+  (bucket read-write). Settings: [`deploy/map-api.env.yaml`](deploy/map-api.env.yaml).
 - Deleting recordings is off: the bucket is the team's shared data, and it keeps deleted objects for 7 days anyway.
-- Secrets (API token, Cloudflare service token, `TYPESAFE_API_KEY`) live in Secret Manager.
-  `deploy/cloudrun.sh secrets` reloads them from this machine.
 - Map builds: `POST /api/v1/maps/build {"place": "Itnig", "llm": false}` → poll the `status_url` it returns.
   `llm: false` stops after the candidates (no LLM cost). One build at a time.
+
+**nav-api** (https://nav-api-613464313064.europe-southwest1.run.app): the live API ([above](#nav-api-the-live-api)).
+Runs as `nav-api` (bucket viewer), the bucket mounted read-only; 1 to 3 instances, at least one always on.
+Settings: [`deploy/nav-api.env.yaml`](deploy/nav-api.env.yaml) (CORS for map-api's and helium-nav's pages).
+
+Both:
+- `/api/*` needs the service's token, as `Authorization: Bearer <token>` or `?token=` (for `<video>`/`<img>` URLs).
+  `deploy/cloudrun.sh token map-api|nav-api` prints it. nav-api's is the token from before the split; map-api's
+  started as a copy of it, so they can be rotated apart (write a new value to its file, then `secrets` and `deploy`).
+- Secrets (API tokens, Cloudflare service token, `TYPESAFE_API_KEY`) live in Secret Manager, each readable only by
+  the services that use it. `deploy/cloudrun.sh secrets` reloads them from this machine.
 - **CI deploy** ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)): push a tag `v*` on a commit of
-  `main` (`git tag v0.2.0 origin/main && git push origin v0.2.0`), or Actions → Deploy → Run workflow on `main`.
-  It runs the tests, then `deploy/cloudrun.sh deploy`, then checks `/api/v1/health`. Tags on commits outside
-  `main` stop before touching Google Cloud. Auth is keyless: GitHub OIDC → the workload identity pool `github`
-  (shared with orient-orchestrator) → `nav-deployer` (Cloud Run admin, Artifact Registry writer, acts as
-  `nav-worker`). One-time setup by a project owner: `deploy/cloudrun.sh ci-setup` (only adds). It doesn't touch
-  helium: after a change to the map job or prompt, also update and restart `nav-infer` there.
+  `main` (`git tag v0.3.0 origin/main && git push origin v0.3.0`), or Actions → Deploy → Run workflow on `main`.
+  It runs the tests, then `deploy/cloudrun.sh deploy all` (map-api first), then checks both `/api/v1/health`. Tags
+  on commits outside `main` stop before touching Google Cloud. Auth is keyless: GitHub OIDC → the workload identity
+  pool `github` (shared with orient-orchestrator) → `nav-deployer` (Cloud Run admin, Artifact Registry writer, acts
+  as `nav-worker` and `nav-api`). One-time setup by a project owner: `deploy/cloudrun.sh setup` and `ci-setup`
+  (only add). It doesn't touch helium: after a change to the map job, the prompt or the inference host, also update
+  and restart `nav-infer` there.
+- Rollback: `gcloud run services update-traffic <service> --to-revisions <revision>=100 --region europe-southwest1
+  --project tungsten-united` (`gcloud run revisions list --service <service> ...` lists them).
 
 **nav-infer** (helium): `nav infer serve` on 127.0.0.1:8451 (`deploy/nav-infer.service`), published with
 `tunnel-expose nav-infer 8451`. It serves the local models and the Claude Code map job, and nothing else (no data).
 It shares one GPU with the desktop, so it protects itself:
-- one model call at a time, at most 4 waiting, then `503` + `Retry-After`;
+- one model call at a time, at most 4 waiting, then `503` + `Retry-After`; live frames from nav-api go ahead of
+  waiting calls (at most 2 waiting of their own);
 - at most 32 images or 64 pairs per request, so each call stays well under Cloudflare's 100 s;
 - one map job at a time, at most 2 waiting; jobs are submitted, then polled.
 
-The worker's client retries with backoff and fails clearly when helium is off. Recording doesn't need helium; map
-builds do. Without `NAV_INFER_URL`, everything runs locally as before (`nav map build` on helium).
+The workers' client retries with backoff and fails clearly when helium is off. Recording doesn't need helium; map
+builds and localization do. Without `NAV_INFER_URL`, everything runs locally as before (`nav map build` on helium).
+
+**helium-nav** (`deploy/nav-recorder.service`: `nav serve`, i.e. map-api, on 127.0.0.1:8450 behind Cloudflare
+Access) keeps serving the debugging pages; they call the Cloud Run services (`frontend/config.js`). After pulling new
+code there, restart it to get the new pages.
 
 **Coexistence:** recordings get unique ids and pushes never delete, so helium and the cloud can both add. Maps are
 built by the cloud now: on helium use `nav map pull`, not `push`. `nav rec pull` skips `raw/` unless `--raw` is given.

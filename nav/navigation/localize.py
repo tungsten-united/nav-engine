@@ -99,7 +99,9 @@ def localize(index: RefIndex, queries: np.ndarray, thresholds: Thresholds, *, to
     elif previous and previous in names and best not in index.neighbours(previous):
         status, reason = "uncertain", f"not next to the last confirmed node ({names[previous]})"
     else:
-        status, reason = "confirmed", f"score {best_score:.2f}, margin {margin:.2f}"
+        status, reason = "confirmed", (f"clear: score >= {thresholds.confirm_score:.2f}, margin >= "
+                                       f"{thresholds.confirm_margin:.2f}" + (", next to the last confirmed node"
+                                                                             if previous in names else ""))
     rank = next((i + 1 for i, (_, n) in enumerate(ranked) if n == expected), None)
     return Localization(**base, status=status, reason=reason, best=best, margin=round(margin, 4),
                         candidates=[node_match(s, n) for s, n in ranked[:top_k]],

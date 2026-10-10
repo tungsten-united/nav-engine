@@ -21,7 +21,8 @@
   }
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, sans-serif; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, sans-serif;
+  overflow-wrap: anywhere; }
 a { color: inherit; }
 [hidden] { display: none !important; }
 .muted { color: var(--muted); }
