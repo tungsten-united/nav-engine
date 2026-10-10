@@ -406,32 +406,40 @@ def map_nav_replay(map_id: str, rec_id: str,
 
 @maps.command("orchestrator-replay")
 def map_orchestrator_replay(map_id: str, rec_id: str,
+                            loop: str = typer.Option("belief", help="belief (a probability per node) or votes (k of "
+                                                     "the last n results; what the orchestrator runs today)."),
+                            holdout: bool = typer.Option(None, help="Match against the other walks' references only "
+                                                         "(default: when the map has 2+ walks)."),
                             motion: bool = typer.Option(True, help="Send the phone's motion with each frame."),
-                            burst: int = typer.Option(1, help="New frames per /localize call."),
-                            k: int = typer.Option(3, help="Votes needed ..."),
+                            k: int = typer.Option(3, help="votes: votes needed ..."),
                             n: int = typer.Option(4, help="... among the last n calls."),
-                            margin: float = typer.Option(0.04, help="A result votes when its best node leads by this."),
-                            lost_margin: float = typer.Option(0.06, help="Locating, a lost result votes when it leads "
-                                                              "by this (the orchestrator's NAV_LOCATE_LOST_MARGIN)."),
-                            lost_s: float = typer.Option(6.0, help="Seconds with no result pointing at the hop "
-                                                         "(lost, or another node leading) that start over."),
+                            margin: float = typer.Option(0.04, help="votes: a result votes when its best node leads "
+                                                         "by this."),
+                            lost_margin: float = typer.Option(0.06, help="votes: locating, a lost result votes when it "
+                                                              "leads by this (NAV_LOCATE_LOST_MARGIN)."),
+                            lost_s: float = typer.Option(6.0, help="votes: seconds with no result pointing at the hop "
+                                                         "that start over."),
                             fps: float = typer.Option(1.5, help="Frames the phone sends per second."),
                             step_scale: float = typer.Option(1.0, help="0.85 = a user with 15% shorter steps.")) -> None:
     """Replay a mapping walk as a user the Orient orchestrator guides to the walk's last node: localize, one route,
-    then along it, each /localize result a vote on reaching a node ahead (the hop's target, or one further on);
-    lost, start over. Reports what the
+    then along it (the hop's target, or a node further on); lost, start over. `belief` follows a probability per
+    node (navigation/belief.py, parameters from `nav map tune`), `votes` k of the last n results. Reports what the
     loop decided against where the walk was, and when each node of the walk was reached."""
     from nav.navigation.replay import LoopParams, orchestrator_replay
 
     _logging()
     store = _map_store()
-    params = LoopParams(burst=burst, k=k, n=n, margin=margin, lost_margin=lost_margin, lost_s=lost_s)
-    res = orchestrator_replay(store.get(map_id), store.dir(map_id), config.RECORDINGS_DIR / rec_id, config.CACHE_DIR,
-                              config.loc_thresholds(), params=params, use_motion=motion, step_scale=step_scale, fps=fps)
+    pmap = store.get(map_id)
+    holdout = len(pmap.recordings) > 1 if holdout is None else holdout
+    params = LoopParams(k=k, n=n, margin=margin, lost_margin=lost_margin, lost_s=lost_s) if loop == "votes" else None
+    res = orchestrator_replay(pmap, store.dir(map_id), config.RECORDINGS_DIR / rec_id, config.CACHE_DIR,
+                              config.loc_thresholds(), params=params, use_motion=motion, step_scale=step_scale,
+                              fps=fps, loop=loop, holdout=holdout)
     if res is None:
         print(f"{rec_id} doesn't walk any edge of {map_id}, or the map has no reference embeddings")
         raise typer.Exit(1)
-    print(f"motion {'on' if motion else 'off'} · {params} · {res.evaluations} localizations, goal {res.goal}")
+    print(f"{loop} · motion {'on' if motion else 'off'} · holdout {'on' if holdout else 'off'} · "
+          f"{res.evaluations} localizations, goal {res.goal}")
     for e in res.events:
         where = ', '.join(e['truth']) or '?'
         mark = f"  WRONG: the walk was at {where}" if not e["ok"] else f"  (late: the walk was at {where})" \
@@ -444,6 +452,52 @@ def map_orchestrator_replay(map_id: str, rec_id: str,
     median = f"{delays[len(delays) // 2]:+.1f} s" if delays else "-"
     print(f"nodes reached: {res.found}/{len(res.nodes)} · wrong: {len(res.wrong)} · relocations: {res.relocations} "
           f"· median delay {median}")
+
+
+@maps.command("tune")
+def map_tune(map_id: str,
+             loop: str = typer.Option("belief", help="belief or votes."),
+             episodes: int = typer.Option(150, help="Stitched episodes to tune on (as many again to test on)."),
+             seed: int = 0,
+             maxiter: int = typer.Option(15, help="Differential evolution generations."),
+             holdout_walk: str = typer.Option(None, help="Leave this walk's pieces out of the episodes; its replay "
+                                              "is then the honest test."),
+             fps: float = typer.Option(1.5, help="Frames the phone sends per second.")) -> None:
+    """Pick the loop's parameters on episodes stitched from the map's walks (navigation/episodes.py): the best mean
+    reward (nodes reached in time, wrong moves and restarts cost), reported against the defaults on other episodes
+    and on each walk as it went. Prints the parameters; set them as the defaults (belief.BeliefParams,
+    replay.LoopParams) when they hold up."""
+    from nav.navigation.belief import BeliefParams
+    from nav.navigation.episodes import describe, evaluate, sample_episodes, tune
+    from nav.navigation.replay import LoopParams, load_track, ref_indexes, walk_episode
+
+    _logging()
+    store = _map_store()
+    pmap, map_dir = store.get(map_id), store.dir(map_id)
+    if pmap.embedding is None:
+        print(f"{map_id} has no reference embeddings")
+        raise typer.Exit(1)
+    holdout = len(pmap.recordings) > 1
+    if not holdout:
+        print(f"{map_id} has one walk: frames are matched against its own references (near ones left out); "
+              "the numbers flatter")
+    thresholds = config.loc_thresholds()
+    tracks = [load_track(pmap, config.RECORDINGS_DIR / rec, config.CACHE_DIR, pmap.embedding.model, fps,
+                         exclude_ms=None if holdout else 400.0) for rec in pmap.recordings]
+    index = ref_indexes(pmap, map_dir, holdout)
+    train = sample_episodes(pmap, tracks, episodes, seed, exclude_rec=holdout_walk)
+    test = sample_episodes(pmap, tracks, episodes, seed + 1, exclude_rec=holdout_walk)
+    walks = {t.rec_id: ep for t in tracks if (ep := walk_episode(pmap, t)) is not None}
+    print(f"{len(tracks)} walks · {len(train)} + {len(test)} episodes · loop {loop}")
+    default = BeliefParams() if loop == "belief" else LoopParams()
+    best = tune(pmap, index, train, thresholds, loop, seed=seed, maxiter=maxiter, log=print)
+    for name, params in (("defaults", default), ("tuned", best)):
+        print(f"{name}: {describe(params)}")
+        print(f"  train  {evaluate(pmap, index, train, thresholds, loop, params)}")
+        print(f"  test   {evaluate(pmap, index, test, thresholds, loop, params)}")
+        for rec, ep in walks.items():
+            mark = "  (held out)" if rec == holdout_walk else ""
+            print(f"  {rec}  {evaluate(pmap, index, [ep], thresholds, loop, params)}{mark}")
 
 
 @maps.command("schema")

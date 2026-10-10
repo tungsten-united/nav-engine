@@ -39,7 +39,12 @@ calls map-api directly. `frontend/` here is a debugging frontend, not Orient's a
   `localize.py` (VPR against reference embeddings → ranked nodes, confirmed/uncertain/lost), both served by nav-api;
   `pdr.py` (causal step detector + GraphTracker, `nav map pdr-replay`) and `arrival.py` (node confirmer, ported 1:1
   to `frontend/nav/arrival.js`: /nav's auto-confirm, where a rule is tried before the orchestrator copies it),
-  reference code that nothing live runs.
+  reference code that nothing live runs. `replay.py` replays walks through the orchestrator's loop (`Track`,
+  `Episode`, `run_episode`); `belief.py` is that loop on a probability per node (a Bayes filter: steps move it along
+  the links, each /localize result's score differences reweigh it) instead of votes; `episodes.py` stitches pieces
+  of walks into more routes than were walked, scores a loop on them (nodes reached in time; wrong moves cost) and
+  picks its parameters (`nav map tune`, scipy differential evolution, each walk matched against the others'
+  references only).
 - `docs/` — the navigation-side design (`main_idea.md`, `navigation_stack.md`, by LPA, from
   tungsten-united/demo-repository@navigation, aligned with Orient's architecture) and `map.schema.json` (regenerate: `nav map schema --out ...`; a test checks it).
 - `nav/mapping/inference.py` — every model call on files: local models, or the inference host when `NAV_INFER_URL` is set.
@@ -47,7 +52,7 @@ calls map-api directly. `frontend/` here is a debugging frontend, not Orient's a
   where nav-api's live frames go ahead of queued batch calls, bounded queues, 503 + Retry-After), `client.py`
   (chunking, retries, deadlines, Cloudflare service token).
 - `nav/cli.py` — `nav serve [--app nav-api]`, `nav infer serve`, `nav rec list|show|finalize|import|push|pull`,
-  `nav map setup|build|llm|refinish|check|review|clean|republish|measure|route|pdr-replay|orchestrator-replay|schema|list|show|push|pull`.
+  `nav map setup|build|llm|refinish|check|review|clean|republish|measure|route|pdr-replay|orchestrator-replay|tune|schema|list|show|push|pull`.
 - `Dockerfile` + `deploy/cloudrun.sh` + `deploy/{map-api,nav-api}.env.yaml` — the two Cloud Run services;
   `deploy/nav-infer.service`, `deploy/nav-recorder.service` (helium-nav: map-api serving the debugging pages) — helium units.
 - `data/recordings/<rec_id>/` — recordings (gitignored). Shared copy for the team: `gs://tungsten-united-nav-recordings/recordings/<rec_id>/`

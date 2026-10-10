@@ -304,16 +304,20 @@ class OrchestratorLoop:
         self.votes.append(vote)
         if vote is None or (loc.status != "confirmed" and sum(v == vote for v in self.votes) < self.p.k):
             return None
-        self.node, self.node_steps = vote, step_count
         self.votes.clear()
-        if vote == self.goal:
+        return self._located(vote, step_count, t_s)
+
+    def _located(self, node: str, step_count: int | None, t_s: float) -> LoopEvent:
+        """The user is at `node`: arrived, or one route from there to the goal."""
+        self.node, self.node_steps = node, step_count
+        if node == self.goal:
             self.arrived = True
-            return LoopEvent("arrived", vote, t_s)
-        path = self.path_fn(vote, t_s)
+            return LoopEvent("arrived", node, t_s)
+        path = self.path_fn(node, t_s)
         if not path:
-            return LoopEvent("no_route", vote, t_s)
+            return LoopEvent("no_route", node, t_s)
         self.path, self.hop, self.off_hop_since = path, 0, None
-        return LoopEvent("located", vote, t_s)
+        return LoopEvent("located", node, t_s)
 
     def _reach(self, node: str, step_count: int | None, t_s: float) -> LoopEvent:
         """The user is at `node`, a node ahead on the route: the route goes on from there, past any it skipped."""
@@ -354,40 +358,40 @@ LATE_S = 10.0  # a node the walk left less than this long ago is a late move, no
 LEAD_S = 5.0  # navigation starts this long before the walk leaves its first node
 
 
-def orchestrator_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, thresholds: Thresholds,
-                        params: LoopParams | None = None, use_motion: bool = True, step_scale: float = 1.0,
-                        exclude_ms: float = 400.0, fps: float = ORCH_FPS) -> OrchestratorResult | None:
-    """The walk replayed as a user guided by the orchestrator (OrchestratorLoop) to the last node it walked to, who
-    follows the instructions: the route from a node is the rest of the walk's own route from there (or, where the
-    walk isn't, the shortest observed route). Frames are the walk's video at `fps`, each sent once in bursts; with
-    `use_motion` each carries the phone's motion (its step detector's stepCount, compass, orientation angles, from the
-    recording)."""
+@dataclass
+class Track:
+    """A mapping walk as the frames a phone would send (one every 1/fps s, the sharpest of the slot), with their
+    place embeddings and the phone's motion at each (its step detector's stepCount, compass, orientation angles)."""
+
+    rec_id: str
+    t_ms: np.ndarray  # [F] recording clock
+    emb: np.ndarray  # [F, D]
+    motions: list  # LiveMotion per frame
+    visits: list[tuple[float, str]]  # the nodes the walk was at (walk_visits)
+
+
+def load_track(pmap: PlaceMap, rec_dir: Path, cache_root: Path, model: str, fps: float = ORCH_FPS,
+               step_scale: float = 1.0, exclude_ms: float | None = None) -> Track:
+    """`exclude_ms`: leave out frames this close to a reference image the map took from this walk (a frame is never
+    matched against itself); None keeps every frame (for an index without this walk's references)."""
     import pyarrow.parquet as pq
 
     from nav.mapping.prepare import load_walk
     from nav.mapping.select import SelectParams
     from nav.navigation.pdr import StepDetector
-    from nav.navigation.route import plan_route
     from nav.schemas.navigation import LiveMotion, LiveOrientation
 
-    p = params or LoopParams()
     rec_id = rec_dir.name
-    route = walk_route(pmap, rec_id)
-    if not route or pmap.embedding is None:
-        return None
-    index = RefIndex.build(pmap, np.load(map_dir / pmap.embedding.file))
-    model = pmap.embedding.model
     walk = load_walk(rec_dir, cache_root, SelectParams())
-    own_refs = [r.t_ms for r in pmap.references if r.rec_id == rec_id]
-    start = route_start_ms(pmap, rec_id, route) - LEAD_S * 1000
-    live = [r for r in _live_frames(rec_dir, walk, cache_root / rec_id) if r["t_ms"] >= start]
-    rows, next_t = [], start  # the frame the phone grabs every 1/fps s
-    for r in live:
+    live = _live_frames(rec_dir, walk, cache_root / rec_id)
+    emb = _live_embeddings([Path(r["file"]) for r in live], model, cache_root / rec_id)
+    own_refs = [r.t_ms for r in pmap.references if r.rec_id == rec_id] if exclude_ms is not None else []
+    keep, next_t = [], live[0]["t_ms"] if live else 0.0  # the frame the phone grabs every 1/fps s
+    for i, r in enumerate(live):
         if r["t_ms"] >= next_t:
             next_t += 1000 / fps
             if all(abs(r["t_ms"] - t) > exclude_ms for t in own_refs):
-                rows.append(r)
-    emb = _live_embeddings([Path(r["file"]) for r in rows], model, cache_root / rec_id)
+                keep.append(i)
 
     # the phone's sensors along the walk
     imu = pq.read_table(rec_dir / "imu.parquet").to_pydict()
@@ -413,14 +417,55 @@ def orchestrator_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root
                           orientation=None if None in (a, b, g) else LiveOrientation(alpha=a, beta=b, gamma=g,
                                                                                       absolute=True))
 
-    names = {n.id: n.name for n in pmap.nodes}
-    # where the walk was: every node it got to (also one with no edge from the last), until it first got to the goal,
-    # where the user stops
+    t_ms = np.asarray([live[i]["t_ms"] for i in keep], float)
+    return Track(rec_id, t_ms, emb[keep] if keep else emb[:0], [motion_at(t) for t in t_ms],
+                 walk_visits(pmap, rec_id))
+
+
+@dataclass
+class Episode:
+    """A user guided to `goal`: the frames the phone sends, in order (from one walk, or pieces of several stitched
+    together: episodes.py), and where the user was (`truth`: each node and when they got there, the first at -inf)."""
+
+    t_ms: np.ndarray  # [F] episode clock
+    emb: np.ndarray  # [F, D]
+    motions: list  # LiveMotion per frame, stepCount counted from the episode's start
+    recs: list[str]  # the walk each frame comes from
+    keys: list  # a stable id per frame (rec_id, recording t_ms): caches localizations across runs
+    truth: list[tuple[str, float]]
+    goal: str
+
+
+def walk_episode(pmap: PlaceMap, track: Track) -> Episode | None:
+    """The walk replayed as it went: from just before it left its route's first node to its first visit of the last
+    node it walked to."""
+    rec_id = track.rec_id
+    route = walk_route(pmap, rec_id)
+    if not route:
+        return None
+    start = route_start_ms(pmap, rec_id, route) - LEAD_S * 1000
     goal = route[-1][0].target
-    truth = [(route[0][0].source, start - 60_000)]
-    for t, n in walk_visits(pmap, rec_id):
+    truth = [(route[0][0].source, -float("inf"))]
+    for t, n in track.visits:
         if t >= route[0][1] and truth[-1][0] != goal:
             truth.append((n, t))
+    sel = np.flatnonzero(track.t_ms >= start)
+    return Episode(track.t_ms[sel], track.emb[sel], [track.motions[i] for i in sel], [rec_id] * len(sel),
+                   [(rec_id, float(track.t_ms[i])) for i in sel], truth, goal)
+
+
+def run_episode(pmap: PlaceMap, index: RefIndex | dict, episode: Episode, thresholds: Thresholds, make_loop,
+                use_motion: bool = True, burst: int = 1, cache: dict | None = None) -> OrchestratorResult:
+    """Guide the episode's user with the loop `make_loop(goal, path_fn)` (OrchestratorLoop, belief.BeliefLoop): each
+    `burst` frames go to localize() as nav-api would, with what the loop asks for. `index`: one RefIndex, or one per
+    rec_id (each walk matched against the others' references). The user follows the instructions: the route from a
+    node is the rest of the episode's own route from there (or, where the user isn't, the shortest observed route).
+    `cache` keeps localizations across runs of the same episodes (tuning: most calls repeat)."""
+    from nav.navigation.route import plan_route
+
+    model = pmap.embedding.model if pmap.embedding else ""
+    names = {n.id: n.name for n in pmap.nodes}
+    truth, goal = episode.truth, episode.goal
     by_pair = {(h.source, h.target): h for e in pmap.edges for h in hops(e)}
 
     def truth_at(t_ms: float) -> set[str]:
@@ -428,8 +473,6 @@ def orchestrator_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root
                 if t0 - TRUTH_S * 1000 <= t_ms < (truth[k + 1][1] if k + 1 < len(truth) else float("inf"))}
 
     def path_fn(node: str, t_s: float) -> list | None:
-        """The user follows the instructions: from where the walk is at `node`, the rest of its route, when the map
-        has every step of it; else the shortest observed route."""
         for k, (n, t0) in enumerate(truth[:-1]):
             if n == node and t0 - TRUTH_S * 1000 <= t_s * 1000 < truth[k + 1][1]:
                 rest = [by_pair.get((a, b)) for (a, _), (b, _) in zip(truth[k:], truth[k + 1:])]
@@ -437,17 +480,27 @@ def orchestrator_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root
                     return rest
         return plan_route(pmap, node, goal, "observed")
 
-    loop = OrchestratorLoop(goal, path_fn, p)
+    loop = make_loop(goal, path_fn)
+    thr_key = tuple(thresholds.model_dump().values())
     events, evaluations = [], 0
-    for lo in range(0, len(rows) - p.burst + 1, p.burst):
-        group = list(range(lo, lo + p.burst))
-        t_ms = rows[group[-1]]["t_ms"]
-        motions = [motion_at(rows[j]["t_ms"]) for j in group] if use_motion else None
+    for lo in range(0, len(episode.t_ms) - burst + 1, burst):
+        group = list(range(lo, lo + burst))
+        t_ms = float(episode.t_ms[group[-1]])
+        motions = [episode.motions[j] for j in group] if use_motion else None
         req = loop.request()
-        loc = localize(index, emb[group], thresholds, previous=req["previous"], expected=req["expected"], model=model,
-                       motions=motions, previous_step_count=req["previous_step_count"] if use_motion else None)
+        steps = motions[-1].step_count if motions else None
+        prev_steps = req["previous_step_count"] if use_motion else None
+        key = (tuple(episode.keys[j] for j in group), req["previous"], req["expected"], req.get("top_k", 5),
+               None if prev_steps is None or steps is None else steps - prev_steps, thr_key)
+        loc = cache.get(key) if cache is not None else None
+        if loc is None:
+            idx = index[episode.recs[group[-1]]] if isinstance(index, dict) else index
+            loc = localize(idx, episode.emb[group], thresholds, previous=req["previous"], expected=req["expected"],
+                           model=model, motions=motions, previous_step_count=prev_steps, top_k=req.get("top_k", 5))
+            if cache is not None:
+                cache[key] = loc
         evaluations += 1
-        ev = loop.on_localization(loc, motions[-1].step_count if motions else None, t_ms / 1000)
+        ev = loop.on_localization(loc, steps, t_ms / 1000)
         if ev is not None:
             here = truth_at(t_ms)
             late = ev.node not in here and any(n == ev.node for n in truth_at(t_ms - LATE_S * 1000))
@@ -465,3 +518,39 @@ def orchestrator_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root
         nodes.append({"node": node, "name": names.get(node, node), "arrival_s": round(t / 1000, 1),
                       "reached_s": seen, "delay_s": None if seen is None else round(seen - t / 1000, 1)})
     return OrchestratorResult(events, nodes, evaluations, goal)
+
+
+def ref_indexes(pmap: PlaceMap, map_dir: Path, holdout: bool) -> RefIndex | dict:
+    """The map's reference index; with `holdout`, one per walk of the map without that walk's references."""
+    emb = np.load(map_dir / pmap.embedding.file)
+    if not holdout:
+        return RefIndex.build(pmap, emb)
+    return {rec: RefIndex.build(pmap, emb, exclude_rec=rec) for rec in pmap.recordings}
+
+
+def loop_factory(pmap: PlaceMap, kind: str, params=None):
+    """make_loop for run_episode: "belief" (belief.BeliefLoop, BeliefParams) or "votes" (OrchestratorLoop,
+    LoopParams)."""
+    if kind == "votes":
+        return lambda goal, path_fn: OrchestratorLoop(goal, path_fn, params)
+    from nav.navigation.belief import BeliefLoop
+
+    return lambda goal, path_fn: BeliefLoop(goal, path_fn, pmap, params)
+
+
+def orchestrator_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, thresholds: Thresholds,
+                        params=None, use_motion: bool = True, step_scale: float = 1.0,
+                        exclude_ms: float = 400.0, fps: float = ORCH_FPS, loop: str = "belief",
+                        holdout: bool = False) -> OrchestratorResult | None:
+    """The walk replayed as a user guided by the orchestrator's loop (`loop`: "belief" or "votes", with its params)
+    to the last node it walked to, who follows the instructions. Frames are the walk's video at `fps`, each sent
+    once; with `use_motion` each carries the phone's motion. `holdout`: match against the other walks' references
+    only (honest; needs a map of 2+ walks), else against all, leaving out frames within `exclude_ms` of this walk's
+    own references."""
+    if pmap.embedding is None or not walk_route(pmap, rec_dir.name):
+        return None
+    track = load_track(pmap, rec_dir, cache_root, pmap.embedding.model, fps, step_scale,
+                       None if holdout else exclude_ms)
+    episode = walk_episode(pmap, track)
+    index = ref_indexes(pmap, map_dir, holdout)
+    return run_episode(pmap, index, episode, thresholds, loop_factory(pmap, loop, params), use_motion)
