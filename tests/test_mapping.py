@@ -163,9 +163,11 @@ def candidate_set() -> CandidateSet:
 def draft(**over) -> MapDraft:
     node = lambda i, c: {"id": i, "name": i, "kind": "room", "description": "", "landmarks": [], "hazards": [],
                          "visual_cues": [], "floor": None, "candidates": c, "confidence": "high"}
-    edge = lambda i, a, b: {"id": i, "source": a, "target": b, "kind": "walk", "bidirectional": True, "distance_m": 8,
-                            "instruction": "go", "reverse_instruction": "back", "landmarks": [], "hazards": [], "visual_cues": [],
-                            "candidates": [], "confidence": "medium"}
+    edge = lambda i, a, b: {"id": i, "source": a, "target": b, "kind": "walk", "bidirectional": True,
+                            "basis": "walked", "steps": [{"action": "straight", "distance_m": 8, "along": None,
+                                                          "until": "until the wall"}],
+                            "instruction": "go", "reverse_instruction": "back", "landmarks": [], "hazards": [],
+                            "visual_cues": [], "candidates": [], "confidence": "medium"}
     d = {"place": "Test", "language": "en", "summary": "s", "notes": [],
          "nodes": [node("n1", ["c01"]), node("n2", ["c02", "c99"])],
          "edges": [edge("e1", "n1", "n2"), edge("e2", "n2", "n7"), edge("e1", "n2", "n1")]}
@@ -272,6 +274,9 @@ def test_old_maps_and_answers_without_visual_cues_still_load(tmp_path):
     old = draft().model_dump()
     for x in old["nodes"] + old["edges"]:
         del x["visual_cues"]
+    for x in old["edges"]:  # answers from before steps/basis had a distance instead
+        del x["steps"], x["basis"]
+        x["distance_m"] = 8
     path = tmp_path / "claude.json"
     path.write_text(json.dumps({"subtype": "success", "is_error": False, "structured_output": old}))
     d, _ = parse_claude_result(path)
@@ -388,3 +393,35 @@ def test_quality_check_flags_items(monkeypatch):
     assert m.edges[0].quality.turn_agrees_p is None  # no measured turn to compare with
     assert "jev: node n1: relies on sight" in m.warnings
     assert sum(w.startswith("jev: ") for w in check_map(m).warnings) == 3  # rerunning replaces, not appends
+
+
+def test_steps_reverse_turn_check_and_basis():
+    from nav.mapping.build import reverse_steps
+    from nav.schemas.map import Step
+
+    fwd = [Step(action="turn_left", distance_m=None, along=None, until=None),
+           Step(action="straight", distance_m=5, along="wall on your left", until="until the door frame"),
+           Step(action="go_through", distance_m=None, along=None, until=None),
+           Step(action="bear_right", distance_m=3, along=None, until="until your cane finds the bench")]
+    back = reverse_steps(fwd, arrival="the cooler hums")
+    assert [b.action for b in back] == ["turn_around", "bear_left", "go_through", "straight"]
+    assert back[2].along == "wall on your right" and back[2].distance_m == 5
+    assert back[0].until is None and back[1].until == "until the door frame" and back[-1].until == "the cooler hums"
+
+    d, cset, tracks = lshape_set()  # the walk turns right 90° at n2
+    d.edges[1].steps = [Step(action="straight", distance_m=10, along=None, until="until the wall")]
+    d.edges[2].basis = "walked"  # n1 -> n3 passes n2: not really walked
+    d.edges[0].steps = [Step(action="straight", distance_m=6, along=None, until=None),
+                        Step(action="bear_left", distance_m=2.5, along=None, until="until the wall")]
+    m = finish_map(d, cset, BUILD, "b", tracks)
+    e1, e2, e3 = m.edges
+    assert "edge e2: the first step is straight, but the walk turned right 90° when leaving n2" in m.warnings
+    assert any(w.startswith("edge e3 says walked") for w in m.warnings) and e3.walked is False
+    assert e1.distance_m == e1.measured_distance_m == 10  # measured wins over the steps' 8.5 m
+    assert e3.distance_m == 8  # not walked: the steps' distance
+    assert e1.reverse_steps[0].action == "turn_around"
+
+    d.edges[1].steps = [Step(action="turn_right", distance_m=10, along=None, until=None)]
+    d.edges[2].basis = "inferred"
+    m = finish_map(d, cset, BUILD, "b", tracks)
+    assert not any("first step" in w or "says walked" in w for w in m.warnings)

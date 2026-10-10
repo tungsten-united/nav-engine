@@ -80,21 +80,51 @@ class MapNode(_Closed):
     confidence: Confidence
 
 
+StepAction = Literal[
+    "straight",  # go ahead / keep going
+    "bear_left", "bear_right",  # change direction by roughly 20-60 degrees
+    "turn_left", "turn_right",  # roughly 60-135 degrees
+    "turn_around",
+    "go_through",  # a door or doorway
+    "step_up", "step_down",  # a step, a platform edge, a single stair
+    "stairs_up", "stairs_down", "lift",
+]
+Basis = Literal["walked", "inferred"]
+
+
+class Step(_Closed):
+    action: StepAction = Field(description="What to do at the start of this step. The first step's turn is the turn "
+                                           "to make when leaving the source.")
+    distance_m: float | None = Field(description="Metres walked in this step, from the motion data; null for actions "
+                                                 "without walking (a turn on the spot, a step up).")
+    along: str | None = Field(description="What to keep beside you while walking, with its side, non-visual: "
+                                          "\"stone wall on your left\", \"trail the counter with your right hand\".")
+    until: str | None = Field(description="The non-visual cue that ends this step: \"until the floor turns to "
+                                          "carpet\", \"until your cane finds the bins\". The last step's cue tells "
+                                          "you that you have arrived.")
+
+
 class MapEdge(_Closed):
     id: str = Field(description='Short unique id: "e1", "e2", ...')
     source: str = Field(description="Node id the instruction starts from.")
     target: str = Field(description="Node id the instruction leads to.")
     kind: EdgeKind
     bidirectional: bool = Field(description="True if it can be walked both ways (almost always).")
-    distance_m: float | None = Field(description="Walking distance in metres from the motion data, or null.")
-    instruction: str = Field(description="How to get from source to target, egocentric and step by step, as you "
-                                         "would tell a blind person, without visual detail: direction, distance, "
-                                         "what you pass and can touch or hear, how you know you have arrived.")
-    reverse_instruction: str | None = Field(description="Same for target -> source, or null if not bidirectional.")
+    basis: Basis = Field(description="walked: a walk went from source to target without passing another node "
+                                     "(consecutive on a timeline). inferred: no walk did, the connection is deduced.")
+    steps: list[Step] = Field(description="The route as steps, in order. The instruction is the spoken form of these "
+                                          "steps and must agree with them.")
+    instruction: str = Field(description="The steps as you would say them to a blind person, egocentric, without "
+                                         "visual detail: direction, distance, what you pass and can touch or hear, "
+                                         "how you know you have arrived.")
+    reverse_instruction: str | None = Field(description="The same route spoken for target -> source, or null if "
+                                                        "not bidirectional.")
     landmarks: list[str] = Field(description="Non-visual things passed along the way that help to keep track.")
     hazards: list[str]
     visual_cues: list[str] = Field(description="What a sighted helper or a camera would recognise along the way.")
-    candidates: list[str] = Field(description="Ids of candidate frames seen while walking this edge.")
+    candidates: list[str] = Field(description="For a walked edge, the candidate frames of that walk from the source "
+                                              "to the target, in walk order (as on the timeline). For an inferred "
+                                              "edge, frames that support the connection, or empty.")
     confidence: Confidence
 
 
@@ -155,6 +185,7 @@ class TimelineStep(BaseModel):
     walked_m: float  # since the start of the recording
     from_prev_m: float | None  # walked since the previous step
     turn_deg: float | None  # heading change since the previous step, + = turned right, - = left
+    turn_at_deg: float | None = None  # the turn made at this spot (heading 3 s after vs 3 s before), + = right
     heading_deg: float | None
 
 
@@ -224,8 +255,13 @@ class PlaceNode(MapNode):
 
 class PlaceEdge(MapEdge):
     model_config = ConfigDict(extra="ignore")
+    # defaults: maps built before these fields existed
     visual_cues: list[str] = []
+    basis: Basis = "walked"
+    steps: list[Step] = []
+    distance_m: float | None = None  # measured if the edge was walked, else the sum of the steps' distances
     measured_distance_m: float | None = None  # walked between the two nodes' frames (centre to centre) in one recording
+    reverse_steps: list[Step] = []  # computed from steps: turn around, steps in reverse order, left and right swapped
     path: list[Point] = []  # the dead-reckoned walk between the two nodes, for drawing (same frame as positions)
     walked_at_ms: float | None = None  # when the walk that `path` comes from left the source (recording clock)
     walked_in: str | None = None  # ... and which recording that was

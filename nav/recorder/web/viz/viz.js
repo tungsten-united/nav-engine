@@ -267,13 +267,29 @@ function pinCard() {
       h("span", { class: "chip" }, e.bidirectional ? "both ways" : "one way"), h("span", { class: "chip" }, e.id)),
     qualityBlock(e.quality, true),
     e.walked === false && h("p", { class: "hint" }, "Not walked directly: the walk passed other spots in between, so this connection is inferred."),
-    h("dl", { class: "kv" }, h("dt", {}, "Distance"), h("dd", {}, `${fmtM(e.distance_m)} (LLM) · ${fmtM(e.measured_distance_m)} (steps)`),
+    h("dl", { class: "kv" }, h("dt", {}, "Distance"), h("dd", {}, e.measured_distance_m != null ? `${fmtM(e.measured_distance_m)} (measured)` :
+        e.distance_m != null ? `${fmtM(e.distance_m)} (from the steps, not measured)` : "unknown"),
+      h("dt", {}, "Basis"), h("dd", {}, e.walked === false ? "inferred (not walked directly)" : "walked"),
       S.turns.has(e.id) && [h("dt", {}, "Turn"), h("dd", {}, turnText(S.turns.get(e.id), true))]),
     h("div", { class: "instruction" }, e.instruction),
-    e.reverse_instruction && [h("h4", {}, `Back: ${b.name} → ${a.name}`), h("div", { class: "instruction" }, e.reverse_instruction)],
+    stepList(e.steps),
+    e.reverse_instruction && [h("h4", {}, `Back: ${b.name} → ${a.name}`), h("div", { class: "instruction" }, e.reverse_instruction),
+      stepList(e.reverse_steps, "computed from the steps above")],
     ...items("Along the way", e.landmarks), ...items("Hazards", e.hazards, "hazards"),
     ...items("Visual cues (sighted helpers, camera)", e.visual_cues, "visual"),
     e.candidates.length ? frames(e.candidates) : null);
+}
+
+const ACTIONS = { straight: "↑ straight", bear_left: "↖ bear left", bear_right: "↗ bear right", turn_left: "← turn left",
+  turn_right: "→ turn right", turn_around: "↓ turn around", go_through: "⇥ go through", step_up: "⤒ step up",
+  step_down: "⤓ step down", stairs_up: "⤒ stairs up", stairs_down: "⤓ stairs down", lift: "⇅ lift" };
+function stepList(steps, note) {
+  if (!steps?.length) return null;
+  return h("div", {}, note && h("p", { class: "hint" }, `Steps (${note})`),
+    h("ol", { class: "rsteps" }, steps.map((st) => h("li", {},
+      h("b", {}, ACTIONS[st.action] || st.action), st.distance_m != null ? ` · ${fmtM(st.distance_m)}` : "",
+      st.along ? h("span", { class: "muted" }, ` · ${st.along}`) : null,
+      st.until ? h("div", { class: "until" }, st.until) : null))));
 }
 
 function qualityBlock(q, isEdge) {

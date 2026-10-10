@@ -95,7 +95,9 @@ def select_candidates(place: str, preps: list[Prepared], p: SelectParams, embed_
             if timeline and timeline[-1].candidate == cid:
                 continue  # several views of one candidate in a row: one step
             heading = prep.track.mean_heading(t - 1500, t + 1500)
-            timeline.append(TimelineStep(
+            before, after = prep.track.mean_heading(t - 3000, t), prep.track.mean_heading(t, t + 3000)
+            turn_at = None if before is None or after is None else round(angle_diff(before, after))
+            timeline.append(TimelineStep(turn_at_deg=turn_at, 
                 t_ms=t, candidate=cid, walked_m=v.motion.walked_m, heading_deg=None if heading is None else round(heading),
                 from_prev_m=None if prev is None else round(v.motion.walked_m - prev[0], 1),
                 turn_deg=None if prev is None or prev[1] is None or heading is None else round(angle_diff(prev[1], heading))))
@@ -188,7 +190,23 @@ def finish_map(draft: MapDraft, cset: CandidateSet, build: BuildInfo, build_rel:
     for e in edges:
         e.measured_distance_m = _measured(by_id[e.source], by_id[e.target], cands)
         _edge_path(e, by_id[e.source], by_id[e.target], cands, tracks, warp, used)
+    for e in edges:
+        if e.basis == "inferred" and e.walked:  # the LLM knows better that this wasn't walked
+            ends = [by_id[e.source].position, by_id[e.target].position]
+            e.walked, e.measured_distance_m, e.path = False, None, [p for p in ends if p is not None]
+        elif e.basis == "walked" and not e.walked:
+            warnings.append(f"edge {e.id} says walked, but the walk passed other spots between {e.source} and "
+                            f"{e.target}: treated as inferred")
     _edge_turns(edges)
+    for e in edges:
+        steps_m = [st.distance_m for st in e.steps if st.distance_m is not None]
+        e.distance_m = e.measured_distance_m if e.measured_distance_m is not None else (
+            round(sum(steps_m), 1) if steps_m else None)
+        if e.bidirectional and e.steps:
+            src = by_id[e.source]
+            e.reverse_steps = reverse_steps(e.steps, arrival=src.landmarks[0] if src.landmarks else None)
+        if problem := first_step_problem(e):
+            warnings.append(f"edge {e.id}: {problem}")
     placed = [Track(rec_id=r, points=[(t, *warp[r](t, x, y)) for t, x, y in tracks[r]]) for r in warp if r in tracks]
     return PlaceMap(tracks=placed, **draft.model_dump(exclude={"nodes", "edges"}), map_id=cset.map_id,
                     recordings=[r.rec_id for r in cset.recordings], build=build, nodes=nodes, edges=edges,
@@ -307,6 +325,48 @@ def _edge_path(e: PlaceEdge, a: PlaceNode, b: PlaceNode, cands: dict[str, Candid
     if va.t_ms > vb.t_ms:
         inner.reverse()  # the walk went target -> source; keep the path oriented source -> target
     e.path = [a.position, *inner, b.position]
+
+
+TURN_CHECK_DEG = 45  # measured turns at least this clear are checked against the first step
+_SIDE = {"bear_left": "left", "turn_left": "left", "bear_right": "right", "turn_right": "right"}
+_INVERSE = {"bear_left": "bear_right", "bear_right": "bear_left", "turn_left": "turn_right", "turn_right": "turn_left",
+            "step_up": "step_down", "step_down": "step_up", "stairs_up": "stairs_down", "stairs_down": "stairs_up"}
+
+
+def first_step_problem(e: PlaceEdge) -> str | None:
+    """Does the first step turn the way the walk turned when leaving the source? (walked edges, clear turns)"""
+    if not (e.walked and e.steps and e.turn_deg is not None and abs(e.turn_deg) >= TURN_CHECK_DEG):
+        return None
+    measured = "right" if e.turn_deg > 0 else "left"
+    action = e.steps[0].action
+    if action == "turn_around":
+        return None if abs(e.turn_deg) >= 135 else f"the first step is turn_around, but the walk turned {measured} " \
+                                                    f"{abs(e.turn_deg):.0f}° when leaving {e.source}"
+    if _SIDE.get(action) == measured:
+        return None
+    return f"the first step is {action}, but the walk turned {measured} {abs(e.turn_deg):.0f}° when leaving {e.source}"
+
+
+def _swap_sides(text: str | None) -> str | None:
+    if not text:
+        return text
+    return re.sub(r"\b(left|right|Left|Right)\b",
+                  lambda m: {"left": "right", "right": "left", "Left": "Right", "Right": "Left"}[m.group(1)], text)
+
+
+def reverse_steps(steps: list, arrival: str | None = None) -> list:
+    """The route walked back: turn around, then each step in reverse order, undoing the turn that started the
+    step after it, with sides swapped; each step ends at the cue that ended the step before it going forward."""
+    from nav.schemas.map import Step
+
+    out = []
+    n = len(steps)
+    for k in range(n - 1, -1, -1):
+        action = "turn_around" if k == n - 1 else _INVERSE.get(steps[k + 1].action, steps[k + 1].action)
+        until = steps[k - 1].until if k > 0 else arrival
+        out.append(Step(action=action, distance_m=steps[k].distance_m, along=_swap_sides(steps[k].along),
+                        until=until))
+    return out
 
 
 def _bearing(p: Point, q: Point) -> float:

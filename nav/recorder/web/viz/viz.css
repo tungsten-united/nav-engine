@@ -130,6 +130,9 @@ button[aria-pressed="false"] { color: var(--muted); }
 .route { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; }
 .route select { min-width: 0; }
 .steps { margin: 8px 0 0; padding-left: 20px; }
+.rsteps { margin: 4px 0 10px; padding-left: 20px; font-size: 12px; }
+.rsteps li { margin: 0 0 5px; }
+.rsteps .until { color: var(--muted); }
 .steps li { margin: 0 0 8px; }
 .steps li b { display: block; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; font-size: 11.5px; margin: 0; }

@@ -30,7 +30,9 @@ people. The app will use it to tell people where they are and to give spoken, st
   - `recordings[]`: one entry per walk through the place: the walker's `notes`, `marks` (buttons pressed while
     walking: door, junction, stairs, lift, destination), `voice` (what the walker said, transcribed, with times on
     the recording clock in ms), and `timeline`: the candidates in the order the walk passed them, with metres
-    walked (`from_prev_m`) and heading change (`turn_deg`, + = right, - = left) since the previous one.
+    walked since the previous one (`from_prev_m`), heading change since the previous one (`turn_deg`), and the turn
+    the walker made at that spot (`turn_at_deg`, heading over the 3 s after vs the 3 s before). For both, + = right,
+    - = left, in degrees.
   - `candidates[]`: frames selected from the walks. `views` lists every sighting (recording, time, motion, the
     marks and voice notes around it); the first view is the photo. `reason` says why it was kept.
     `possibly_same_as` lists look-alike candidates that may be the same spot seen again (a revisit or another walk).
@@ -52,12 +54,25 @@ people. The app will use it to tell people where they are and to give spoken, st
   about 15 m apart are two nodes joined by an edge, even if they look alike or the walker says "the same tables
   from another angle" (that means the far end of the same row). Merge passes into one node only when the photos show
   the same spot and the positions roughly agree.
-- Connectivity comes from the timelines: consecutive candidates of a walk are joined by what was walked between them.
-  Revisits (`possibly_same_as` that the photos confirm, or a voice note such as "the same ... from another angle")
-  close loops. Do not invent connections that no walk supports.
-- `distance_m` on an edge is the sum of `from_prev_m` between its nodes along a walk, rounded to the metre. Step
-  counting misses slow steps, so it is approximate; null if unknown. Use `turn_deg` for left/right, but trust the
-  photos where they disagree (the walker may have panned the phone).
+
+## Edges
+- Connectivity comes from the timelines. `basis` is "walked" when a walk went from the source's frames to the
+  target's frames with no other node's frames in between (consecutive on a timeline). Otherwise it is "inferred":
+  use that sparingly (say, the two ends of one row), never for a connection no walk or photo supports, and explain
+  each inferred edge in `notes`. Revisits that the photos confirm close loops.
+- `candidates` of a walked edge: that walk's frames from the source's last frame to the target's first frame, in
+  timeline order.
+- `steps` are the route in order. The first step's action is the turn when leaving the source: read it from the
+  motion data, the `turn_at_deg` of the source's last frame on that walk (and the `turn_deg` of the next timeline
+  step). Under 20° is straight, 20-60° bear, 60-135° turn, more is turn_around; + is right, - is left. The motion
+  data is usually right about turns even when a photo seems to say otherwise (the walker may have panned the phone);
+  if you overrule it, say why in `notes`.
+- Step distances come from the motion data: the sum of `from_prev_m` along the walk, rounded to the metre (step
+  counting misses slow steps, so it is approximate). A turn on the spot or a step up has no distance.
+- `instruction` is the spoken form of the steps: same order, same turns, same distances, plus what helps on the way.
+  `reverse_instruction` speaks the same route backwards (code derives the reverse steps from yours).
+
+## Wording
 - Everything the app will say (`summary`, `description`, `landmarks`, `instruction`, `reverse_instruction`) is for
   someone who cannot see, so it has no visual detail: no colours, signs, screens, murals, lights, "you will see" or
   "looks like". Describe what a cane, feet or hands find (walls and edges you can trail, counters, door frames,
@@ -69,7 +84,7 @@ people. The app will use it to tell people where they are and to give spoken, st
   direction, roughly how far, what you pass and can touch or hear, and how you know you have arrived. Mention hazards:
   steps, cables on the floor, low tables, glass doors.
 - People, bags, laptops and other things that move are not landmarks. Fixed furniture, counters, walls, pillars,
-  screens, signs and floor changes are.
+  doors and floor changes are. Screens and signs are fixed but visual: they go in `visual_cues`.
 - Names are what the app will say: 1-4 words, unique, using the walker's words where possible. Put the details in
   the description.
 - Prefer fewer, well-supported nodes over many speculative ones. Put what you are unsure about in `notes`.
@@ -127,8 +142,12 @@ def parse_claude_result(path: Path, model: str = "?") -> tuple[MapDraft, LlmRun]
     if result.get("is_error") or result.get("subtype") != "success" or result.get("structured_output") is None:
         raise LlmError(f"Claude Code failed ({result.get('subtype')}): {str(result.get('result'))[:500]}")
     out = result["structured_output"]
-    for item in out.get("nodes", []) + out.get("edges", []):
-        item.setdefault("visual_cues", [])  # answers saved before the field existed
+    for item in out.get("nodes", []) + out.get("edges", []):  # answers saved before these fields existed
+        item.setdefault("visual_cues", [])
+    for e in out.get("edges", []):
+        e.pop("distance_m", None)
+        e.setdefault("basis", "walked")
+        e.setdefault("steps", [])
     draft = MapDraft.model_validate(out)
     usage = result.get("modelUsage") or {}
     main_model = max(usage, key=lambda k: usage[k].get("costUSD") or 0) if usage else model

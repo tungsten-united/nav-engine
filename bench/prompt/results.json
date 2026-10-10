@@ -1,0 +1,18 @@
+{
+ "before": {
+  "nodes": 11,
+  "edges": 12,
+  "edges inferred (code)": 2,
+  "edges claimed walked but not": 0,
+  "edges with steps": 0,
+  "clear turns checked": 3,
+  "first step contradicts the walk": 0,
+  "instruction text contradicts the walk (Jev)": 1,
+  "LLM distance vs measured, mean abs gap (m)": 3.0,
+  "LLM distance vs measured, edges compared": 10,
+  "far-apart passes merged": 0,
+  "spoken text with visual words (keyword)": 5,
+  "flagged by Jev": 4,
+  "candidates unused": 4
+ }
+}
