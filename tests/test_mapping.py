@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from nav.mapping.build import finish_map, run_llm_on_build
 from nav.mapping.motion import RATE_HZ, angle_diff, load_motion
 from nav.mapping.select import Frame, SelectParams, group_frames, mark_usable, select_in_recording
+from nav.mapping.verify import candidate_pairs, match_pairs
 from nav.mapping.store import MapStore
 from nav.recorder.app import create_app
 from nav.recorder.store import RecordingStore
@@ -121,6 +122,7 @@ def unit(v):
 
 def frame(rec, t_s, emb, walked, heading=0.0, sharp=100.0):
     return Frame(rec_id=rec, t_ms=t_s * 1000, sharpness=sharp, brightness=120, image_path="x.jpg", emb=unit(emb),
+                 place=unit(emb),
                  motion={"walked_m": walked, "heading_deg": heading, "x_m": walked, "y_m": 0.0, "pitch_deg": 0.0,
                          "moving": True})
 
@@ -141,12 +143,29 @@ def test_select_keeps_new_views_anchors_and_folds_revisits():
     kept = select_in_recording(frames, None, [], voice, p)
     assert [f.t_ms / 1000 for f in kept] == [0, 3, 4, 5, 60, 61]
     assert kept[1].reasons == ["novel"] and kept[2].voice == ["here is the kitchen"] and "distance" in kept[3].reasons
-    groups, hints = group_frames(kept, p)
+    # Fake local matching: frames that look nearly identical share structure.
+    sim, same, pairs = match_pairs(kept, p, inliers=lambda i, j: 500 if kept[i].place @ kept[j].place > 0.92 else 5)
+    assert all(r["same"] == (r["inliers"] >= p.min_inliers) for r in pairs)
+    groups, hints = group_frames(kept, p, sim, same)
     # 3 s (novel) is a near-duplicate of the voice frame 1 s later and unanchored: dropped; 60 s folds into 0 s
     times = [[f.t_ms / 1000 for f in g.frames] for g in groups]
     assert [0, 60] in times or [0.0, 60.0] in times
     assert not any(3 in t for t in times)
     assert groups[0].rep.t_ms == 0  # start is anchored, so it represents the group
+
+    # The same look-alikes failing the geometric check: the revisit doesn't fold, it is only a hint (recent
+    # near-duplicates of the voice frame are still dropped: that is DINOv2's call, not the check's).
+    sim, same, _ = match_pairs(kept, p, inliers=lambda i, j: 5)
+    groups, hints = group_frames(kept, p, sim, same)
+    assert [[f.t_ms / 1000 for f in g.frames] for g in groups] == [[0], [4], [60], [61]]
+    start, back = [next(k for k, g in enumerate(groups) if g.rep.t_ms == t) for t in (0, 60_000)]
+    assert hints.get((start, back), 0) > 0.9
+
+
+def test_candidate_pairs_are_similar_and_top_k():
+    sim = np.array([[1, .9, .8, .2], [.9, 1, .7, .6], [.8, .7, 1, .1], [.2, .6, .1, 1]])
+    assert candidate_pairs(sim, SelectParams(hint_sim=0.5, retrieve_k=1)) == [(0, 1), (0, 2), (1, 3)]
+    assert candidate_pairs(sim, SelectParams(hint_sim=0.75, retrieve_k=3)) == [(0, 1), (0, 2)]
 
 
 # --- finish ------------------------------------------------------------------------------------------------

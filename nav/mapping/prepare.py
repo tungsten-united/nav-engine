@@ -3,7 +3,8 @@
     cache/<rec_id>/
       frames-<key>/NNNNNNN.jpg  sampled frames, named by t_ms
       frames-<key>.json         [{t_ms, sharpness, brightness, file}]
-      emb-<key>.npy             frame embeddings, same order
+      emb-<key>.npy             frame embeddings (DINOv2), same order
+      place-<key>.npy           place embeddings (MegaLoc), same order
       voice-<key>.json          {clip: text}
 
 Each key is a short hash of the stage's inputs (parameters, model name, video size), so changing a parameter
@@ -45,7 +46,8 @@ def load_events(rec_dir: Path) -> list[Event]:
     return [Event.model_validate_json(line) for line in path.read_text().splitlines() if line] if path.is_file() else []
 
 
-def prepare(rec_dir: Path, cache_root: Path, p: SelectParams, embed_model: str, transcribe_model: str | None) -> Prepared:
+def prepare(rec_dir: Path, cache_root: Path, p: SelectParams, embed_model: str, place_model: str,
+            transcribe_model: str | None) -> Prepared:
     m = Manifest.model_validate_json((rec_dir / "manifest.json").read_text())
     cache = cache_root / m.rec_id
     cache.mkdir(parents=True, exist_ok=True)
@@ -81,6 +83,14 @@ def prepare(rec_dir: Path, cache_root: Path, p: SelectParams, embed_model: str, 
         emb = embed_images([np.asarray(Image.open(fdir / r["file"]).convert("RGB")) for r in rows], embed_model)
         np.save(epath, emb)
     emb = np.load(epath)
+    pkey = _key(fkey, place_model)
+    ppath = cache / f"place-{pkey}.npy"
+    if not ppath.is_file():
+        from nav.mapping.models import embed_places
+
+        log.info("%s: place embeddings for %d frames with %s", m.rec_id, len(rows), place_model)
+        np.save(ppath, embed_places([np.asarray(Image.open(fdir / r["file"]).convert("RGB")) for r in rows], place_model))
+    place = np.load(ppath)
 
     # voice
     texts: dict[str, str] = {}
@@ -101,7 +111,7 @@ def prepare(rec_dir: Path, cache_root: Path, p: SelectParams, embed_model: str, 
         texts = json.loads(vpath.read_text())
 
     frames = [Frame(rec_id=m.rec_id, t_ms=r["t_ms"], sharpness=r["sharpness"], brightness=r["brightness"],
-                    image_path=str(fdir / r["file"]), emb=emb[i], motion=track.at(r["t_ms"]))
+                    image_path=str(fdir / r["file"]), emb=emb[i], place=place[i], motion=track.at(r["t_ms"]))
               for i, r in enumerate(rows)]
     marks = [{"t_ms": e.t_ms, "tag": e.data.get("tag", "?")} for e in events if e.type == "mark"]
     voice = [{"t_ms": v.t_start_ms, "t_end_ms": v.t_end_ms, "clip": v.clip, "text": texts.get(str(v.clip), "")}

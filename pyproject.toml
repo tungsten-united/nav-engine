@@ -25,16 +25,22 @@ map = [
     "pillow>=11",
     "scipy>=1.14",
     "torch>=2.8",
+    "torchvision>=0.23",
     "transformers>=4.56",
     "accelerate>=1.0",
     "typesafe-sdk>=0.7.4",
+    # Same-place check between frames (ALIKED + LightGlue). Not on PyPI; pinned commit.
+    "lightglue @ git+https://github.com/cvg/LightGlue@eb42fee2d71449efb0aa5c10549752b5d75384d8",
 ]
 
 [tool.uv]
 default-groups = ["dev", "map"]
+# LightGlue asks for opencv-python (clashes with the headless build we use) and matplotlib (plots only).
+override-dependencies = ["opencv-python; sys_platform == 'never'", "matplotlib; sys_platform == 'never'"]
 
 [tool.uv.sources]
 torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
 
 [[tool.uv.index]]
 name = "pytorch-cu128"

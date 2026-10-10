@@ -211,6 +211,7 @@ class CandidateSet(BaseModel):
     params: dict
     embed_model: str
     embed_dim: int | None = None
+    place_model: str | None = None  # None: built before MegaLoc (DINOv2 decided merges)
 
 
 # --- what is stored -----------------------------------------------------------------------------------------
@@ -286,6 +287,7 @@ class BuildInfo(BaseModel):
     params: dict
     embed_model: str
     embed_dim: int | None = None
+    place_model: str | None = None  # None: built before MegaLoc (DINOv2 decided merges)
     transcribe_model: str | None
     llm: LlmRun
     candidates: int

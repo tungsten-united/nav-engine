@@ -109,11 +109,12 @@ def _print_build(result) -> None:
 
 @maps.command("setup")
 def map_setup(transcribe: bool = True) -> None:
-    """Download and check the local models: frame embeddings (NAV_EMBED_MODEL) and voice (NAV_TRANSCRIBE_MODEL)."""
+    """Download and check the local models: frame and place embeddings (NAV_EMBED_MODEL, NAV_PLACE_MODEL), local
+    feature matching (ALIKED + LightGlue) and voice (NAV_TRANSCRIBE_MODEL)."""
     from nav.mapping.models import check
 
     _logging()
-    for k, v in check(config.EMBED_MODEL, config.TRANSCRIBE_MODEL if transcribe else None).items():
+    for k, v in check(config.EMBED_MODEL, config.PLACE_MODEL, config.TRANSCRIBE_MODEL if transcribe else None).items():
         print(f"{k:>16}: {v}")
 
 
@@ -133,7 +134,8 @@ def map_build(place: str = typer.Argument(..., help="Place name as recorded (cas
     _logging()
     result = build_map(place, recordings_root=config.RECORDINGS_DIR, maps_root=config.MAPS_DIR,
                        cache_root=config.CACHE_DIR, params=SelectParams(max_candidates=max_candidates),
-                       embed_model=config.EMBED_MODEL, transcribe_model=config.TRANSCRIBE_MODEL if transcribe else None,
+                       embed_model=config.EMBED_MODEL, place_model=config.PLACE_MODEL,
+                       transcribe_model=config.TRANSCRIBE_MODEL if transcribe else None,
                        llm_model=model, language=language, budget_usd=budget, run_llm=llm, effort=effort)
     _print_build(result)
 

@@ -6,10 +6,12 @@
    - a tag was pressed or a voice note started around it (mark, voice: the person said something is here),
    - it looks new compared to the last kept frame and the person walked or turned enough since (novel, turn),
    - or the person walked far since the last kept frame (distance), so long corridors keep their length.
-3. Across all recordings: frames that look nearly identical (cosine >= merge_sim) are folded into one candidate
-   with several views (complete linkage, so chains of slightly-similar frames don't collapse). Within one walk
-   only revisits (>= revisit_min_s apart) are folded; a near-duplicate of a recent frame with nothing said or
-   tagged is simply dropped. Pairs that are similar but below merge_sim are reported as possibly the same place.
+3. Across all recordings: frames that show the same place are folded into one candidate with several views
+   (complete linkage, so chains of slightly-similar frames don't collapse). "Same place" (verify.py) means MegaLoc
+   retrieved the pair and ALIKED+LightGlue found enough geometrically consistent matches. Within one walk only
+   revisits (>= revisit_min_s apart) are folded; a near-duplicate (DINOv2, dup_sim) of a recent frame with
+   nothing said or tagged is simply dropped. Pairs that look alike (MegaLoc cosine >= hint_sim) but weren't
+   folded are reported as possibly the same place.
 4. If there are still more than max_candidates, the most redundant unanchored ones are dropped.
 """
 
@@ -34,8 +36,12 @@ class SelectParams:
     max_gap_m: float = 10.0  # keep a frame at least every this many metres walked
     anchor_before_s: float = 2.0  # marks and voice notes look for a frame from this long before ...
     anchor_after_s: float = 4.0  # ... to this long after
-    merge_sim: float = 0.92  # frames at least this similar are one candidate
-    hint_sim: float = 0.80  # ... and from this similarity they are flagged as possibly the same place
+    dup_sim: float = 0.92  # DINOv2 cosine: a recent frame this similar is a near-duplicate
+    hint_sim: float = 0.45  # MegaLoc cosine from which two frames may be the same place (checked, else a hint)
+    retrieve_k: int = 10  # ... and only each frame's most similar ones are checked
+    # LightGlue matches fitting one fundamental matrix to fold two frames as one spot. One open hall (Itnig):
+    # near-identical views 490-870, different spots of the same room 100-300, so this asks for the same spot.
+    min_inliers: int = 300
     revisit_min_s: float = 30  # within one walk, only frames this far apart in time count as a revisit
     max_candidates: int = 60
 
@@ -50,7 +56,8 @@ class Frame:
     sharpness: float
     brightness: float
     image_path: str  # absolute, in the cache
-    emb: np.ndarray
+    emb: np.ndarray  # DINOv2: novelty within a walk
+    place: np.ndarray  # MegaLoc: same place across walks
     motion: dict  # MotionTrack.at(t_ms)
     usable: bool = True
     reasons: list[str] = field(default_factory=list)
@@ -138,14 +145,16 @@ def _rep_first(frames: list[Frame]) -> list[Frame]:
     return [rep] + sorted((f for f in frames if f is not rep), key=lambda f: (f.rec_id, f.t_ms))
 
 
-def group_frames(kept: list[Frame], p: SelectParams) -> tuple[list[Group], dict[tuple[int, int], float]]:
-    """Fold near-identical keyframes into groups. Returns the groups (in first-seen order) and the similarity
-    between groups that look alike but were not folded (possible same place), keyed by group index pairs."""
+def group_frames(kept: list[Frame], p: SelectParams, sim: np.ndarray, same: np.ndarray
+                 ) -> tuple[list[Group], dict[tuple[int, int], float]]:
+    """Fold keyframes of the same place into groups. `sim`: [n, n] place similarity, `same`: [n, n] bool, the
+    pair is verified as one place (verify.match_pairs). Returns the groups (in first-seen order) and the
+    similarity between groups that look alike but were not folded (possible same place), keyed by group index pairs."""
     n = len(kept)
     if not n:
         return [], {}
     emb = np.stack([f.emb for f in kept])
-    sim = emb @ emb.T
+    dup = emb @ emb.T >= p.dup_sim
     close_in_time = np.array([[a.rec_id == b.rec_id and abs(a.t_ms - b.t_ms) < p.revisit_min_s * 1000
                                for b in kept] for a in kept])
 
@@ -154,7 +163,7 @@ def group_frames(kept: list[Frame], p: SelectParams) -> tuple[list[Group], dict[
     members: list[list[int]] = [[i] for i in range(n)]
     for i in range(n):
         for j in range(i + 1, n):
-            if alive[i] and alive[j] and close_in_time[i, j] and sim[i, j] >= p.merge_sim:
+            if alive[i] and alive[j] and close_in_time[i, j] and dup[i, j]:
                 if kept[j].anchored and kept[i].anchored:
                     members[i] += members[j]
                     alive[j] = False
@@ -165,18 +174,17 @@ def group_frames(kept: list[Frame], p: SelectParams) -> tuple[list[Group], dict[
                     alive[j] = False
                     members[i] += [m for m in members[j] if m != j]
 
-    # Revisits and other walks: complete-linkage merge of the remaining groups.
+    # Revisits and other walks: complete-linkage merge of the remaining groups; every cross pair must be a
+    # verified same place and not just the next steps of one walk. The most similar such pair of groups goes first.
     groups = [members[i] for i in range(n) if alive[i]]
-    def link(a: list[int], b: list[int]) -> float:
-        return float(sim[np.ix_(a, b)].min())
-
+    same = same & ~close_in_time
     while True:
-        best, pair = p.merge_sim, None
+        best, pair = -np.inf, None
         for a in range(len(groups)):
             for b in range(a + 1, len(groups)):
-                s = link(groups[a], groups[b])
-                if s >= best:
-                    best, pair = s, (a, b)
+                ix = np.ix_(groups[a], groups[b])
+                if same[ix].all() and sim[ix].mean() > best:
+                    best, pair = sim[ix].mean(), (a, b)
         if pair is None:
             break
         a, b = pair

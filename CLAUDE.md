@@ -12,7 +12,8 @@ place; the **map pipeline** turns all walks of a place into one semantic topolog
 - `nav/schemas/map.py` — the map format: `MapDraft` (what the LLM writes; its JSON Schema must stay valid for
   Anthropic structured outputs) and `PlaceMap` (stored: draft + evidence, positions, distances, build info).
 - `nav/mapping/` — map pipeline: `prepare.py` (per-recording cache: frames, embeddings, transcripts), `frames.py`,
-  `motion.py`, `models.py` (DINOv2, Whisper), `select.py` (candidates), `llm.py` (Claude Code job + prompt),
+  `motion.py`, `models.py` (DINOv2, MegaLoc, ALIKED+LightGlue, Whisper), `select.py` (candidates), `verify.py`
+  (same-place pairs: MegaLoc retrieval + LightGlue check), `llm.py` (Claude Code job + prompt),
   `build.py` (orchestration + finish), `quality.py` (TypeSafe Jev check), `store.py`.
 - `nav/recorder/web/viz/` — map viewer at `/viz/` (vanilla JS + SVG, no build step).
 - `nav/cli.py` — `nav serve`, `nav rec list|show|finalize|push|pull`, `nav map setup|build|llm|refinish|list|show|push|pull`.
@@ -51,6 +52,10 @@ Browser end-to-end check: headless `/usr/bin/chromium` via `uvx --from playwrigh
   the path geometry around the node centre: that booked the turn made while arriving at a spot onto leaving it,
   and made a correct "bear right" look like a contradiction (and fooled the Jev check that compared against it).
 - `nav map refinish` reuses the saved Claude answer: use it to iterate on post-processing without paying again.
+- Generic DINOv2 similarity says "same kind of scene", not "same place" (two ends of one hall: 0.81). Use MegaLoc
+  for place identity. LightGlue inliers in one open hall: near-identical views 490–870, different spots 100–300, so
+  inliers alone fold a whole room; within-walk near-duplicates stay a DINOv2 call. Tune with `pairs.json`.
+- LightGlue needs `opencv-python`; `pyproject.toml` overrides it (and matplotlib) away to keep the headless build.
 - `nvidia-smi` may report "Driver/library version mismatch" after a driver update without reboot; CUDA still works.
 
 ## Product decisions
@@ -59,7 +64,8 @@ Browser end-to-end check: headless `/usr/bin/chromium` via `uvx --from playwrigh
 - The map pipeline must therefore merge many walks and detect revisits (embedding similarity + tags + voice),
   not assume a linear path.
 - Map pipeline MVP (built): 1 fps sharpest frames → quality filter → keyframes per walk (novelty by DINOv2
-  embedding + walked distance / turn from the IMU, anchors at tags and voice notes) → fold look-alikes across walks
+  embedding + walked distance / turn from the IMU, anchors at tags and voice notes) → fold the same spot across
+  walks and revisits (MegaLoc retrieval, ALIKED+LightGlue geometric check; weaker look-alikes become hints)
   → a Claude Code job writes the graph from candidates.json + frames → code checks ids and adds evidence, positions
   and distances. Voice is transcribed locally (Whisper turbo; no OpenAI key here). Later: Anthropic API with
   structured outputs instead of the Claude Code job; code proposing node/edge spans itself.

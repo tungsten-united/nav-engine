@@ -1,7 +1,8 @@
 """Map pipeline for one place: prepare every walk -> select candidates -> LLM draft -> checked, enriched PlaceMap.
 
     prepare (cached per recording)   frames at 1 fps (sharpest per second), motion, voice transcripts, embeddings
-    select                           quality filter, keyframes per walk, fold look-alikes across walks
+    select                           quality filter, keyframes per walk, fold same-place frames across walks
+                                     (MegaLoc retrieval + LightGlue check, verify.py)
     LLM                              Claude Code job (nav/mapping/llm.py) -> MapDraft
     finish                           check ids, attach evidence (recording + time + image), dead-reckoned
                                      positions aligned through shared nodes, measured walking distances
@@ -20,6 +21,7 @@ import numpy as np
 from nav.mapping.motion import angle_diff
 from nav.mapping.prepare import Prepared, prepare
 from nav.mapping.select import SelectParams, cap_groups, group_frames, mark_usable, select_in_recording
+from nav.mapping.verify import match_pairs
 from nav.schemas.map import (
     BuildInfo,
     Candidate,
@@ -69,14 +71,16 @@ def track_points(tr) -> list[list]:
              None if np.isnan(tr.heading_deg[i]) else round(float(tr.heading_deg[i]), 1)] for i in idx]
 
 
-def select_candidates(place: str, preps: list[Prepared], p: SelectParams, embed_model: str,
+def select_candidates(place: str, preps: list[Prepared], p: SelectParams, embed_model: str, place_model: str,
                       build_dir: Path) -> CandidateSet:
-    """Run selection and write candidates.json + frames/ into build_dir."""
+    """Run selection and write candidates.json + pairs.json (same-place checks, for tuning) + frames/ into build_dir."""
     kept = []
     for prep in preps:
         mark_usable(prep.frames, p)
         kept += select_in_recording(prep.frames, prep.track, prep.marks, prep.voice, p)
-    groups, hints = group_frames(kept, p)
+    sim, same, pairs = match_pairs(kept, p)
+    (build_dir / "pairs.json").write_text(json.dumps(pairs, indent=1))
+    groups, hints = group_frames(kept, p, sim, same)
     groups, hints = cap_groups(groups, hints, p)
     width = max(2, len(str(len(groups))))
     ids = [f"c{i + 1:0{width}d}" for i in range(len(groups))]
@@ -117,7 +121,7 @@ def select_candidates(place: str, preps: list[Prepared], p: SelectParams, embed_
             timeline=timeline))
     cset = CandidateSet(place=place, map_id=slugify(place), recordings=recordings, candidates=candidates,
                         params=p.as_dict(), embed_model=embed_model,
-                        embed_dim=int(kept[0].emb.shape[0]) if kept else None)
+                        embed_dim=int(kept[0].emb.shape[0]) if kept else None, place_model=place_model)
     (build_dir / "candidates.json").write_text(cset.model_dump_json(indent=1))
     tracks = {prep.manifest.rec_id: track_points(prep.track) for prep in preps}
     (build_dir / "tracks.json").write_text(json.dumps(tracks))
@@ -444,18 +448,19 @@ def _measured(a: PlaceNode, b: PlaceNode, cands: dict[str, Candidate]) -> float 
 
 
 def build_map(place: str, *, recordings_root: Path, maps_root: Path, cache_root: Path, params: SelectParams,
-              embed_model: str, transcribe_model: str | None, llm_model: str, language: str, budget_usd: float,
+              embed_model: str, place_model: str, transcribe_model: str | None, llm_model: str, language: str,
+              budget_usd: float,
               run_llm: bool = True, effort: str = "medium") -> BuildResult:
     rec_dirs = recordings_for(recordings_root, place)
     if not rec_dirs:
         raise ValueError(f"no finished recordings with video for place {place!r}")
-    preps = [prepare(d, cache_root, params, embed_model, transcribe_model) for d in rec_dirs]
+    preps = [prepare(d, cache_root, params, embed_model, place_model, transcribe_model) for d in rec_dirs]
     place = preps[-1].manifest.place  # spelled as in the latest recording
 
     build_id = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}"
     build_dir = maps_root / slugify(place) / "builds" / build_id
     build_dir.mkdir(parents=True)
-    cset = select_candidates(place, preps, params, embed_model, build_dir)
+    cset = select_candidates(place, preps, params, embed_model, place_model, build_dir)
     (build_dir / "build.json").write_text(json.dumps({"transcribe_model": transcribe_model}))
     log.info("%s: %d recordings -> %d candidates in %s", place, len(preps), len(cset.candidates), build_dir)
     if not run_llm:
@@ -510,6 +515,7 @@ def publish(build_dir: Path, cset: CandidateSet, draft: MapDraft, run) -> BuildR
     built_at = datetime.strptime(build_id, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
     info = BuildInfo(build_id=build_id, built_at_utc=built_at, pipeline_version=PIPELINE_VERSION,
                      params=cset.params, embed_model=cset.embed_model, embed_dim=cset.embed_dim,
+                     place_model=cset.place_model,
                      transcribe_model=extra.get("transcribe_model"),
                      llm=run, candidates=len(cset.candidates))
     pmap = finish_map(draft, cset, info, f"builds/{build_id}", tracks)

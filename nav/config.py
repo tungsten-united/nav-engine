@@ -30,6 +30,8 @@ CACHE_DIR = DATA_DIR / "cache"
 # Maps go next to the recordings in the team bucket, under their own prefix.
 GCS_MAPS_URL = os.environ.get("NAV_GCS_MAPS_URL", "gs://tungsten-united-nav-recordings/maps").rstrip("/")
 EMBED_MODEL = os.environ.get("NAV_EMBED_MODEL", "facebook/dinov2-base")
+# Same-place retrieval across walks: torch.hub "owner/repo:commit" (MegaLoc, MIT).
+PLACE_MODEL = os.environ.get("NAV_PLACE_MODEL", "gmberton/MegaLoc:5fe0dd697c4a70ba3e23607f6716ab3c606b16db")
 TRANSCRIBE_MODEL = os.environ.get("NAV_TRANSCRIBE_MODEL", "openai/whisper-large-v3-turbo")
 MAP_LLM_MODEL = os.environ.get("NAV_MAP_LLM_MODEL", "opus")  # Claude Code --model (alias or full id)
 MAP_LLM_EFFORT = os.environ.get("NAV_MAP_LLM_EFFORT", "medium")  # low, medium, high, xhigh, max

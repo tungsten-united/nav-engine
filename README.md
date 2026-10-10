@@ -136,12 +136,17 @@ uv run nav map pull [<map_id> …]
      dead-reckoned path;
    - voice notes transcribed locally with **Whisper** (`openai/whisper-large-v3-turbo`);
    - frame **embeddings** with **DINOv2** (`facebook/dinov2-base`, whole frame without cropping, [CLS] + mean patch,
-     1536-d, cosine similarity).
+     1536-d, cosine similarity), for "does this look new";
+   - **place embeddings** with [**MegaLoc**](https://github.com/gmberton/MegaLoc) (DINOv2 + SALAD head trained for
+     visual place recognition, 8448-d, torch.hub at a pinned commit), for "is this the same place".
 2. **Select candidates**: drop blurry, dark or floor/ceiling frames; per walk keep the start and end, frames at tags
-   and voice notes, frames that look new once the walker moved ≥ 2 m or turned ≥ 60°, and one every 10 m; fold
-   near-identical frames (cosine ≥ 0.92) across walks and revisits into one candidate with several views, and flag
-   look-alikes (≥ 0.80) as possibly the same place; at most 60. Thresholds: `SelectParams` in
-   [`nav/mapping/select.py`](nav/mapping/select.py).
+   and voice notes, frames that look new once the walker moved ≥ 2 m or turned ≥ 60°, and one every 10 m; drop
+   near-duplicates of a recent frame (DINOv2 cosine ≥ 0.92). Then **same place** ([`verify.py`](nav/mapping/verify.py)):
+   MegaLoc retrieves each keyframe's look-alikes (cosine ≥ 0.45, top 10) and **ALIKED + LightGlue** checks each
+   pair (matches fitting one fundamental matrix). Pairs with ≥ 300 inliers (the same spot, not just the same room)
+   across walks or revisits fold into one candidate with several views; the other look-alikes are flagged as
+   possibly the same place; at most 60. Every checked pair goes to `pairs.json` in the build, for tuning.
+   Thresholds: `SelectParams` in [`nav/mapping/select.py`](nav/mapping/select.py).
 3. **LLM**: a headless **Claude Code** job (Opus, medium effort) runs in the build folder with read-only tools (`Read`, `Glob`), opens
    `candidates.json` and every frame, and must answer in the `MapDraft` JSON Schema (`claude -p --json-schema`).
    Each edge comes as `steps` (an action enum: straight, bear/turn left/right, turn around, go through, step/stairs
@@ -168,7 +173,7 @@ uv run nav map pull [<map_id> …]
    (well under a cent) and a second. Needs `TYPESAFE_API_KEY` (in `.env`; also a repo secret); otherwise skipped.
    Questions and thresholds: [`nav/mapping/quality.py`](nav/mapping/quality.py).
 
-Defaults can be changed with `NAV_EMBED_MODEL`, `NAV_TRANSCRIBE_MODEL`, `NAV_MAP_LLM_MODEL` (default `opus`), `NAV_MAP_LLM_EFFORT` (default `medium`),
+Defaults can be changed with `NAV_EMBED_MODEL`, `NAV_PLACE_MODEL`, `NAV_TRANSCRIBE_MODEL`, `NAV_MAP_LLM_MODEL` (default `opus`), `NAV_MAP_LLM_EFFORT` (default `medium`),
 `NAV_MAP_LANGUAGE` (default `en`), `NAV_QUALITY_MODEL` (default `jev-latest`), `NAV_MAP_LLM_BUDGET_USD` (default 5) and `NAV_GCS_MAPS_URL`. A build of a
 2-minute walk takes about 15 s of preprocessing on the GPU plus 4 minutes and about $1 of Claude Code.
 
