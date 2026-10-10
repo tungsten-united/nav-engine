@@ -169,13 +169,20 @@ class ReplayRow:
     step_length_after: float
 
 
-def walk_route(pmap: PlaceMap, rec_id: str) -> list[tuple[Hop, float]]:
-    """The hops a recording walked on the map, with the time it reached each hop's target."""
+def walk_visits(pmap: PlaceMap, rec_id: str) -> list[tuple[float, str]]:
+    """The nodes a recording was at, in order, with the time it got to each (the map's evidence times)."""
     visits = sorted((ev.t_ms, n.id) for n in pmap.nodes for ev in n.evidence if ev.rec_id == rec_id)
     seq: list[tuple[float, str]] = []
     for t, nid in visits:
         if not seq or seq[-1][1] != nid:
             seq.append((t, nid))
+    return seq
+
+
+def walk_route(pmap: PlaceMap, rec_id: str) -> list[tuple[Hop, float]]:
+    """The hops a recording walked on the map, with the time it reached each hop's target. A step between two nodes
+    with no edge between them is left out (walk_visits has every node)."""
+    seq = walk_visits(pmap, rec_id)
     by_pair = {(h.source, h.target): h for e in pmap.edges for h in hops(e)}
     return [(by_pair[(a, b)], t) for (_, a), (t, b) in zip(seq, seq[1:]) if (a, b) in by_pair]
 

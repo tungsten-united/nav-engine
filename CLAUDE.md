@@ -173,8 +173,10 @@ the live inference host out of it.
   evidence, positions and distances. Voice is transcribed locally (Whisper turbo; no OpenAI key here). Later: Anthropic API with
   structured outputs instead of the Claude Code job; code proposing node/edge spans itself.
 - nav-api is for Orient's orchestrator, server to server; nav-api is stateless and the orchestrator keeps the user's
-  state. Its loop: `localize` (votes over results) until the user is located, `route` once, then hop by hop, each
-  `localize` (previous = hop source, expected = hop target, the phone's motion) a vote on reaching the target; lost
+  state. Its loop: `localize` (votes over results) until the user is located, `route` once, then along it, each
+  `localize` (previous = hop source, expected = hop target, the phone's motion) a vote on reaching the target or a
+  node further on (one the camera missed: the route goes on from there; nav-api's walked-distance gate keeps a node
+  seen from afar from counting); lost
   (other nodes win, or nothing recognised for a while), it starts over. `nav map orchestrator-replay` models that loop
   (replay.py `OrchestratorLoop`) and picks its parameters. The phone never calls nav-api. map-api and
   `frontend/` are the team's (mapping, review, debugging); Orient's `/map` page records walks into map-api with its

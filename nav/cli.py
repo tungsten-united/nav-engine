@@ -411,18 +411,21 @@ def map_orchestrator_replay(map_id: str, rec_id: str,
                             k: int = typer.Option(3, help="Votes needed ..."),
                             n: int = typer.Option(4, help="... among the last n calls."),
                             margin: float = typer.Option(0.04, help="A result votes when its best node leads by this."),
+                            lost_margin: float = typer.Option(0.06, help="Locating, a lost result votes when it leads "
+                                                              "by this (the orchestrator's NAV_LOCATE_LOST_MARGIN)."),
                             lost_s: float = typer.Option(6.0, help="Seconds with no result pointing at the hop "
                                                          "(lost, or another node leading) that start over."),
                             fps: float = typer.Option(1.5, help="Frames the phone sends per second."),
                             step_scale: float = typer.Option(1.0, help="0.85 = a user with 15% shorter steps.")) -> None:
     """Replay a mapping walk as a user the Orient orchestrator guides to the walk's last node: localize, one route,
-    then hop by hop, each /localize result a vote on reaching the hop's target; lost, start over. Reports what the
+    then along it, each /localize result a vote on reaching a node ahead (the hop's target, or one further on);
+    lost, start over. Reports what the
     loop decided against where the walk was, and when each node of the walk was reached."""
     from nav.navigation.replay import LoopParams, orchestrator_replay
 
     _logging()
     store = _map_store()
-    params = LoopParams(burst=burst, k=k, n=n, margin=margin, lost_s=lost_s)
+    params = LoopParams(burst=burst, k=k, n=n, margin=margin, lost_margin=lost_margin, lost_s=lost_s)
     res = orchestrator_replay(store.get(map_id), store.dir(map_id), config.RECORDINGS_DIR / rec_id, config.CACHE_DIR,
                               config.loc_thresholds(), params=params, use_motion=motion, step_scale=step_scale, fps=fps)
     if res is None:

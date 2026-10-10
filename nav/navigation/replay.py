@@ -19,7 +19,8 @@ import numpy as np
 
 from nav.navigation.arrival import CONFIRM_KINDS, ArrivalParams, NodeConfirmer, neighbours
 from nav.navigation.localize import RefIndex, localize
-from nav.navigation.pdr import GraphTracker, map_step_length, route_start_ms, user_steps, walk_route
+from nav.navigation.pdr import GraphTracker, map_step_length, route_start_ms, user_steps, walk_route, walk_visits
+from nav.navigation.route import hops
 from nav.schemas.map import PlaceMap
 from nav.schemas.navigation import Localization, Thresholds
 
@@ -187,9 +188,10 @@ def nav_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, t
 
 # --- the orchestrator's loop -----------------------------------------------------------------------------------
 # Orient's orchestrator (project-description docs/contracts.md §2) keeps the navigation state; nav-api stays stateless.
-# It localizes the user, asks for one route, and follows it a hop at a time: each /localize result is a vote on the
-# hop, and the user moves only to the hop's target. Lost, it starts over. This is a model of that loop (the
-# orchestrator's src/pipeline.rs has the same rules), to tune its parameters on mapping walks.
+# It localizes the user, asks for one route, and follows it: each /localize result is a vote, and the user moves to
+# a node ahead on the route (the hop's target, or one further on) once enough results agree, so a node the camera
+# missed doesn't stop the route. Lost, it starts over. This is a model of that loop (the orchestrator's
+# src/pipeline.rs has the same rules), to tune its parameters on mapping walks.
 @dataclass
 class LoopParams:
     """Defaults from replaying both Itnig walks (map build 20261010T111114Z): the only settings with no wrong move
@@ -201,28 +203,47 @@ class LoopParams:
     k: int = 3  # votes needed ...
     n: int = 4  # ... among the last n calls
     margin: float = 0.04  # a result votes only when its best node leads the second by this much
-    lost_s: float = 6.0  # following, no result pointing at the hop (lost, or another node leading) this long: start over
+    lost_margin: float | None = 0.06  # locating, a `lost` one too when it leads by this much (None: never), as the
+    #                                   orchestrator's NAV_LOCATE_LOST_MARGIN
+    lost_s: float = 6.0  # following, nothing pointing at the route (lost, or a node off it leading) this long:
+    #                      start over
 
 
-def locate_vote(loc: Localization, margin: float) -> str | None:
-    """While locating: the node a result votes for, if any. Relocating (sent with the last node and its step count), a
-    node farther than the user walked since doesn't vote."""
-    if loc.status == "lost" or loc.best is None or (loc.margin or 0.0) < margin:
+def leader(loc: Localization, margin: float, lost_margin: float | None) -> str | None:
+    """The node a result points at, if it leads clearly: by `margin`, or by `lost_margin` when every score is low
+    (`lost`; None: a lost result points nowhere), and nav-api doesn't mark it farther than the user walked. Live frames
+    often score under the lost score while the right node keeps leading (Glories Basement, 2026-10-10: 389 of 886)."""
+    if loc.best is None:
+        return None
+    needed = margin if loc.status != "lost" else lost_margin
+    if needed is None or (loc.margin or 0.0) < needed:
         return None
     top = loc.candidates[0] if loc.candidates else None
-    return None if top is not None and top.plausible is False else loc.best
+    return None if top is not None and top.node == loc.best and top.plausible is False else loc.best
 
 
-def follow_vote(loc: Localization, source: str, target: str, margin: float) -> str:
-    """On the hop source -> target: at_target (the target leads), elsewhere (a node off the hop is confirmed) or none.
-    Only a confirmed result says elsewhere: an uncertain one led by another node is mostly noise, and live it dropped
-    the route in 15 of 20 restarts (Itnig, 2026-10-10). A long stretch of them still starts over (`LoopParams.lost_s`)."""
-    if loc.status == "lost" or loc.best is None or (loc.margin or 0.0) < margin:
-        return "none"
-    if loc.best == target:
-        top = loc.candidates[0] if loc.candidates else None
-        return "none" if top is not None and top.plausible is False else "at_target"
-    return "elsewhere" if loc.best != source and loc.status == "confirmed" else "none"
+def locate_vote(loc: Localization, margin: float, lost_margin: float | None = None) -> str | None:
+    """While locating: the node a result votes for, if any. Relocating (sent with the last node and its step count), a
+    node farther than the user walked since doesn't vote."""
+    return leader(loc, margin, lost_margin)
+
+
+def follow_vote(loc: Localization, source: str, ahead: list[str], margin: float) -> str:
+    """Following from `source`, with `ahead` the route's nodes still to reach (the hop's target first): the node the
+    result votes for, "elsewhere" or "none".
+
+    - A node ahead on the route, when it leads: the hop's target, or one further on, because the user walked past a
+      node the camera missed. Hop by hop only, a missed node meant starting over (Itnig, 2026-10-10: 8 of 15 restarts
+      where another node won were a node further on). nav-api's walked-distance gate (`plausible`) keeps a node seen
+      from afar from counting before the user walked that far.
+    - "elsewhere": a node off the route, confirmed. An uncertain one is mostly noise (Itnig, 2026-10-10: it dropped the
+      route in 15 of 20 restarts); a long stretch of them still starts over (`LoopParams.lost_s`)."""
+    lead = leader(loc, margin, None)
+    if lead in ahead:
+        return lead
+    if lead is not None and lead != source and loc.status == "confirmed":
+        return "elsewhere"
+    return "none"
 
 
 @dataclass
@@ -254,17 +275,23 @@ class OrchestratorLoop:
         h = self.path[self.hop]
         return {"previous": h.source, "expected": h.target, "previous_step_count": self.node_steps}
 
+    def ahead(self) -> list[str]:
+        """The route's nodes still to reach, the hop's target first."""
+        return [h.target for h in self.path[self.hop:]]
+
     def on_localization(self, loc: Localization, step_count: int | None, t_s: float) -> LoopEvent | None:
         if self.arrived:
             return None
         if self.path is None:
             return self._locate(loc, step_count, t_s)
-        h = self.path[self.hop]
-        self.votes.append(follow_vote(loc, h.source, h.target, self.p.margin))
-        on_hop = loc.status != "lost" and loc.best in (h.source, h.target)
-        self.off_hop_since = None if on_hop else (t_s if self.off_hop_since is None else self.off_hop_since)
-        if sum(v == "at_target" for v in self.votes) >= self.p.k:
-            return self._reach(h.target, step_count, t_s)
+        source, ahead = self.path[self.hop].source, self.ahead()
+        vote = follow_vote(loc, source, ahead, self.p.margin)
+        self.votes.append(vote)
+        # pointing at the route: the hop's source or target leads (not lost), or a node ahead votes
+        on_route = (loc.status != "lost" and loc.best in (source, ahead[0])) or vote in ahead
+        self.off_hop_since = None if on_route else (t_s if self.off_hop_since is None else self.off_hop_since)
+        if vote in ahead and sum(v == vote for v in self.votes) >= self.p.k:
+            return self._reach(vote, step_count, t_s)
         off_hop_s = 0.0 if self.off_hop_since is None else t_s - self.off_hop_since
         if sum(v == "elsewhere" for v in self.votes) >= self.p.k or off_hop_s >= self.p.lost_s:
             self.path, self.off_hop_since = None, None
@@ -273,7 +300,7 @@ class OrchestratorLoop:
         return None
 
     def _locate(self, loc: Localization, step_count: int | None, t_s: float) -> LoopEvent | None:
-        vote = loc.best if loc.status == "confirmed" else locate_vote(loc, self.p.margin)
+        vote = loc.best if loc.status == "confirmed" else locate_vote(loc, self.p.margin, self.p.lost_margin)
         self.votes.append(vote)
         if vote is None or (loc.status != "confirmed" and sum(v == vote for v in self.votes) < self.p.k):
             return None
@@ -289,13 +316,14 @@ class OrchestratorLoop:
         return LoopEvent("located", vote, t_s)
 
     def _reach(self, node: str, step_count: int | None, t_s: float) -> LoopEvent:
+        """The user is at `node`, a node ahead on the route: the route goes on from there, past any it skipped."""
         self.node, self.node_steps = node, step_count
         self.votes.clear()
         self.off_hop_since = None
         if node == self.goal:
             self.arrived = True
             return LoopEvent("arrived", node, t_s)
-        self.hop += 1
+        self.hop = next(k for k in range(self.hop, len(self.path)) if self.path[k].target == node) + 1
         return LoopEvent("reached", node, t_s)
 
 
@@ -386,19 +414,27 @@ def orchestrator_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root
                                                                                       absolute=True))
 
     names = {n.id: n.name for n in pmap.nodes}
+    # where the walk was: every node it got to (also one with no edge from the last), until it first got to the goal,
+    # where the user stops
     goal = route[-1][0].target
-    route = route[:next(k for k, (h, _) in enumerate(route) if h.target == goal) + 1]  # the user stops there
-    truth = [(route[0][0].source, start - 60_000)] + [(h.target, t) for h, t in route]
+    truth = [(route[0][0].source, start - 60_000)]
+    for t, n in walk_visits(pmap, rec_id):
+        if t >= route[0][1] and truth[-1][0] != goal:
+            truth.append((n, t))
+    by_pair = {(h.source, h.target): h for e in pmap.edges for h in hops(e)}
 
     def truth_at(t_ms: float) -> set[str]:
         return {n for k, (n, t0) in enumerate(truth)
                 if t0 - TRUTH_S * 1000 <= t_ms < (truth[k + 1][1] if k + 1 < len(truth) else float("inf"))}
 
     def path_fn(node: str, t_s: float) -> list | None:
-        """The user follows the instructions: from where the walk is at `node`, the rest of its route."""
+        """The user follows the instructions: from where the walk is at `node`, the rest of its route, when the map
+        has every step of it; else the shortest observed route."""
         for k, (n, t0) in enumerate(truth[:-1]):
-            if n == node and node in truth_at(t_s * 1000) and t0 - TRUTH_S * 1000 <= t_s * 1000 < truth[k + 1][1]:
-                return [h for h, _ in route[k:]]
+            if n == node and t0 - TRUTH_S * 1000 <= t_s * 1000 < truth[k + 1][1]:
+                rest = [by_pair.get((a, b)) for (a, _), (b, _) in zip(truth[k:], truth[k + 1:])]
+                if all(rest):
+                    return rest
         return plan_route(pmap, node, goal, "observed")
 
     loop = OrchestratorLoop(goal, path_fn, p)
