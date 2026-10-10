@@ -455,16 +455,18 @@ def _measured(a: PlaceNode, b: PlaceNode, cands: dict[str, Candidate]) -> float 
 def build_map(place: str, *, recordings_root: Path, maps_root: Path, cache_root: Path, params: SelectParams,
               embed_model: str, place_model: str, transcribe_model: str | None, llm_model: str, language: str,
               budget_usd: float,
-              run_llm: bool = True, effort: str = "medium") -> BuildResult:
+              run_llm: bool = True, effort: str = "medium", build_id: str | None = None) -> BuildResult:
+    """`build_id` (UTC "%Y%m%dT%H%M%SZ") lets a caller name the build folder before it exists, e.g. to report status."""
     rec_dirs = recordings_for(recordings_root, place)
     if not rec_dirs:
         raise ValueError(f"no finished recordings with video for place {place!r}")
     preps = [prepare(d, cache_root, params, embed_model, place_model, transcribe_model) for d in rec_dirs]
     place = preps[-1].manifest.place  # spelled as in the latest recording
 
-    build_id = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}"
+    given = build_id is not None
+    build_id = build_id or f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}"
     build_dir = maps_root / slugify(place) / "builds" / build_id
-    build_dir.mkdir(parents=True)
+    build_dir.mkdir(parents=True, exist_ok=given)
     cset = select_candidates(place, preps, params, embed_model, place_model, build_dir)
     (build_dir / "build.json").write_text(json.dumps({"transcribe_model": transcribe_model}))
     published = build_dir.parent.parent / "map.json"
@@ -488,11 +490,19 @@ def fork_build(build_dir: Path) -> Path:
 
 def run_llm_on_build(build_dir: Path, *, llm_model: str, language: str, budget_usd: float,
                      effort: str = "medium") -> BuildResult:
-    """LLM + finish for a build folder that has candidates.json; publishes its map as the place's map.json."""
+    """LLM + finish for a build folder that has candidates.json; publishes its map as the place's map.json.
+    The Claude Code job runs here, or on the inference host when NAV_INFER_URL is set (same job, same files)."""
+    from nav import config
     from nav.mapping.llm import run_claude_code
 
     cset = CandidateSet.model_validate_json((build_dir / "candidates.json").read_text())
-    draft, run = run_claude_code(build_dir, cset.place, language, llm_model, budget_usd, effort)
+    if config.INFER_URL:
+        from nav.mapping.inference import remote
+
+        draft, run = remote().map_draft(build_dir, f"{cset.map_id}-{build_dir.name}", cset.place, language,
+                                         llm_model, effort, budget_usd)
+    else:
+        draft, run = run_claude_code(build_dir, cset.place, language, llm_model, budget_usd, effort)
     return publish(build_dir, cset, draft, run)
 
 

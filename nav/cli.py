@@ -20,6 +20,21 @@ def serve(host: str = config.HOST, port: int = config.PORT, reload: bool = False
                 proxy_headers=True, forwarded_allow_ips="127.0.0.1")
 
 
+infer = typer.Typer(no_args_is_help=True, help="Inference host: the local models and the map job over HTTP.")
+app.add_typer(infer, name="infer")
+
+
+@infer.command("serve")
+def infer_serve(host: str = config.INFER_HOST, port: int = config.INFER_PORT) -> None:
+    """Serve the models and the Claude Code map job to workers (nav/infer/server.py). One process: one copy of the
+    models on the GPU."""
+    import uvicorn
+
+    _logging()
+    uvicorn.run("nav.infer.server:create_infer_app", factory=True, host=host, port=port, workers=1,
+                limit_concurrency=32, timeout_keep_alive=30, proxy_headers=True, forwarded_allow_ips="127.0.0.1")
+
+
 def _store():
     from nav.recorder.store import RecordingStore
 
@@ -67,13 +82,15 @@ def rec_push(rec_ids: list[str] = typer.Argument(None, help="Default: every fini
 
 @rec.command("pull")
 def rec_pull(rec_ids: list[str] = typer.Argument(None, help="Default: everything in the bucket."),
+             raw: bool = typer.Option(False, help="Also download raw/ (the cloud worker keeps the uploads there)."),
              dry_run: bool = False) -> None:
     """Download recordings from the team bucket into NAV_DATA_DIR/recordings. Never deletes local files."""
     config.RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+    skip_raw = [] if raw else ["--exclude", "(^|/)raw/"]
     if not rec_ids:
-        _gcloud_rsync(config.GCS_URL, str(config.RECORDINGS_DIR), dry_run=dry_run)
+        _gcloud_rsync(config.GCS_URL, str(config.RECORDINGS_DIR), *skip_raw, dry_run=dry_run)
     for rec_id in rec_ids or []:
-        _gcloud_rsync(f"{config.GCS_URL}/{rec_id}", str(config.RECORDINGS_DIR / rec_id), dry_run=dry_run)
+        _gcloud_rsync(f"{config.GCS_URL}/{rec_id}", str(config.RECORDINGS_DIR / rec_id), *skip_raw, dry_run=dry_run)
 
 
 def _logging() -> None:

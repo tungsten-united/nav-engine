@@ -20,6 +20,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from nav.infer.errors import InferenceUnavailable
+from nav.mapping.inference import embed_files, place_files, transcribe_file
 from nav.mapping.motion import MotionTrack, load_motion
 from nav.mapping.select import Frame, SelectParams
 from nav.schemas.recording import Event, Manifest
@@ -77,19 +79,14 @@ def prepare(rec_dir: Path, cache_root: Path, p: SelectParams, embed_model: str, 
     ekey = _key(fkey, embed_model)
     epath = cache / f"emb-{ekey}.npy"
     if not epath.is_file():
-        from nav.mapping.models import embed_images
-
         log.info("%s: embedding %d frames with %s", m.rec_id, len(rows), embed_model)
-        emb = embed_images([np.asarray(Image.open(fdir / r["file"]).convert("RGB")) for r in rows], embed_model)
-        np.save(epath, emb)
+        np.save(epath, embed_files([fdir / r["file"] for r in rows], embed_model))
     emb = np.load(epath)
     pkey = _key(fkey, place_model)
     ppath = cache / f"place-{pkey}.npy"
     if not ppath.is_file():
-        from nav.mapping.models import embed_places
-
         log.info("%s: place embeddings for %d frames with %s", m.rec_id, len(rows), place_model)
-        np.save(ppath, embed_places([np.asarray(Image.open(fdir / r["file"]).convert("RGB")) for r in rows], place_model))
+        np.save(ppath, place_files([fdir / r["file"] for r in rows], place_model))
     place = np.load(ppath)
 
     # voice
@@ -98,13 +95,13 @@ def prepare(rec_dir: Path, cache_root: Path, p: SelectParams, embed_model: str, 
         vkey = _key(transcribe_model, [(v.clip, v.bytes) for v in m.voice])
         vpath = cache / f"voice-{vkey}.json"
         if not vpath.is_file():
-            from nav.mapping.models import transcribe
-
             log.info("%s: transcribing %d voice notes with %s", m.rec_id, len(m.voice), transcribe_model)
             out = {}
             for v in m.voice:
                 try:
-                    out[str(v.clip)] = transcribe(rec_dir / v.file, transcribe_model)
+                    out[str(v.clip)] = transcribe_file(rec_dir / v.file, transcribe_model)
+                except InferenceUnavailable:  # not the clip's fault: don't cache a transcript without it
+                    raise
                 except Exception as e:  # a broken clip shouldn't sink the map
                     log.warning("%s: voice clip %d: %s", m.rec_id, v.clip, e)
             vpath.write_text(json.dumps(out, ensure_ascii=False, indent=1))

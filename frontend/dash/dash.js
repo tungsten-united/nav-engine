@@ -2,7 +2,7 @@
 // Time base everywhere is the recording clock in seconds (t_ms / 1000); video time 0 is the video_start event.
 "use strict";
 
-const API = "/api/v1";
+const API = NAV.API; // frontend/config.js
 const TAGS = { door: "Door", junction: "Junction", stairs: "Stairs", lift: "Lift", destination: "Destination" };
 const HOLDING = { handheld_portrait: "in hand, upright", handheld_landscape: "in hand, sideways", chest_mount: "chest mount",
   lanyard: "lanyard", other: "other" };
@@ -21,11 +21,11 @@ function h(tag, attrs = {}, ...kids) {
   return el;
 }
 async function getJSON(path) {
-  const r = await fetch(API + path, { cache: "no-store" });
+  const r = await NAV.fetch(API + path, { cache: "no-store" });
   if (!r.ok) throw Object.assign(new Error(`${path}: HTTP ${r.status}`), { status: r.status });
   return r.json();
 }
-const fileUrl = (id, path) => `${API}/recordings/${id}/files/${path}`;
+const fileUrl = (id, path) => NAV.url(`${API}/recordings/${id}/files/${path}`);
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -109,7 +109,7 @@ async function openRecording(id) {
 }
 
 async function loadEvents(id) {
-  const r = await fetch(fileUrl(id, "events.jsonl"), { cache: "no-store" });
+  const r = await NAV.fetch(fileUrl(id, "events.jsonl"), { cache: "no-store" });
   if (r.status === 404) return [];  // not finalized yet
   if (!r.ok) throw new Error(`events.jsonl: HTTP ${r.status}`);
   return (await r.text()).split("\n").filter(Boolean).map((l) => JSON.parse(l)).sort((a, b) => a.t_ms - b.t_ms);

@@ -1,0 +1,6 @@
+*
+!pyproject.toml
+!uv.lock
+!nav/
+!frontend/
+**/__pycache__

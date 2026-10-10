@@ -2,7 +2,7 @@
 // through shared nodes) and edges follow the walked path between them. Hover previews, click pins the details.
 "use strict";
 
-const API = "/api/v1";
+const API = NAV.API; // frontend/config.js
 const KINDS = {
   entrance: "entrance", door: "door", corridor: "corridor", junction: "junction", room: "room", open_area: "open area",
   stairs: "stairs", lift: "lift", destination: "destination", landmark: "landmark", other: "other",
@@ -32,7 +32,7 @@ function setAttrs(el, attrs) {
   }
 }
 async function getJSON(path) {
-  const r = await fetch(API + path, { cache: "no-store" });
+  const r = await NAV.fetch(API + path, { cache: "no-store" });
   if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
   return r.json();
 }
@@ -200,7 +200,7 @@ function highlighted() {
 }
 
 // --- tooltip -----------------------------------------------------------------------------------------------
-const frameUrl = (rel) => `${API}/maps/${S.map.map_id}/files/${rel}`;
+const frameUrl = (rel) => NAV.url(`${API}/maps/${S.map.map_id}/files/${rel}`);
 const candUrl = (cid) => frameUrl(`builds/${S.map.build.build_id}/frames/${cid}.jpg`);
 function tip(ev, type, id) {
   const el = $("#tip"), box = $("#graph").getBoundingClientRect();

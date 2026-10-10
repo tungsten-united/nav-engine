@@ -5,18 +5,23 @@ place; the **map pipeline** turns all walks of a place into one semantic topolog
 
 ## Layout
 - `nav/schemas/recording.py` — the recording format (schema_version 1). Source of truth for what is stored.
-- `nav/recorder/app.py` — FastAPI app factory: `/api/v1` + the static phone app; `store.py` — filesystem storage,
-  idempotent uploads, `finalize` (chunks → `video.mp4`, batches → parquet/jsonl).
-- `nav/recorder/web/` — phone app (vanilla JS, no build step).
-- `nav/recorder/web/dash/` — recordings dashboard at `/dash/` (vanilla JS + uPlot from jsdelivr, no build step).
+- `nav/recorder/app.py` — FastAPI app factory: `/api/v1` (+ map builds) + the debugging frontend; optional token,
+  CORS, no-delete for the public deployment; `store.py` — filesystem storage, idempotent uploads, `finalize`
+  (chunks → `video.mp4`, batches → parquet/jsonl).
+- `frontend/` — the debugging frontend, kept here for reference and direct API testing (the frontend team copies it):
+  phone app at `/`, `dash/` (recordings, uPlot from jsdelivr), `viz/` (map viewer, SVG). Vanilla JS, no build step.
+  `config.js` sets the API base (default: the Cloud Run worker; `?api=` overrides) and the token.
 - `nav/schemas/map.py` — the map format: `MapDraft` (what the LLM writes; its JSON Schema must stay valid for
   Anthropic structured outputs) and `PlaceMap` (stored: draft + evidence, positions, distances, build info).
 - `nav/mapping/` — map pipeline: `prepare.py` (per-recording cache: frames, embeddings, transcripts), `frames.py`,
   `motion.py`, `models.py` (DINOv2, MegaLoc, ALIKED+LightGlue, Whisper), `select.py` (candidates), `verify.py`
   (same-place pairs: MegaLoc retrieval + LightGlue check), `llm.py` (Claude Code job + prompt),
   `build.py` (orchestration + finish), `quality.py` (TypeSafe Jev check), `store.py`.
-- `nav/recorder/web/viz/` — map viewer at `/viz/` (vanilla JS + SVG, no build step).
-- `nav/cli.py` — `nav serve`, `nav rec list|show|finalize|push|pull`, `nav map setup|build|llm|refinish|list|show|push|pull`.
+- `nav/mapping/inference.py` — every model call on files: local models, or the inference host when `NAV_INFER_URL` is set.
+- `nav/infer/` — inference host: `server.py` (`nav infer serve`: models + Claude Code map job over HTTP, one GPU slot,
+  bounded queues, 503 + Retry-After), `client.py` (chunking, retries, Cloudflare service token).
+- `nav/cli.py` — `nav serve`, `nav infer serve`, `nav rec list|show|finalize|push|pull`, `nav map setup|build|llm|refinish|check|list|show|push|pull`.
+- `Dockerfile` + `deploy/cloudrun.sh` — the Cloud Run worker; `deploy/nav-infer.service`, `deploy/nav-recorder.service` — helium units.
 - `data/recordings/<rec_id>/` — recordings (gitignored). Shared copy for the team: `gs://tungsten-united-nav-recordings/recordings/<rec_id>/`
   (project `tungsten-united`, not the active gcloud project `kotie-app`), via `nav rec push|pull` (`gcloud storage rsync`, no deletes, skips `raw/`).
 - `data/maps/<map_id>/` — maps (gitignored), shared under `gs://tungsten-united-nav-recordings/maps/<map_id>/` via
@@ -25,17 +30,28 @@ place; the **map pipeline** turns all walks of a place into one semantic topolog
 ## Run / test
 ```sh
 uv sync && uv run pytest
-systemctl --user restart nav-recorder      # live service, 127.0.0.1:8450 (deploy/nav-recorder.service)
-journalctl --user -u nav-recorder -f
+deploy/cloudrun.sh                         # build the Dockerfile, push, deploy nav-api (rerun after every change)
+systemctl --user restart nav-infer         # inference host, 127.0.0.1:8451 (deploy/nav-infer.service)
+journalctl --user -u nav-infer -f
 ```
-Public URL: https://helium-nav.oscarmartinez.dev (Cloudflare Tunnel "helium", route added with `tunnel-expose nav 8450`).
+Deployment (2026-10-10):
+- **nav-api** on Cloud Run, project `tungsten-united`, `europe-southwest1`:
+  https://nav-api-613464313064.europe-southwest1.run.app. The bucket is mounted at `/data` (GCS FUSE). One instance;
+  `NAV_API_TOKEN` gates `/api/*` (`deploy/cloudrun.sh token` prints it); deleting is off. Secrets come from Secret
+  Manager (`deploy/cloudrun.sh secrets` reloads them from this machine). Logs:
+  `gcloud run services logs read nav-api --region europe-southwest1 --project tungsten-united`.
+- **nav-infer** on helium, published as https://helium-nav-infer.oscarmartinez.dev (`tunnel-expose nav-infer 8451`).
+  The worker sends the `helium-clients` service token. This machine only does inference for the cloud.
+- **nav-recorder** (the old all-in-one on helium-nav.oscarmartinez.dev, `tunnel-expose nav 8450`) is still running
+  for now; after cutover helium only pulls maps (`nav map push` would overwrite the cloud's map.json).
 Cloudflare Access gates every `helium-*` host: browser login for people, the `helium-clients` service token for
 workers (`~/.cloudflared/access-service-token.env`, headers `CF-Access-Client-Id/Secret`). The app has no auth of its own.
 
 Browser end-to-end check: headless `/usr/bin/chromium` via `uvx --from playwright python` with
 `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`, sensor permissions granted, synthetic
 `devicemotion` / `deviceorientationabsolute` events dispatched from the page. Run it against a throwaway
-`NAV_DATA_DIR` on another port, never the live service.
+`NAV_DATA_DIR` on another port (open the page with `?api=http://127.0.0.1:<port>`), never the live service:
+recordings made there land in the team bucket.
 
 ## Things learned the hard way
 - Chrome's MP4 MediaRecorder only emits data at keyframes (in practice at stop); WebM honours the timeslice.
@@ -56,6 +72,11 @@ Browser end-to-end check: headless `/usr/bin/chromium` via `uvx --from playwrigh
   for place identity. LightGlue inliers in one open hall: near-identical views 490–870, different spots 100–300, so
   inliers alone fold a whole room; within-walk near-duplicates stay a DINOv2 call. Tune with `pairs.json`.
 - LightGlue needs `opencv-python`; `pyproject.toml` overrides it (and matplotlib) away to keep the headless build.
+- Cloud Run cuts any HTTP/1 response with a Content-Length over 32 MiB, and the browser sees a 500. Files over
+  8 MiB are served in ranges of at most 8 MiB, or streamed without a length (`send_file` in app.py).
+- Cloud Build's default service account has no rights in tungsten-united, so `deploy/cloudrun.sh` builds the image
+  with local docker and pushes it to Artifact Registry.
+- Behind Cloud Run IAM, `Authorization` carries Google's identity token, so the app's token is also accepted as `?token=`.
 - `nvidia-smi` may report "Driver/library version mismatch" after a driver update without reboot; CUDA still works.
 
 ## Product decisions

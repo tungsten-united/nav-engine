@@ -7,9 +7,10 @@ indoor route (video, motion sensors, voice notes and tags) so it can be turned i
 
 ## Recorder
 
-A phone web app plus an HTTP API, served from this machine and published through the Cloudflare Tunnel at
-**https://helium-nav.oscarmartinez.dev**. It is protected by Cloudflare Access: people log in in the browser, and
-other workers send the `helium-clients` service token.
+A phone web app plus an HTTP API. It runs on Cloud Run at
+**https://nav-api-613464313064.europe-southwest1.run.app**, on the team bucket, gated by an API token (see
+[Deployment](#deployment)). The original copy on helium (https://helium-nav.oscarmartinez.dev, behind Cloudflare
+Access) still runs until the cutover is complete.
 
 While you walk, the phone records:
 
@@ -197,3 +198,39 @@ positions and edges along the walked path (with the whole walk as a faint track)
 with turns, hover previews with the frame, and details pinned on click (description, landmarks, hazards, both
 instructions, frames, the walks and times that show it). **Directions** picks two nodes and chains the
 instructions along the shortest walked route.
+
+## Deployment
+
+```
+phone / dash / viz ──HTTPS + API token──▶ nav-api (Cloud Run, tungsten-united, europe-southwest1)
+                                            │  /data = the team bucket (GCS FUSE): recordings/ maps/ cache/
+                                            │  finalize (ffmpeg), map builds, Jev quality check (TypeSafe API)
+                                            ▼  Cloudflare Access service token
+                  helium-nav-infer.oscarmartinez.dev ─tunnel─▶ nav-infer on helium (GPU): DINOv2, MegaLoc,
+                                                               ALIKED+LightGlue, Whisper, the Claude Code map job
+```
+
+**nav-api** (Cloud Run): the root `Dockerfile` (no torch), deployed with `deploy/cloudrun.sh`, which builds the
+image here, pushes it and deploys it. Rerun it after every change. It serves `/api/v1` and the debugging frontend
+(`frontend/`).
+- One instance, always on, so in-process locks and background work (finalize, builds) hold.
+- `/api/*` needs the token, as `Authorization: Bearer <token>` or `?token=` (for `<video>`/`<img>` URLs).
+  `deploy/cloudrun.sh token` prints it.
+- Deleting recordings is off: the bucket is the team's shared data, and it keeps deleted objects for 7 days anyway.
+- Secrets (API token, Cloudflare service token, `TYPESAFE_API_KEY`) live in Secret Manager.
+  `deploy/cloudrun.sh secrets` reloads them from this machine.
+- Map builds: `POST /api/v1/maps/build {"place": "Itnig", "llm": false}` → poll the `status_url` it returns.
+  `llm: false` stops after the candidates (no LLM cost). One build at a time.
+
+**nav-infer** (helium): `nav infer serve` on 127.0.0.1:8451 (`deploy/nav-infer.service`), published with
+`tunnel-expose nav-infer 8451`. It serves the local models and the Claude Code map job, and nothing else (no data).
+It shares one GPU with the desktop, so it protects itself:
+- one model call at a time, at most 4 waiting, then `503` + `Retry-After`;
+- at most 32 images or 64 pairs per request, so each call stays well under Cloudflare's 100 s;
+- one map job at a time, at most 2 waiting; jobs are submitted, then polled.
+
+The worker's client retries with backoff and fails clearly when helium is off. Recording doesn't need helium; map
+builds do. Without `NAV_INFER_URL`, everything runs locally as before (`nav map build` on helium).
+
+**Coexistence:** recordings get unique ids and pushes never delete, so helium and the cloud can both add. Maps are
+built by the cloud now: on helium use `nav map pull`, not `push`. `nav rec pull` skips `raw/` unless `--raw` is given.

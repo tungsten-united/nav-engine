@@ -12,8 +12,8 @@ import logging
 from collections.abc import Callable
 
 import numpy as np
-from PIL import Image
 
+from nav.mapping.inference import pair_inliers
 from nav.mapping.select import Frame, SelectParams
 
 log = logging.getLogger(__name__)
@@ -28,24 +28,10 @@ def candidate_pairs(sim: np.ndarray, p: SelectParams) -> list[tuple[int, int]]:
     return sorted(pairs)
 
 
-def _lightglue_inliers(kept: list[Frame]) -> Callable[[int, int], int]:
-    from nav.mapping.models import count_inliers, local_features
-
-    feats: dict[int, dict] = {}
-
-    def inliers(i: int, j: int) -> int:
-        for k in (i, j):
-            if k not in feats:
-                feats[k] = local_features(np.asarray(Image.open(kept[k].image_path).convert("RGB")))
-        return count_inliers(feats[i], feats[j])
-
-    return inliers
-
-
 def match_pairs(kept: list[Frame], p: SelectParams, inliers: Callable[[int, int], int] | None = None
                 ) -> tuple[np.ndarray, np.ndarray, list[dict]]:
     """-> (sim [n, n], same [n, n] bool, checked pairs as rows for pairs.json). `inliers(i, j)` defaults to
-    ALIKED + LightGlue on the frames' images."""
+    ALIKED + LightGlue on the frames' images (locally, or all pairs in batches on the inference host)."""
     n = len(kept)
     if not n:
         return np.zeros((0, 0)), np.zeros((0, 0), bool), []
@@ -54,7 +40,9 @@ def match_pairs(kept: list[Frame], p: SelectParams, inliers: Callable[[int, int]
     same = np.eye(n, dtype=bool)
     pairs = candidate_pairs(sim, p)
     log.info("checking %d of %d keyframe pairs with LightGlue", len(pairs), n * (n - 1) // 2)
-    inliers = inliers or _lightglue_inliers(kept)
+    if inliers is None:
+        counts = dict(zip(pairs, pair_inliers([f.image_path for f in kept], pairs)))
+        inliers = lambda i, j: counts[(i, j)]  # noqa: E731
     rows = []
     for i, j in pairs:
         k = inliers(i, j)

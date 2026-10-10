@@ -3,7 +3,7 @@
 // Format: nav/schemas/recording.py. API: /api/v1 (see /docs).
 "use strict";
 
-const API = "/api/v1";
+const API = NAV.API; // frontend/config.js
 const VIDEO_TIMESLICE_MS = 2000, BATCH_MS = 1000, VIDEO_BPS = 5_000_000;
 // WebM first: Chrome's MP4 muxer only emits data at keyframes (in practice at stop), WebM honours the timeslice.
 // H.264 is copied into video.mp4 on the server without re-encoding. iOS Safari only offers MP4.
@@ -67,7 +67,7 @@ const idle = () => new Promise((ok) => {
 });
 
 const api = (method, path, body, headers = {}) =>
-  fetch(API + path, { method, body, headers, credentials: "same-origin", cache: "no-store" });
+  NAV.fetch(API + path, { method, body, headers, cache: "no-store" });
 const json = (method, path, obj) => api(method, path, JSON.stringify(obj), { "Content-Type": "application/json" });
 
 // --- session helpers ---------------------------------------------------------------------------------------
