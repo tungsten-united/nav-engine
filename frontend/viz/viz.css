@@ -143,6 +143,11 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); tex
 .frames figcaption { font-size: 10px; color: var(--muted); }
 .route { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; }
 .route select { min-width: 0; }
+.measure input { font: inherit; font-size: 12px; color: var(--fg); background: var(--card); border: 1px solid var(--line);
+  border-radius: 7px; padding: 5px 8px; min-width: 0; }
+.measure input[type="text"] { grid-column: 1 / -1; }
+.measured { margin: 4px 0 8px; padding-left: 16px; }
+.measured li { margin: 0 0 3px; }
 .steps { margin: 8px 0 0; padding-left: 20px; }
 .rsteps { margin: 4px 0 10px; padding-left: 20px; font-size: 12px; }
 .rsteps li { margin: 0 0 5px; }

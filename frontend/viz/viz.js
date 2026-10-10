@@ -314,18 +314,22 @@ function reviewBar(actions, kind, id) {
     h("button", { type: "button", onclick: () => saveReview(kind, id, patch) }, label)),
     S.reviewMsg && h("span", { class: "hint" }, ` ${S.reviewMsg}`));
 }
-async function saveReview(kind, id, patch) {
+function saveReview(kind, id, patch) {
+  return updateReview((review) => { review[kind][id] = { ...(review[kind][id] || {}), ...patch }; }, !patch.hide);
+}
+async function updateReview(edit, keepPin = true) {
+  // read-modify-write of the whole review: map-api replaces it and republishes the map (no LLM call)
   const mapId = S.map.map_id;
   S.reviewMsg = "saving…";
   renderPanel();
   try {
     const review = await getJSON(`/maps/${encodeURIComponent(mapId)}/review`);
-    review[kind][id] = { ...(review[kind][id] || {}), ...patch };
+    edit(review);
     const r = await NAV.fetch(`${API}/maps/${encodeURIComponent(mapId)}/review`, {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(review) });
     if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
     S.reviewMsg = null;
-    const pinned = S.pin && !patch.hide ? S.pin : null;
+    const pinned = keepPin ? S.pin : null;
     await openMap(mapId);
     if (pinned && (S.nodes.has(pinned.id) || S.edges.has(pinned.id))) pin(pinned.type, pinned.id);
   } catch (err) {
@@ -404,6 +408,41 @@ function directions() {
   }
   return out;
 }
+// Distances measured on site (review `distances`, nav/mapping/review.py): one scale factor, least squares over all of
+// them, rescales every distance, position and path of the published map; frame.measured_distances has the residuals.
+const samePair = (a, b) => (a[0] === b[0] && a[1] === b[1]) || (a[0] === b[1] && a[1] === b[0]);
+function measuredDistances() {
+  const m = S.map, checks = m.frame?.measured_distances || [], scale = m.frame?.distance_scale ?? 1;
+  const name = (id) => S.nodes.get(id)?.name || id;
+  const opts = (sel) => m.nodes.map((n) => h("option", { value: n.id, selected: n.id === sel }, n.name));
+  const a = h("select", { "aria-label": "From" }, opts(m.nodes[0]?.id));
+  const b = h("select", { "aria-label": "To" }, opts((m.nodes[1] || m.nodes[0])?.id));
+  const meters = h("input", { type: "number", min: "0.1", step: "0.1", required: true, placeholder: "metres",
+    "aria-label": "Metres measured on site" });
+  const sigma = h("input", { type: "number", min: "0.05", step: "0.05", value: "0.5", "aria-label": "Uncertainty, ± metres",
+    title: "How sure the measurement is, ± metres" });
+  const note = h("input", { type: "text", placeholder: "how it was measured (tape, pacing, floor plan)", "aria-label": "Note" });
+  const set = (ev) => {
+    ev.preventDefault();
+    if (a.value === b.value) { S.reviewMsg = "pick two different nodes"; renderPanel(); return; }
+    const d = { between: [a.value, b.value], meters: Number(meters.value), sigma_m: Number(sigma.value) || 0.5,
+      note: note.value.trim() || null };
+    updateReview((r) => { r.distances = [...(r.distances || []).filter((x) => !samePair(x.between, d.between)), d]; });
+  };
+  const remove = (pair) => updateReview((r) => { r.distances = (r.distances || []).filter((x) => !samePair(x.between, pair)); });
+  return [h("h3", {}, "Measured distances"),
+    h("p", { class: "hint" }, checks.length
+      ? `Every distance, position and path is scaled ×${scale.toFixed(3)} to fit ${checks.length === 1 ? "this measurement" : `these ${checks.length}`} (map distance: along the shortest walk between the two).`
+      : "None yet: distances are the walk's own (the floor seen in the video, phone height assumed). A distance measured on site between two nodes sets the scale of the whole map."),
+    checks.length ? h("ul", { class: "measured" }, checks.map((c) => h("li", {},
+      `${name(c.between[0])} – ${name(c.between[1])}: ${c.meters} m ±${c.sigma_m}`,
+      h("span", { class: "muted" }, c.map_m == null ? " · not connected in this map, not used"
+        : ` · map ${c.map_m.toFixed(1)} m, off by ${c.residual_m >= 0 ? "+" : ""}${c.residual_m.toFixed(1)} m`),
+      " ", h("button", { class: "link", type: "button", onclick: () => remove(c.between) }, "remove")))) : null,
+    h("form", { class: "route measure", onsubmit: set }, a, b, h("button", { type: "submit" }, "Set"), meters, sigma, note),
+    S.reviewMsg && h("p", { class: "hint" }, S.reviewMsg)];
+}
+
 function findRoute(src, dst) {
   // Dijkstra over walked distances; edges that aren't bidirectional only go source -> target
   const dist = new Map([[src, 0]]), prev = new Map(), todo = new Set(S.map.nodes.map((n) => n.id));
@@ -436,6 +475,7 @@ function renderPanel() {
     h("h2", {}, m.place), h("p", { class: "hint" }, "Hover a node or edge for a preview; click to pin its details here."),
     pinCard(),
     ...directions(),
+    ...measuredDistances(),
     h("h3", {}, "Route (recording order)"),
     h("ul", { class: "list" }, S.order.map((e) => h("li", { class: S.pin?.id === e.id ? "on" : null, onclick: () => pin("edge", e.id) },
       `${S.nodes.get(e.source).name} → ${S.nodes.get(e.target).name} `, h("span", { class: "glyph" }, [turnText(S.turns.get(e.id)), fmtM(e.measured_distance_m ?? e.distance_m), e.walked === false && "inferred"].filter(Boolean).join(" · ")), flagMark(e)))),
