@@ -195,9 +195,29 @@ class Point(BaseModel):
     y_m: float
 
 
+class ItemQuality(BaseModel):
+    """Cheap second opinion on one node or edge (TypeSafe Jev, nav/mapping/quality.py). Raw judgments are kept so
+    thresholds can change without asking again; `flags` are what the current thresholds make of them."""
+
+    visual_p: float  # probability that the spoken text relies on sight
+    usable: float  # 0-3: nodes, how well a blind person can tell they arrived; edges, how followable the instruction is
+    turn_agrees_p: float | None = None  # edges with a clear measured turn: does the instruction turn the same way?
+    flags: list[str] = []
+
+
+class QualityReport(BaseModel):
+    checker: str = "typesafe"
+    model: str | None = None
+    checked_at_utc: datetime | None = None
+    input_tokens: int | None = None
+    flagged: int = 0
+    skipped: str | None = None  # why the check didn't run (no API key, error ...)
+
+
 class PlaceNode(MapNode):
     model_config = ConfigDict(extra="ignore")
     visual_cues: list[str] = []  # default: maps built before the field existed
+    quality: ItemQuality | None = None
     evidence: list[Evidence] = []
     position: Point | None = None  # dead-reckoned, recordings aligned through shared nodes; approximate
 
@@ -209,6 +229,9 @@ class PlaceEdge(MapEdge):
     path: list[Point] = []  # the dead-reckoned walk between the two nodes, for drawing (same frame as positions)
     walked_at_ms: float | None = None  # when the walk that `path` comes from left the source (recording clock)
     walked_in: str | None = None  # ... and which recording that was
+    walked: bool = True  # False: no walk went directly between the two nodes (it passed other nodes in between)
+    turn_deg: float | None = None  # heading change when leaving the source, vs arriving at it on the previous edge
+    quality: ItemQuality | None = None
 
 
 class LlmRun(BaseModel):
@@ -247,6 +270,7 @@ class PlaceMap(MapDraft):
     build: BuildInfo
     nodes: list[PlaceNode]
     edges: list[PlaceEdge]
+    quality: QualityReport | None = None
     tracks: list[Track] = []  # walks that could be placed in the map frame (through shared nodes)
     warnings: list[str] = []  # problems found when checking the draft (dangling ids, unknown candidates ...)
 

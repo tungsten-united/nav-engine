@@ -33,5 +33,7 @@ EMBED_MODEL = os.environ.get("NAV_EMBED_MODEL", "facebook/dinov2-base")
 TRANSCRIBE_MODEL = os.environ.get("NAV_TRANSCRIBE_MODEL", "openai/whisper-large-v3-turbo")
 MAP_LLM_MODEL = os.environ.get("NAV_MAP_LLM_MODEL", "opus")  # Claude Code --model (alias or full id)
 MAP_LLM_EFFORT = os.environ.get("NAV_MAP_LLM_EFFORT", "medium")  # low, medium, high, xhigh, max
+# Cheap quality check of every built map (nav/mapping/quality.py); skipped without TYPESAFE_API_KEY.
+QUALITY_MODEL = os.environ.get("NAV_QUALITY_MODEL", "jev-latest")
 MAP_LANGUAGE = os.environ.get("NAV_MAP_LANGUAGE", "en")
 MAP_LLM_BUDGET_USD = float(os.environ.get("NAV_MAP_LLM_BUDGET_USD", "5"))

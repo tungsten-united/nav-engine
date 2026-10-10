@@ -13,7 +13,7 @@ place; the **map pipeline** turns all walks of a place into one semantic topolog
   Anthropic structured outputs) and `PlaceMap` (stored: draft + evidence, positions, distances, build info).
 - `nav/mapping/` — map pipeline: `prepare.py` (per-recording cache: frames, embeddings, transcripts), `frames.py`,
   `motion.py`, `models.py` (DINOv2, Whisper), `select.py` (candidates), `llm.py` (Claude Code job + prompt),
-  `build.py` (orchestration + finish), `store.py`.
+  `build.py` (orchestration + finish), `quality.py` (TypeSafe Jev check), `store.py`.
 - `nav/recorder/web/viz/` — map viewer at `/viz/` (vanilla JS + SVG, no build step).
 - `nav/cli.py` — `nav serve`, `nav rec list|show|finalize|push|pull`, `nav map setup|build|llm|refinish|list|show|push|pull`.
 - `data/recordings/<rec_id>/` — recordings (gitignored). Shared copy for the team: `gs://tungsten-united-nav-recordings/recordings/<rec_id>/`
@@ -45,6 +45,8 @@ Browser end-to-end check: headless `/usr/bin/chromium` via `uvx --from playwrigh
 - Chrome (Android) reports `rotationRate` alpha/beta/gamma around device x/y/z, not z/x/y as the spec says; the
   recorder stores gx/gy/gz = beta/gamma/alpha. `motion.py` picks the layout whose turns match the compass.
 - Handheld walking can be very smooth (|a| std 0.1–0.4 m/s²): fixed step thresholds find nothing; use adaptive ones.
+- Jev Noul wording decides its calibration: "relies on sight anywhere" fired on glass doors and tables (0.5-0.8);
+  naming what only sight can notice, and listing materials/furniture as fine, separated 0.9 from <0.45.
 - `nav map refinish` reuses the saved Claude answer: use it to iterate on post-processing without paying again.
 - `nvidia-smi` may report "Driver/library version mismatch" after a driver update without reboot; CUDA still works.
 

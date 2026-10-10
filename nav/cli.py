@@ -102,6 +102,8 @@ def _print_build(result) -> None:
               f"${llm.cost_usd or 0:.2f} at API list price)")
         for w in m.warnings:
             print(f"  warning: {w}")
+        if m.quality and m.quality.skipped:
+            print(f"  quality check skipped: {m.quality.skipped}")
         print(f"view: /viz/#{m.map_id}")
 
 
@@ -160,6 +162,26 @@ def map_refinish(map_id: str, build_id: str = typer.Argument(None, help="Default
     builds = _map_store().dir(map_id) / "builds"
     build_dir = builds / build_id if build_id else max(builds.glob("*/job/claude.json")).parent.parent
     _print_build(refinish_build(build_dir))
+
+
+@maps.command("check")
+def map_check(map_id: str) -> None:
+    """Rerun the cheap quality check (TypeSafe Jev) on the published map and save the result."""
+    from nav.mapping.build import write_map
+    from nav.mapping.quality import check_map
+
+    _logging()
+    store = _map_store()
+    m = check_map(store.get(map_id), config.QUALITY_MODEL)
+    write_map(store.dir(map_id) / "builds" / m.build.build_id, m)
+    q = m.quality
+    if q.skipped:
+        print(f"skipped: {q.skipped}")
+    else:
+        print(f"{q.flagged} of {len(m.nodes) + len(m.edges)} items flagged ({q.model}, {q.input_tokens} input tokens)")
+    for w in m.warnings:
+        if w.startswith("jev: "):
+            print(f"  {w}")
 
 
 @maps.command("list")

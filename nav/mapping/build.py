@@ -184,9 +184,11 @@ def finish_map(draft: MapDraft, cset: CandidateSet, build: BuildInfo, build_rel:
     warp = _loop_closure(nodes, cands, offsets, warnings)
     by_id = {n.id: n for n in nodes}
     tracks = tracks or {}
+    used = {c for n in nodes for c in n.candidates}
     for e in edges:
         e.measured_distance_m = _measured(by_id[e.source], by_id[e.target], cands)
-        _edge_path(e, by_id[e.source], by_id[e.target], cands, tracks, warp)
+        _edge_path(e, by_id[e.source], by_id[e.target], cands, tracks, warp, used)
+    _edge_turns(edges)
     placed = [Track(rec_id=r, points=[(t, *warp[r](t, x, y)) for t, x, y in tracks[r]]) for r in warp if r in tracks]
     return PlaceMap(tracks=placed, **draft.model_dump(exclude={"nodes", "edges"}), map_id=cset.map_id,
                     recordings=[r.rec_id for r in cset.recordings], build=build, nodes=nodes, edges=edges,
@@ -285,7 +287,7 @@ def _loop_closure(nodes: list[PlaceNode], cands: dict[str, Candidate], offsets: 
 
 
 def _edge_path(e: PlaceEdge, a: PlaceNode, b: PlaceNode, cands: dict[str, Candidate], tracks: dict[str, list],
-               warp: dict) -> None:
+               warp: dict, used: set[str]) -> None:
     """Path of an edge: the stretch of a walk between the closest-in-time views of its two nodes, loop-closed."""
     pairs = [(abs(x.t_ms - y.t_ms), x, y) for x in _node_views(a, cands) for y in _node_views(b, cands)
              if x.rec_id == y.rec_id and x.rec_id in tracks and x.rec_id in warp]
@@ -293,12 +295,42 @@ def _edge_path(e: PlaceEdge, a: PlaceNode, b: PlaceNode, cands: dict[str, Candid
         return
     _, va, vb = min(pairs, key=lambda p: p[0])
     lo, hi = sorted((va.t_ms, vb.t_ms))
+    e.walked_at_ms, e.walked_in = va.t_ms, va.rec_id
+    # Not walked directly if the walk passed another node in between: the LLM inferred this connection.
+    others = [v for c in cands.values() for v in c.views if v.rec_id == va.rec_id and lo < v.t_ms < hi
+              and c.id not in a.candidates and c.id not in b.candidates and c.id in used]
+    if others:
+        e.walked, e.path, e.measured_distance_m = False, [a.position, b.position], None
+        return
     f = warp[va.rec_id]
     inner = [Point(x_m=px, y_m=py) for t, x, y in tracks[va.rec_id] if lo < t < hi for px, py in [f(t, x, y)]]
     if va.t_ms > vb.t_ms:
         inner.reverse()  # the walk went target -> source; keep the path oriented source -> target
     e.path = [a.position, *inner, b.position]
-    e.walked_at_ms, e.walked_in = va.t_ms, va.rec_id
+
+
+def _bearing(p: Point, q: Point) -> float:
+    return float(np.degrees(np.arctan2(q.x_m - p.x_m, q.y_m - p.y_m)))
+
+
+def _end_heading(path: list[Point], at_end: bool, span_m: float = 4.0) -> float | None:
+    """Direction over the first (or last) few metres of a path."""
+    seq = path[::-1] if at_end else path
+    for q in seq[1:]:
+        if np.hypot(q.x_m - seq[0].x_m, q.y_m - seq[0].y_m) >= span_m or q is seq[-1]:
+            return _bearing(q, seq[0]) if at_end else _bearing(seq[0], q)
+    return None
+
+
+def _edge_turns(edges: list[PlaceEdge]) -> None:
+    """Turn when leaving each edge's source, relative to how the walk arrived there (the previous walked edge)."""
+    order = sorted((e for e in edges if e.walked and e.walked_at_ms is not None and len(e.path) >= 2),
+                   key=lambda e: (e.walked_in, e.walked_at_ms))
+    for prev, e in zip(order, order[1:]):
+        if prev.target == e.source and prev.walked_in == e.walked_in:
+            h0, h1 = _end_heading(prev.path, True), _end_heading(e.path, False)
+            if h0 is not None and h1 is not None:
+                e.turn_deg = round(angle_diff(h0, h1))
 
 
 def _closest_visits(a: PlaceNode, b: PlaceNode, cands: dict[str, Candidate]) -> tuple[list[View], list[View]] | None:
@@ -394,10 +426,19 @@ def publish(build_dir: Path, cset: CandidateSet, draft: MapDraft, run) -> BuildR
                      transcribe_model=extra.get("transcribe_model"),
                      llm=run, candidates=len(cset.candidates))
     pmap = finish_map(draft, cset, info, f"builds/{build_id}", tracks)
+    from nav import config
+    from nav.mapping.quality import check_map
+
+    pmap = check_map(pmap, config.QUALITY_MODEL)
+    write_map(build_dir, pmap)
+    return BuildResult(build_dir, cset, pmap)
+
+
+def write_map(build_dir: Path, pmap: PlaceMap) -> None:
+    """Save a build's map and publish it as the place's map.json."""
     text = pmap.model_dump_json(indent=1)
     (build_dir / "map.json").write_text(text)
     map_dir = build_dir.parent.parent
     tmp = map_dir / ".map.json.tmp"
     tmp.write_text(text)
     tmp.replace(map_dir / "map.json")
-    return BuildResult(build_dir, cset, pmap)

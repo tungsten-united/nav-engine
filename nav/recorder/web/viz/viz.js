@@ -125,6 +125,8 @@ function computeOrder(m) {
     return fromEnd ? bearing(seq[j], seq[0]) : bearing(seq[0], seq[j]);
   };
   S.order.forEach((e, i) => {
+    if (e.turn_deg != null) { S.turns.set(e.id, e.turn_deg); return; }  // computed by the pipeline
+    if (e.walked === false) return;
     const prev = S.order[i - 1];
     if (prev && prev.target === e.source && prev.walked_in === e.walked_in) S.turns.set(e.id, angDiff(head(pts(prev), true), head(pts(e), false)));
   });
@@ -155,7 +157,7 @@ function draw() {
   for (const e of m.edges) {
     const pts = edgePoints(e).map(project);
     const mid = midpoint(pts), d = smoothPath(pts);
-    const cls = ["edge", e.confidence === "low" && "low", on.has(e.id) && "on"].filter(Boolean).join(" ");
+    const cls = ["edge", e.confidence === "low" && "low", e.walked === false && "inferred", on.has(e.id) && "on"].filter(Boolean).join(" ");
     const deg = (mid.ang * 180) / Math.PI;
     const nx = -Math.sin(mid.ang) * 11, ny = Math.cos(mid.ang) * 11;  // hazard badge beside the arrow
     world.append(s("g", { class: cls, "data-id": e.id, onmousemove: (ev) => tip(ev, "edge", e.id), onmouseleave: hideTip,
@@ -251,6 +253,7 @@ function pinCard() {
       h("div", { class: "chips" }, h("span", { class: "chip", style: `color:${kindColor(n.kind)}` }, KINDS[n.kind] || n.kind),
         h("span", { class: `chip ${n.confidence}` }, `${n.confidence} confidence`), n.floor && h("span", { class: "chip" }, `floor ${n.floor}`),
         h("span", { class: "chip" }, n.id)),
+      qualityBlock(n.quality, false),
       h("p", {}, n.description), ...items("Landmarks", n.landmarks), ...items("Hazards", n.hazards, "hazards"),
       ...items("Visual cues (sighted helpers, camera)", n.visual_cues, "visual"),
       h("h4", {}, `Seen in ${recs.length} walk${recs.length === 1 ? "" : "s"}`),
@@ -262,6 +265,8 @@ function pinCard() {
   return h("div", { class: "pin" }, close, h("h2", {}, `${a.name} → ${b.name}`),
     h("div", { class: "chips" }, h("span", { class: "chip" }, e.kind), h("span", { class: `chip ${e.confidence}` }, `${e.confidence} confidence`),
       h("span", { class: "chip" }, e.bidirectional ? "both ways" : "one way"), h("span", { class: "chip" }, e.id)),
+    qualityBlock(e.quality, true),
+    e.walked === false && h("p", { class: "hint" }, "Not walked directly: the walk passed other spots in between, so this connection is inferred."),
     h("dl", { class: "kv" }, h("dt", {}, "Distance"), h("dd", {}, `${fmtM(e.distance_m)} (LLM) · ${fmtM(e.measured_distance_m)} (steps)`),
       S.turns.has(e.id) && [h("dt", {}, "Turn"), h("dd", {}, turnText(S.turns.get(e.id), true))]),
     h("div", { class: "instruction" }, e.instruction),
@@ -270,6 +275,16 @@ function pinCard() {
     ...items("Visual cues (sighted helpers, camera)", e.visual_cues, "visual"),
     e.candidates.length ? frames(e.candidates) : null);
 }
+
+function qualityBlock(q, isEdge) {
+  if (!q) return null;
+  const pct = (p) => `${Math.round(p * 100)}%`;
+  return h("div", { class: `quality${q.flags.length ? " flagged" : ""}` },
+    h("b", {}, q.flags.length ? `⚑ ${q.flags.join("; ")}` : "✓ No issues found"),
+    h("span", { class: "hint" }, ` · Jev: relies on sight ${pct(q.visual_p)}, ${isEdge ? "followable" : "arrival cue"} ${q.usable.toFixed(1)}/3` +
+      (q.turn_agrees_p != null ? `, turn matches ${pct(q.turn_agrees_p)}` : "")));
+}
+const flagMark = (it) => (it.quality?.flags.length ? h("span", { class: "flag", title: it.quality.flags.join("; ") }, " ⚑") : null);
 
 function directions() {
   const opts = (sel) => S.map.nodes.map((n) => h("option", { value: n.id, selected: n.id === sel }, n.name));
@@ -322,10 +337,10 @@ function renderPanel() {
     ...directions(),
     h("h3", {}, "Route (recording order)"),
     h("ul", { class: "list" }, S.order.map((e) => h("li", { class: S.pin?.id === e.id ? "on" : null, onclick: () => pin("edge", e.id) },
-      `${S.nodes.get(e.source).name} → ${S.nodes.get(e.target).name} `, h("span", { class: "glyph" }, [turnText(S.turns.get(e.id)), fmtM(e.measured_distance_m ?? e.distance_m)].filter(Boolean).join(" · "))))),
+      `${S.nodes.get(e.source).name} → ${S.nodes.get(e.target).name} `, h("span", { class: "glyph" }, [turnText(S.turns.get(e.id)), fmtM(e.measured_distance_m ?? e.distance_m), e.walked === false && "inferred"].filter(Boolean).join(" · ")), flagMark(e)))),
     h("h3", {}, "Nodes"),
     h("ul", { class: "list" }, m.nodes.map((n) => h("li", { class: S.pin?.id === n.id ? "on" : null, onclick: () => pin("node", n.id) },
-      h("span", { class: "dot", style: `--c:${kindColor(n.kind)}` }, n.name), " ", h("span", { class: "id" }, `· ${n.id}`)))),
+      h("span", { class: "dot", style: `--c:${kindColor(n.kind)}` }, n.name), " ", h("span", { class: "id" }, `· ${n.id}`), flagMark(n)))),
     h("h3", {}, "About this place"), h("p", {}, m.summary),
     m.notes.length && [h("h3", {}, "Notes"), h("ul", { class: "notes" }, m.notes.map((n) => h("li", {}, n)))],
     m.warnings.length && [h("h3", {}, "Pipeline warnings"), h("ul", { class: "notes warnings" }, m.warnings.map((n) => h("li", {}, n)))],
@@ -335,6 +350,8 @@ function renderPanel() {
       h("dt", {}, "Walks"), h("dd", {}, m.recordings.map((r) => [h("a", { href: `/dash/#${r}` }, r), " "])),
       h("dt", {}, "Candidates"), h("dd", {}, `${b.candidates} frames shown to the LLM`),
       h("dt", {}, "LLM"), h("dd", {}, `${b.llm.model}${b.llm.effort ? ` (${b.llm.effort} effort)` : ""} via ${b.llm.backend.replace("_", " ")}` + (b.llm.cost_usd != null ? ` · $${b.llm.cost_usd.toFixed(2)} at API list price` : "") + (b.llm.duration_s ? ` · ${Math.round(b.llm.duration_s)} s` : "")),
+      h("dt", {}, "Quality check"), h("dd", {}, !m.quality ? "not run" : m.quality.skipped ? `skipped: ${m.quality.skipped}` :
+        `${m.quality.flagged} of ${m.nodes.length + m.edges.length} items flagged · ${m.quality.model} · ${m.quality.input_tokens} tokens`),
       h("dt", {}, "Embeddings"), h("dd", {}, `${b.embed_model}${b.embed_dim ? ` · ${b.embed_dim}-d` : ""}`),
       h("dt", {}, "Voice"), h("dd", {}, b.transcribe_model || "not transcribed"),
       h("dt", {}, "Files"), h("dd", {}, ["candidates.json", "job/prompt.md", "job/claude.json"].map((f) => [h("a", { href: frameUrl(`builds/${b.build_id}/${f}`) }, f), " "])))
@@ -348,6 +365,8 @@ function legend() {
     h("span", { class: "ln", style: "--c:var(--edge)" }, "edge (arrow: walked direction)"),
     h("span", { class: "haz" }, "hazards on the way"),
     h("span", { class: "ln dash", style: "--c:var(--edge)" }, "low confidence"),
+    h("span", { class: "ln dot2", style: "--c:var(--edge)" }, "inferred, not walked"),
+    S.map?.quality && !S.map.quality.skipped && h("span", { class: "flag" }, "⚑ flagged by the quality check"),
     S.walked && h("span", { class: "ln dash", style: "--c:var(--track)" }, "walked track"));
 }
 

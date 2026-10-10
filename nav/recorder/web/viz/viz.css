@@ -67,6 +67,7 @@ button[aria-pressed="false"] { color: var(--muted); }
 .edge .badge circle { fill: var(--hazard); }
 .edge .badge text { fill: #000; font-size: 9px; font-weight: 800; text-anchor: middle; }
 .edge.low path.line { stroke-dasharray: 5 4; }
+.edge.inferred path.line { stroke-dasharray: 1 5; stroke-linecap: round; stroke-width: 2; }
 .edge .arrow { fill: var(--edge); }
 .edge.on path.line, .edge:hover path.line { stroke: var(--accent); stroke-width: 2.6; }
 .edge.on .arrow, .edge:hover .arrow { fill: var(--accent); }
@@ -92,6 +93,11 @@ button[aria-pressed="false"] { color: var(--muted); }
 .legend .haz::before { content: "!"; display: inline-grid; place-items: center; width: 12px; height: 12px;
   border-radius: 50%; background: var(--hazard); color: #000; font-size: 9px; font-weight: 800; margin-right: 6px; }
 .legend .ln.dash::before { border-top-style: dashed; }
+.legend .ln.dot2::before { border-top-style: dotted; }
+.flag { color: var(--warn); }
+.quality { font-size: 12px; margin: 4px 0 10px; padding: 6px 8px; border-radius: 6px; background: var(--panel); }
+.quality b { color: var(--ok); font-weight: 600; }
+.quality.flagged b { color: var(--warn); }
 
 .panel { background: var(--panel); border-left: 1px solid var(--line); padding: 14px 14px 40px; overflow-y: auto; }
 .panel h2 { font-size: 15px; margin: 0 0 2px; }

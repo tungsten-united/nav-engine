@@ -308,3 +308,83 @@ def test_revisits_are_loop_closed_without_jumps():
     track = dict((t, x) for t, x, _ in m.tracks[0].points)
     assert abs(track[100_000] - 0) < 1 and abs(track[50_000] - 40) < 1
     assert any("node n1" in w and "80 m" in w for w in m.warnings)
+
+
+def lshape_set():
+    """Walk east 10 m (0-10 s), then south 10 m (10-20 s): a right turn at c02."""
+    def view(t, x, y, w):
+        return View(rec_id="r1", t_ms=t * 1000, sharpness=1, motion=Motion(walked_m=w, heading_deg=90, x_m=x, y_m=y,
+                                                                            pitch_deg=0, moving=True))
+    cands = [Candidate(id="c01", image="frames/c01.jpg", reason=[], views=[view(0, 0, 0, 0)]),
+             Candidate(id="c02", image="frames/c02.jpg", reason=[], views=[view(10, 10, 0, 10)]),
+             Candidate(id="c03", image="frames/c03.jpg", reason=[], views=[view(20, 10, -10, 20)])]
+    tracks = {"r1": [[t * 1000, float(min(t, 10)), float(-max(0, t - 10))] for t in range(0, 21)]}
+    cset = CandidateSet(place="T", map_id="t", recordings=[], candidates=cands, params={}, embed_model="m")
+    d = draft()
+    n = d.nodes[0]
+    d.nodes = [n.model_copy(update={"id": f"n{i}", "candidates": [f"c0{i}"]}) for i in (1, 2, 3)]
+    e = d.edges[0]
+    d.edges = [e.model_copy(update={"id": "e1", "source": "n1", "target": "n2"}),
+               e.model_copy(update={"id": "e2", "source": "n2", "target": "n3"}),
+               e.model_copy(update={"id": "e3", "source": "n1", "target": "n3"})]
+    return d, cset, tracks
+
+
+def test_turns_and_inferred_edges():
+    d, cset, tracks = lshape_set()
+    m = finish_map(d, cset, BUILD, "b", tracks)
+    e1, e2, e3 = m.edges
+    assert e1.walked and e2.walked and e2.turn_deg == 90  # east, then south: a right turn
+    assert e1.turn_deg is None  # nothing walked before it
+    assert e3.walked is False and e3.measured_distance_m is None and len(e3.path) == 2  # passed n2 on the way
+
+
+class FakeTypeSafe:
+    """Stands in for typesafe_sdk.AsyncTypeSafeClient: judges by keywords in the state."""
+
+    def __init__(self, model=None):
+        self.model = model
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def system_one(self, state, questions):
+        from types import SimpleNamespace as NS
+        spoken = json.dumps(state["spoken"]).lower()
+        answers = {"visual": NS(noul=0.9 if "yellow" in spoken else 0.05),
+                   "usable": NS(score=0.5 if "somewhere" in spoken else 2.6)}
+        if "turn" in questions:
+            answers["turn"] = NS(noul=0.1 if "left" in spoken else 0.95)
+        return NS(answers=answers, usage=NS(input_tokens=100))
+
+
+def test_quality_check_flags_items(monkeypatch):
+    import typesafe_sdk
+
+    from nav.mapping.quality import check_map
+
+    d, cset, tracks = lshape_set()
+    d.nodes[0].description = "Under the big yellow letters."
+    d.nodes[1].description = "Somewhere in the hall."
+    d.edges[1].instruction = "Turn left and walk 10 m until the wall."  # the walk turned right
+    m = finish_map(d, cset, BUILD, "b", tracks)
+
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    assert check_map(m).quality.skipped == "TYPESAFE_API_KEY is not set"
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setattr(typesafe_sdk, "AsyncTypeSafeClient", FakeTypeSafe)
+    m = check_map(m)
+    q = m.quality
+    assert q.skipped is None and q.input_tokens == 600 and q.flagged == 3
+    assert m.nodes[0].quality.flags == ["relies on sight"]
+    assert m.nodes[1].quality.flags == ["no concrete cue to tell you have arrived"]
+    assert m.edges[1].quality.turn_agrees_p == 0.1
+    assert m.edges[1].quality.flags == ["the walk turned right here but the instruction doesn't say so "
+                                        "(one of them is wrong)"]
+    assert m.edges[0].quality.turn_agrees_p is None  # no measured turn to compare with
+    assert "jev: node n1: relies on sight" in m.warnings
+    assert sum(w.startswith("jev: ") for w in check_map(m).warnings) == 3  # rerunning replaces, not appends

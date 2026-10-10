@@ -122,6 +122,7 @@ uv run nav map build "Itnig"          # all finished walks of the place -> data/
 uv run nav map build "Itnig" --no-llm # stop after selecting candidates (free; to tune the selection)
 uv run nav map llm itnig              # rerun only the LLM with the latest build's candidates, as a new build
 uv run nav map refinish itnig         # redo post-processing from the saved LLM answer (no new LLM call)
+uv run nav map check itnig            # rerun the cheap quality check (TypeSafe Jev) on the published map
 uv run nav map list | show <map_id>
 uv run nav map push [<map_id> …]      # upload to gs://tungsten-united-nav-recordings/maps/<map_id>/ (--dry-run)
 uv run nav map pull [<map_id> …]
@@ -153,10 +154,16 @@ uv run nav map pull [<map_id> …]
    frame) to every node, place nodes at their first pass by dead reckoning (walks aligned through shared nodes),
    bend each walk so every later pass of a node lands on it (loop closure: the drift is spread over the stretch in
    between; passes far off are flagged in `warnings`), measure each edge's walked distance and keep its walked path
-   for drawing.
+   for drawing. Edges no walk went along directly (it passed other nodes in between) are marked inferred.
+5. **Quality check** (cheap, optional): TypeSafe's **Jev** asks a few narrow questions about every node and edge, in
+   parallel: does the spoken text point to something only visible, can a blind person tell they arrived / follow
+   the instruction, and does the instruction turn the way the walk did. Raw answers are stored per item
+   (`quality`), flagged items go into `warnings` and are marked in the viewer. A map costs ~13k input tokens
+   (well under a cent) and a second. Needs `TYPESAFE_API_KEY` (in `.env`; also a repo secret); otherwise skipped.
+   Questions and thresholds: [`nav/mapping/quality.py`](nav/mapping/quality.py).
 
 Defaults can be changed with `NAV_EMBED_MODEL`, `NAV_TRANSCRIBE_MODEL`, `NAV_MAP_LLM_MODEL` (default `opus`), `NAV_MAP_LLM_EFFORT` (default `medium`),
-`NAV_MAP_LANGUAGE` (default `en`), `NAV_MAP_LLM_BUDGET_USD` (default 5) and `NAV_GCS_MAPS_URL`. A build of a
+`NAV_MAP_LANGUAGE` (default `en`), `NAV_QUALITY_MODEL` (default `jev-latest`), `NAV_MAP_LLM_BUDGET_USD` (default 5) and `NAV_GCS_MAPS_URL`. A build of a
 2-minute walk takes about 15 s of preprocessing on the GPU plus 4 minutes and about $1 of Claude Code.
 
 ```
