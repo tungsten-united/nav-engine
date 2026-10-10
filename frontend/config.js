@@ -1,6 +1,6 @@
 // Where the two APIs are and how to authenticate; loaded first by every page.
 //   NAV      map-api: recordings, map builds, review, map files (the phone recorder, /dash/, /viz/)
-//   NAV.nav  nav-api: the live API the app uses: published maps, routes, localization (/loc/, /nav/)
+//   NAV.nav  nav-api: the live API (Orient's orchestrator calls it; here /loc/, /nav/): published maps, routes, localization
 // Both default to their Cloud Run services. For local servers open any page once with
 // ?api=http://127.0.0.1:8450&navapi=http://127.0.0.1:8452 (remembered in this browser; an empty value goes back to
 // the default). Each API's token is asked for on its first 401 and kept in localStorage; ?token= (map-api) and

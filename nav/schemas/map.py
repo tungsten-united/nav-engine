@@ -293,7 +293,7 @@ class QualityReport(BaseModel):
 
 class SpatialRelation(BaseModel):
     """Where something is as seen from a recorded viewpoint at a node (docs/navigation_stack.md 2.3). With the
-    user's heading known at the node, the app turns `heading_deg` into ahead / left / right without asking again."""
+    user's heading known at the node, a caller can turn `heading_deg` into ahead / left / right without asking again."""
 
     id: str  # "<node id>:<subject slug>", stable while the node and the subject keep their names
     subject: str
@@ -459,7 +459,7 @@ class MapSummary(BaseModel):
 
 
 def place_map_json_schema() -> str:
-    """JSON Schema of the published map, for the navigation app (docs/map.schema.json)."""
+    """JSON Schema of the published map, for nav-api's callers (docs/map.schema.json)."""
     import json
 
     return json.dumps(PlaceMap.model_json_schema(mode="serialization"), indent=1, ensure_ascii=False) + "\n"

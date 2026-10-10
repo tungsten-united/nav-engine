@@ -74,7 +74,7 @@ class MapCache:
         return self.store.summaries(get=self.get)
 
     def file(self, map_id: str, rel: str) -> Path:
-        """Only what the app needs from the published build: its reference images, candidate frames and embeddings.
+        """Only what nav-api's callers need from the published build: its reference images, candidate frames and embeddings.
         Builds' job files, candidates and older builds stay on map-api."""
         pmap = self.get(map_id)
         build = f"builds/{pmap.build.build_id}/"

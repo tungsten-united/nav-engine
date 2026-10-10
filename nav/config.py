@@ -59,7 +59,7 @@ INFER_QUEUE = int(os.environ.get("NAV_INFER_QUEUE", "4"))  # model requests wait
 INFER_JOB_QUEUE = int(os.environ.get("NAV_INFER_JOB_QUEUE", "2"))  # map jobs waiting behind the running one
 
 # Which service `nav serve` runs: map-api (recordings, map builds, review, the debugging frontend) or nav-api (the
-# live side for the app: published maps, routes, localization; read-only on the data).
+# live side for Orient's orchestrator: published maps, routes, localization; read-only on the data).
 APP = os.environ.get("NAV_APP", "map-api")
 NAV_API_PORT = int(os.environ.get("NAV_NAV_API_PORT", "8452"))  # local default of `nav serve --app nav-api`
 # nav-api: where the debugging frontend lives (old bookmarks of /, /dash/ ... on nav-api's URL are sent there).

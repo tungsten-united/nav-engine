@@ -1,4 +1,4 @@
-<!-- From tungsten-united/demo-repository@c5dc26f (branch navigation), by LPA. Kept verbatim; the pipeline it describes is now nav/ (see README). -->
+<!-- Adapted from tungsten-united/demo-repository@c5dc26f (branch navigation), by LPA. Aligned with Orient on 2026-10-10: the phone app talks only to Orient's orchestrator, which calls nav-api; there is no navigation state machine. The pipeline it describes is nav/ (see README). -->
 
 # Indoor Navigation Stack — Development Plan
 
@@ -31,21 +31,21 @@ The graph is reviewed before navigation. The VLM may propose spatial relations, 
 
 ### Phase B — Navigation (Our Responsibility)
 
-The Android webapp uses its camera to recognize the user's surroundings and locate them within the generated map.
+The phone webapp sends camera frames to Orient's orchestrator, which asks nav-api which node of the generated map they show.
 
-A navigation controller uses the graph and phone orientation measurements to determine which waypoint to reach next and what guidance to provide.
+The orchestrator uses nav-api's routes over the graph to determine which waypoint to reach next and what guidance to provide. Phone orientation measurements are not used yet.
 
-The system delivers voice instructions and haptic feedback through browser APIs.
+The orchestrator turns guidance into speech, which the phone plays. Haptic feedback is a later option.
 
 **Main pipeline:**
 
-Mapping video → Semantic-spatial map → Live camera → Visual localization → Orientation estimation → Graph navigation → Voice and haptic feedback.
+Mapping video → Semantic-spatial map → Live camera (phone) → Visual localization (nav-api) → Orientation estimation (not built) → Route following (orchestrator, routes from nav-api) → Voice (orchestrator and phone).
 
 ---
 
 ## 2. Interface Between Mapping and Navigation
 
-Before receiving the video, we need to agree with the mapping team on the structure of the generated map.
+Before receiving the video, we need to agree with the mapping team on the structure of the generated map. The agreed format is `nav/schemas/map.py` (JSON Schema: `docs/map.schema.json`).
 
 The mapping pipeline must produce four categories of information.
 
@@ -164,24 +164,20 @@ The first deliverable is a **verified, orientation-aware navigation graph with c
 
 Use a pretrained visual encoder to convert camera frames into embedding vectors.
 
-Candidate models:
+Chosen: **MegaLoc**, a specialized VPR model. On the venue, DINOv2's general features said "same kind of scene" rather than "same place", so DINOv2 is only used during mapping, to tell new views from near-duplicates.
 
-- DINOv2 — general visual feature representations.
-- CLIP — accessible baseline with semantic image representations.
-- A specialized VPR model — potential later improvement.
-
-For the initial demo, start with one pretrained model and evaluate its recognition performance on actual venue images.
+Its recognition performance on held-out venue images is still to be evaluated.
 
 During mapping, generate and save embeddings for reference images.
 
-During navigation, generate an embedding from each sampled camera frame and compare it against stored references.
+During navigation, nav-api's `localize` embeds the 1–4 camera frames Orient's orchestrator sends and compares them against stored references.
 
 The output should include:
 
 - Most likely checkpoint candidates.
 - Similarity scores.
 - Associated viewing direction, where identifiable.
-- Observation timestamp.
+- Observation timestamp (the caller's: nav-api is stateless).
 
 ### 4.2 Temporal localization
 
@@ -199,11 +195,13 @@ The localization estimator should consider:
 
 The output is a location estimate and uncertainty status, not a guaranteed physical position.
 
+nav-api's `localize` covers the strongest match, the margin, the previously confirmed location (given as `previous`) and graph plausibility (one edge away). Agreement across consecutive observations is the orchestrator's, and is not built yet.
+
 ### 4.3 Checkpoint arrival
 
 Recognizing a landmark from a distance does not mean the user has reached its checkpoint.
 
-For the MVP, use reference images captured from an established checkpoint position. Require additional evidence of proximity or explicit checkpoint confirmation before advancing.
+For the MVP, use reference images captured from an established checkpoint position. Require additional evidence of proximity or explicit checkpoint confirmation before advancing. As of 2026-10-10, the orchestrator advances on a single `confirmed` result.
 
 We will not attempt centimeter-level localization or continuous metric position estimation.
 
@@ -214,6 +212,8 @@ We will not attempt centimeter-level localization or continuous metric position 
 **Goal:** Determine the direction the phone is facing relative to the recorded navigation graph.
 
 We will combine relative phone rotation with visual orientation verification.
+
+Not built yet. nav-api's `localize` already reports each matched reference's camera heading and, given the phone's compass heading (`heading_deg`), the difference; the orchestrator does not send the heading yet.
 
 ### 5.1 Initial orientation
 
@@ -250,7 +250,7 @@ Orientation uncertainty is independent of location uncertainty.
 
 For example, the system might recognize the Stage but not know whether the user is facing the Entrance or the Drinks Area.
 
-In that situation, the app must not issue an unsupported left/right instruction.
+In that situation, the orchestrator must not issue an unsupported left/right instruction.
 
 Instead, it should request another camera view or orientation confirmation.
 
@@ -258,15 +258,15 @@ Instead, it should request another camera view or orientation confirmation.
 
 ## 6. Localization Uncertainty Management
 
-**Goal:** Prevent the navigation controller from using unreliable visual or orientation estimates.
+**Goal:** Prevent the orchestrator's route following from using unreliable visual or orientation estimates.
 
-We will use three confidence states.
+nav-api's `localize` returns three confidence states.
 
 ### Confirmed
 
 Visual observations consistently identify a checkpoint, the match is sufficiently distinctive, and the result is compatible with the navigation history.
 
-The controller may update the confirmed location.
+The orchestrator may update the confirmed location.
 
 Directional guidance additionally requires valid orientation information.
 
@@ -280,9 +280,9 @@ Possible causes:
 - Uncertain checkpoint proximity.
 - Uncertain phone orientation.
 
-The controller keeps the last confirmed location and refrains from advancing the route.
+The orchestrator keeps the last confirmed location and refrains from advancing the route.
 
-The app may request additional observations or a manually confirmed checkpoint.
+The orchestrator may ask the user, through the phone, for a clearer view or a manually confirmed checkpoint.
 
 ### Lost
 
@@ -312,21 +312,23 @@ Thresholds should be selected empirically using images recorded at the venue, in
 
 We should prioritize preventing false confirmations over maximizing the number of detections.
 
+nav-api's `localize` uses 1, 2 and 4; its thresholds are placeholders until tuned on venue images. 3 and 5 are not built.
+
 ---
 
 ## 7. Route Planning
 
 **Goal:** Compute a path from the confirmed starting checkpoint to the selected destination.
 
-Use BFS on the verified semantic graph.
+nav-api's `POST /route` finds the shortest route by distance over trusted edges, in the direction they may be walked.
 
 For the MVP:
 
-- All connections must be verified and traversable.
+- Real users should be routed over verified connections only (nav-api's default). For the supervised demo, Orient's orchestrator also uses `observed` edges, walked but not yet verified, until the demo route is verified.
 - Only explicitly available directed edges may be used.
 - The route consists of an ordered sequence of checkpoints.
 - Each transition has associated guidance information.
-- If no verified route exists, the app reports that navigation is unavailable.
+- If no trusted route exists, nav-api answers `found: false` and the orchestrator waits.
 
 We do not need a VLM for route planning.
 
@@ -336,40 +338,17 @@ Entrance → Stage → Drinks Area
 
 The actual path must come from the venue graph.
 
-Future versions can introduce weighted graph search to account for distance, accessibility requirements, and route complexity.
+Future versions can weigh accessibility requirements and route complexity as well as distance.
 
 ---
 
-## 8. Navigation Controller
+## 8. Route Following (Orient's orchestrator)
 
 **Goal:** Coordinate localization, orientation, route progression and feedback.
 
-Use a deterministic state machine.
+There is no separate navigation state machine. Orient's orchestrator keeps each session's state: the destination, the user's last confirmed checkpoint and the previous guidance. For every evaluated frame it calls nav-api's `localize`, then `route` from the confirmed checkpoint, and turns the route's first hop into guidance. The phone app has its own client states (listening, speaking, stopped and so on), which are about the conversation, not the route. The contract is tungsten-united/project-description `docs/contracts.md` §2.
 
-### Main states
-
-**IDLE**  
-No navigation session is active.
-
-**LOCALIZING**  
-The application attempts to identify the starting checkpoint.
-
-**ALIGNING**  
-The starting checkpoint is identified, but the required orientation has not yet been confirmed.
-
-**GUIDING**  
-The system has an active route and provides instructions toward the next checkpoint.
-
-**CHECKPOINT CONFIRMATION**  
-The expected checkpoint has been recognized. The controller validates that the user has reached it before advancing.
-
-**ARRIVED**  
-The final destination checkpoint has been confirmed.
-
-**PAUSED / LOST**  
-Navigation is paused because of uncertainty, system failure or a user request.
-
-### Controller responsibilities
+### Responsibilities (design; the contract says what is built)
 
 - Maintain the current and next expected checkpoint.
 - Maintain the chosen destination.
@@ -381,7 +360,7 @@ Navigation is paused because of uncertainty, system failure or a user request.
 - Prevent repetitive or contradictory instructions.
 - Stop or pause navigation when necessary.
 
-If the user appears to be off-route, the controller should first establish a reliable location. Replanning may occur only over verified graph connections.
+If the user appears to be off-route, the orchestrator should first establish a reliable location. Replanning may occur only over trusted graph connections.
 
 ---
 
@@ -391,7 +370,7 @@ If the user appears to be off-route, the controller should first establish a rel
 
 ### 9.1 Voice feedback
 
-Use browser text-to-speech.
+Orient's orchestrator writes the sentence (the route hop's instruction, or a template) and streams it as speech (ElevenLabs). The phone plays it, with browser text-to-speech as fallback.
 
 Examples:
 
@@ -404,13 +383,13 @@ Examples:
 
 Instructions should be short, event-driven, and based on verified information.
 
-Do not continuously generate speech for every incoming camera frame.
+Do not continuously generate speech for every incoming camera frame. The orchestrator speaks only when its output changes and the change is worth saying.
 
-Include options to repeat the last instruction, pause navigation, and stop navigation.
+Include options to repeat the last instruction, pause navigation, and stop navigation. Orient has Start/Stop, and the orchestrator repeats an unchanged instruction after a few seconds.
 
 ### 9.2 Haptic feedback
 
-Use Android Chrome's vibration capabilities.
+A later option (project-description card S07): Android Chrome's vibration capabilities.
 
 Design distinct patterns for:
 
@@ -428,63 +407,60 @@ Voice remains available when vibration is unsupported or disabled.
 
 ### 9.3 Feedback policy
 
-The navigation controller produces structured guidance events.
+The orchestrator produces structured outputs (action, direction, checkpoint, uncertainty).
 
-A separate feedback component translates each event into speech and vibration.
+A separate step turns each output into a sentence and speech (and later vibration).
 
 This keeps the navigation logic independent from the output interface and allows feedback patterns to be adjusted without changing routing.
 
 ---
 
-## 10. Webapp Integration
+## 10. Integration with Orient
 
-The navigation stack will be integrated into the React + TypeScript application.
+Three parts, each in its own repository.
 
-The phone will access the deployed frontend through HTTPS.
+### Phone webapp (tungsten-united/project-description, `apps/web`)
 
-### Frontend responsibilities
-
-- Start and manage the rear-facing camera.
-- Sample frames for visual localization.
-- Read available orientation sensors.
-- Allow destination selection.
-- Display the current navigation state.
-- Deliver voice and haptic feedback.
-- Provide large, accessible navigation controls.
-- Pause and resume navigation.
+- Start and manage the rear-facing camera, and send frames to the orchestrator.
+- Record the spoken destination.
+- Read available orientation sensors and send a motion summary.
+- Play the guidance speech.
+- Provide large, accessible Start/Stop controls.
 - Keep the screen active when the browser supports it.
 
-### Backend responsibilities
+It talks only to the orchestrator.
 
-- Store the semantic map and reference-image embeddings.
-- Process live camera frames through the selected visual encoder.
-- Perform similarity matching.
-- Return ranked landmark candidates and scores.
+### Orient's orchestrator (tungsten-united/orient-orchestrator)
 
-For the MVP, graph routing and the navigation state machine can run entirely in TypeScript within the browser.
+- Hold the client and session: the destination and the user's last confirmed checkpoint.
+- Call nav-api for every evaluated frame: `localize`, then `route`.
+- Turn the result into guidance, decide whether to speak it, and synthesize the speech.
 
-No dedicated navigation backend is required.
+### nav-api (this repository)
 
-### Integration inputs
+- Serve the published semantic maps and reference-image embeddings, read-only.
+- Process live camera frames through the visual encoder (on the inference host) and match them.
+- Return ranked checkpoint candidates, scores and a confidence status (`localize`).
+- Return routes over trusted edges, with their spoken instructions (`route`).
 
-The navigation module expects:
+nav-api is stateless and server to server: the phone never calls it.
 
-1. A verified semantic-spatial graph.
+### Integration inputs (nav-api)
+
+1. A reviewed semantic-spatial graph (the published map).
 2. Reference landmarks and directional images.
-3. Live visual localization observations.
-4. Phone orientation measurements.
-5. A destination selected by the user.
+3. Live camera frames, the last confirmed checkpoint, and optionally the expected checkpoint and the compass heading.
+4. A start and a destination checkpoint.
 
 ### Integration outputs
 
-The navigation module produces:
+nav-api returns ranked checkpoints with a confirmed / uncertain / lost status, and routes. The orchestrator derives the rest:
 
 1. Current confirmed checkpoint.
-2. Current navigation state.
-3. Next expected checkpoint.
-4. Route progress.
-5. Location and orientation uncertainty.
-6. Voice and haptic guidance events.
+2. Next expected checkpoint.
+3. Route progress.
+4. Location uncertainty (orientation uncertainty is not built).
+5. Voice guidance.
 
 ---
 
@@ -492,13 +468,15 @@ The navigation module produces:
 
 Implementation should proceed independently of the mapping team where possible.
 
+Status (2026-10-10): milestones 1, 2 and 4 are built (the map and nav-api formats, routing in nav-api and route following in the orchestrator, the Itnig map with no verified edge yet). 3 and 5 are written in Orient's phone app and orchestrator but not yet tested at the venue. 6 and 7 are open.
+
 ### Milestone 1 — Navigation interfaces
 
 Define the contracts for the map, localization observations, orientation estimates and guidance events.
 
 **Deliverable:** agreed module interfaces.
 
-### Milestone 2 — Routing and state machine
+### Milestone 2 — Routing and route following
 
 Implement verified-edge routing and navigation progression using a small example graph.
 
@@ -508,7 +486,7 @@ Use simulated landmark observations for testing.
 
 ### Milestone 3 — Android feedback
 
-Integrate speech synthesis, vibration and navigation controls.
+Integrate speech output, navigation controls and, later, vibration.
 
 Test in Android Chrome through an HTTPS deployment.
 
@@ -528,11 +506,11 @@ Once the teammate's video is available:
 
 ### Milestone 5 — Real visual localization
 
-Connect the phone camera with the embedding-based localization service.
+Connect the phone camera, through the orchestrator, with nav-api's localization.
 
 Test visual matching at the actual checkpoint locations.
 
-**Deliverable:** stable landmark recognition integrated into the navigation controller.
+**Deliverable:** stable landmark recognition integrated into the orchestrator's route following.
 
 ### Milestone 6 — Orientation-aware navigation
 
@@ -571,9 +549,9 @@ Open the webapp on Android Chrome, activate the camera and recognize the startin
 
 **10–20 seconds — Select destination**
 
-Choose the Drinks Area or another nearby destination.
+Say "Drinks Area" or another nearby destination.
 
-The application calculates the route.
+nav-api calculates the route.
 
 **20–35 seconds — Initial guidance**
 
@@ -587,7 +565,7 @@ The app detects phone rotation, verifies the outgoing camera view and confirms t
 
 **50–60 seconds — Arrival**
 
-The final checkpoint is recognized and the app announces arrival with voice and vibration.
+The final checkpoint is recognized and the app announces arrival by voice.
 
 The physical route must be short enough to fit the demonstration time. The prototype will be demonstrated by a sighted tester under supervision.
 
@@ -602,9 +580,9 @@ The physical route must be short enough to fit the demonstration time. The proto
 - Landmark similarity matching.
 - Graph-based routing.
 - Temporal observation validation.
-- Navigation state machine.
+- Route following in the orchestrator.
 - Location uncertainty handling.
-- Voice and haptic feedback.
+- Voice feedback.
 - End-to-end operation through Android Chrome.
 
 ### High priority
@@ -624,7 +602,9 @@ The physical route must be short enough to fit the demonstration time. The proto
 - Automatic recovery from unexpected route deviations.
 - Multi-floor navigation.
 - More sophisticated accessible route optimization.
-- Automatic map merging across repeated walkthroughs.
+- Haptic feedback.
+
+Automatic map merging across repeated walkthroughs, once listed here, is built: more walks of a place improve the same map.
 
 These should not block the hackathon MVP.
 
@@ -652,19 +632,19 @@ The prototype will not provide validated continuous localization, drop-off detec
 
 The navigation stack will be considered ready for the hackathon when:
 
-1. The verified map can be loaded into the React webapp.
-2. The user can select a destination.
+1. Orient's orchestrator uses the verified map through nav-api.
+2. The user can say a destination.
 3. The phone camera can recognize the mapped starting checkpoint.
-4. The application calculates a valid route using verified connections.
-5. The controller issues the appropriate navigation instructions.
+4. nav-api calculates a valid route using verified connections.
+5. The orchestrator issues the appropriate navigation instructions.
 6. At least one directional turn can be verified using visual and/or orientation evidence.
 7. The application recognizes the final checkpoint.
-8. Voice and haptic feedback work on the demonstration Android phone.
+8. Voice feedback works on the demonstration phone (haptics if S07 lands).
 9. Uncertain observations do not trigger unsupported directional instructions.
 10. A sighted tester can complete the supervised 60-second demonstration using real camera observations.
 
 **Final architecture:**
 
-Video-derived semantic and spatial map + Visual Place Recognition + Phone orientation + Graph routing + Navigation state machine + Voice/haptic feedback.
+Video-derived semantic and spatial map + Visual Place Recognition + Phone orientation + Graph routing (nav-api) + Route following in Orient's orchestrator + Voice feedback.
 
 No VLA is required for the initial version, and a VLM is primarily used during mapping rather than during continuous navigation.

@@ -327,7 +327,7 @@ def map_pdr_replay(map_id: str, rec_id: str,
 
 @maps.command("schema")
 def map_schema(out: Path = typer.Option(None, help="Write here instead of printing.")) -> None:
-    """JSON Schema of the published map (PlaceMap), for the app (committed as docs/map.schema.json)."""
+    """JSON Schema of the published map (PlaceMap), for nav-api's callers (committed as docs/map.schema.json)."""
     from nav.schemas.map import place_map_json_schema
 
     text = place_map_json_schema()

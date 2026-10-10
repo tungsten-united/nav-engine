@@ -1,6 +1,7 @@
-"""nav-api: the live side, for the navigation app. Read-only on the data: the published maps of every place (the team
-bucket, mounted read-only on Cloud Run), routes over them, and localization of live camera frames against their
-reference images. The models run on the inference host (helium nav-infer, NAV_INFER_URL), like map-api's.
+"""nav-api: the live side, for Orient's orchestrator (tungsten-united/orient-orchestrator), which calls it server to
+server; the phone never does. Read-only on the data: the published maps of every place (the team bucket, mounted
+read-only on Cloud Run), routes over them, and localization of live camera frames against their reference images.
+The models run on the inference host (helium nav-infer, NAV_INFER_URL), like map-api's.
 
     GET  /api/v1/health[?deep=1]              deep: also the maps and the inference host
     GET  /api/v1/maps                         MapSummary[]
@@ -72,7 +73,7 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
     thresholds = thresholds or Thresholds(confirm_score=config.LOC_CONFIRM_SCORE,
                                           confirm_margin=config.LOC_CONFIRM_MARGIN, lost_score=config.LOC_LOST_SCORE)
     app = FastAPI(title="nav-engine nav-api", version=f"map-schema-{MAP_SCHEMA_VERSION}",
-                  description="The live API for the navigation app: published maps, routes, localization.")
+                  description="The live API for Orient's orchestrator: published maps, routes, localization.")
     app.state.maps = maps
     web.setup(app, api_token=api_token, cors_origins=cors_origins, cors_origin_regex=cors_origin_regex)
 
@@ -141,7 +142,7 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
             top_k: int = Form(5, ge=1, le=20)) -> Localization:
         """Which node of the map the frames show (visual place recognition on the map's reference images): ranked
         nodes with their best matching references, and confirmed / uncertain / lost (nav/navigation/localize.py).
-        Stateless: the client combines consecutive results."""
+        Stateless: the caller (the orchestrator) keeps the last confirmed node and combines consecutive results."""
         t0 = time.perf_counter()
         if not images or len(images) > MAX_FRAMES:
             raise HTTPException(422, f"send 1..{MAX_FRAMES} images")

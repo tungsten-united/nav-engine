@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The two Cloud Run services, one image (the Dockerfile), on the team bucket. Idempotent; only creates or updates.
 #   map-api  recordings, map builds, review, map files + the debugging frontend; bucket read-write; runs as nav-worker
-#   nav-api  the live API for the app: published maps, routes, localization; bucket read-only; runs as nav-api
+#   nav-api  the live API for Orient's orchestrator: published maps, routes, localization; bucket read-only; runs as nav-api
 #
 #   deploy/cloudrun.sh setup                     once: APIs, service accounts + bucket access, empty secrets
 #   deploy/cloudrun.sh [deploy] [map-api|nav-api|all]   build the image here (docker), push it, deploy (default all)

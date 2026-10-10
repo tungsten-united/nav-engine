@@ -1055,7 +1055,7 @@
    "type": "object"
   },
   "SpatialRelation": {
-   "description": "Where something is as seen from a recorded viewpoint at a node (docs/navigation_stack.md 2.3). With the\nuser's heading known at the node, the app turns `heading_deg` into ahead / left / right without asking again.",
+   "description": "Where something is as seen from a recorded viewpoint at a node (docs/navigation_stack.md 2.3). With the\nuser's heading known at the node, a caller can turn `heading_deg` into ahead / left / right without asking again.",
    "properties": {
     "id": {
      "title": "Id",

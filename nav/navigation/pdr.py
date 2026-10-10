@@ -1,11 +1,11 @@
 """Pedestrian dead reckoning along a route: live steps + heading -> progress towards the next node.
 
 - `StepDetector`: causal peak detector on vertical acceleration (DeviceMotion accelerationIncludingGravity, ~60 Hz),
-  constant memory, so it ports 1:1 to the webapp. (The map pipeline counts steps offline with a band-pass filter,
+  constant memory, so it ports 1:1 to other languages. (The map pipeline counts steps offline with a band-pass filter,
   nav/mapping/motion.py; this one can't look ahead.)
 - `GraphTracker`: follows a route of `Hop`s (route.py). Only the component of each step along the hop's bearing
   counts as progress; it reports the remaining distance, an uncertainty that grows with the distance walked, and
-  the probability of being within `arrival_radius_m` of the next node. It only *predicts* arrival: the controller
+  the probability of being within `arrival_radius_m` of the next node. It only *predicts* arrival: the caller
   still needs a visual or user confirmation (`confirm_node`), which also re-learns the user's step length.
 - `replay`: plays a mapping walk back as a user along the map, to see how early or late the tracker would announce
   each node (`nav map pdr-replay`).
