@@ -13,6 +13,7 @@ gives the published map.json:
   distance is to that part. Routes and the walked-distance gate pass through an area only in and out of the same
   part (route.py, localize.py): the walk from one part to another isn't in the map. Parts that a walk of at most
   JOIN_PARTS_M joined (the dropped edge between them) count as one part.
+- keep: publish the item even where the cleaner (clean.py) would leave it out for too few walks.
 - hide: leave the item out of the published map (it stays in the build's map.json; nothing is deleted).
   Hiding a node hides its edges, relations and reference images too.
 - distances: metres measured on site between two nodes (tape, pacing, a floor plan). The walked metres come from
@@ -37,6 +38,7 @@ from nav.schemas.map import NodeKind, PlaceMap, Point
 class NodeReview(BaseModel):
     approve: bool = False
     hide: bool = False
+    keep: bool = False  # publish it even if the cleaner (clean.py) would leave it out
     name: str | None = None
     kind: NodeKind | None = None
     description: str | None = None
@@ -48,6 +50,7 @@ class EdgeReview(BaseModel):
     approve: bool = False  # source -> target walked and checked
     approve_reverse: bool = False  # target -> source walked and checked
     hide: bool = False
+    keep: bool = False  # publish it even if the cleaner (clean.py) would leave it out
     instruction: str | None = None
     reverse_instruction: str | None = None
     note: str | None = None
@@ -303,7 +306,8 @@ def template(pmap: PlaceMap, review: Review) -> dict:
     return {
         "_how": "Walk the place with the map. Set approve (edges: approve for source -> target, approve_reverse for "
                 "the way back) on what you checked, fix name/kind/description/instruction, hide what is wrong, "
-                "set merge_into (a node id) on a node that is part of another one. Then run "
+                "set merge_into (a node id) on a node that is part of another one, keep on what the cleaner left out "
+                "(`pruned` in map.json) but should stay. Then run "
                 "`nav map review <map_id> --apply <this file>` (or PUT it to /api/v1/maps/<map_id>/review). Only "
                 "verified edges are used to route real users.",
         "nodes": {n.id: {"_": f"{n.name} ({n.kind}, {n.status})", "_check": flags(n, "node"),

@@ -1,5 +1,7 @@
 // Nav Maps: the navigation graph of a place. Nodes sit at their dead-reckoned positions (metres, recordings aligned
-// through shared nodes) and edges follow the walked path between them. Hover previews, click pins the details.
+// through shared nodes); edges follow the walked path between them, simplified (Smooth), or go straight from node to
+// node (Straight). The published map is cleaned (nav/mapping/clean.py): "Pruned" shows what was left out, faint.
+// Hover previews, click pins the details.
 "use strict";
 
 const API = NAV.API; // frontend/config.js
@@ -44,9 +46,18 @@ const fmtDate = (iso) => new Date(iso).toLocaleString(undefined, { day: "numeric
 // --- state -------------------------------------------------------------------------------------------------
 const S = {
   maps: [], map: null, nodes: new Map(), edges: new Map(), pos: new Map(), refs: new Map(),
-  view: { s: 1, tx: 0, ty: 0 }, walked: true, pin: null, route: null, turns: new Map(), order: [], trust: "any",
-  reviewMsg: null,
+  view: { s: 1, tx: 0, ty: 0 }, pin: null, route: null, turns: new Map(), order: [], trust: "any",
+  reviewMsg: null, raw: null,  // raw: the same map without the cleaner (?clean=false), for "Pruned"
+  style: pref("style", "smooth"), tracks: pref("tracks", "off") === "on", pruned: pref("pruned", "off") === "on",
 };
+// Viewer preferences, per browser; storage may be unavailable (private windows): then the defaults hold.
+function pref(key, fallback) {
+  try { return localStorage.getItem(`viz.${key}`) || fallback; } catch { return fallback; }
+}
+function savePref(key, value) {
+  try { localStorage.setItem(`viz.${key}`, value); } catch { /* not kept */ }
+}
+const WALKED = ["observed", "verified"];
 const TRUST = { any: ["verified", "observed", "inferred"], observed: ["verified", "observed"], verified: ["verified"] };
 
 // --- geometry ----------------------------------------------------------------------------------------------
@@ -56,10 +67,30 @@ function project(p) {
   const v = S.view;
   return { x: p.x * v.s + v.tx, y: -p.y * v.s + v.ty };
 }
-function edgePoints(e) {
-  const a = S.pos.get(e.source), b = S.pos.get(e.target);
-  if (!S.walked || !e.path || e.path.length < 2) return [a, b];
-  return e.path.map((p) => ({ x: p.x_m, y: p.y_m }));
+function edgePoints(e, pos = S.pos) {
+  const a = pos.get(e.source), b = pos.get(e.target);
+  if (S.style === "straight" || !e.path || e.path.length < 2) return [a, b];
+  // the walked path, ends on the nodes (dead reckoning leaves them off by a little), without the wiggles
+  const near = (p, q) => Math.hypot(p.x - q.x, p.y - q.y) < 1;
+  const mid = e.path.slice(1, -1).map((p) => ({ x: p.x_m, y: p.y_m })).filter((p) => !near(p, a) && !near(p, b));
+  return simplify([a, ...mid, b], 0.75);
+}
+function simplify(pts, tol) {
+  // Ramer-Douglas-Peucker, world metres
+  if (pts.length < 3) return pts;
+  const [a, b] = [pts[0], pts.at(-1)], len = Math.hypot(b.x - a.x, b.y - a.y) || 1e-9;
+  let far = 0, at = 0;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const d = Math.abs((b.x - a.x) * (a.y - pts[i].y) - (a.x - pts[i].x) * (b.y - a.y)) / len;
+    if (d > far) { far = d; at = i; }
+  }
+  if (far <= tol) return [a, b];
+  return [...simplify(pts.slice(0, at + 1), tol).slice(0, -1), ...simplify(pts.slice(at), tol)];
+}
+// Which way an edge was walked: an arrow only where it was walked one way (none when both, or neither)
+function walkedWay(e) {
+  const fwd = WALKED.includes(e.status || "observed"), back = e.bidirectional && WALKED.includes(e.reverse_status);
+  return fwd && back ? 0 : fwd ? 1 : back ? -1 : 0;
 }
 function smoothPath(pts) {
   // screen points -> drop near-duplicates -> Catmull-Rom as cubic Beziers
@@ -103,7 +134,7 @@ const avg = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
 function fit() {
   const el = $("#graph"), W = el.clientWidth, H = el.clientHeight;
   const pts = [...S.pos.values()];
-  if (S.walked) for (const e of S.map?.edges || []) for (const p of e.path || []) pts.push({ x: p.x_m, y: p.y_m });
+  if (S.style === "smooth") for (const e of S.map?.edges || []) for (const p of edgePoints(e)) pts.push(p);
   if (!pts.length) return;
   const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
   const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
@@ -150,25 +181,23 @@ function draw() {
   if (!m) return;
   const on = highlighted();
   $("#svg").classList.toggle("dim", !!S.route);
-  if (S.walked) {
+  if (S.tracks) {
     for (const t of m.tracks || []) {
       const d = t.points.map(([, x, y], i) => { const p = project({ x, y }); return `${i ? "L" : "M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`; }).join("");
       world.append(s("path", { class: "track", d }));
     }
   }
+  if (S.pruned) drawPruned(world);
   for (const e of m.edges) {
     const pts = edgePoints(e).map(project);
-    const mid = midpoint(pts), d = smoothPath(pts);
+    const mid = midpoint(pts), d = smoothPath(pts), way = walkedWay(e);
     const cls = ["edge", e.confidence === "low" && "low", e.walked === false && "inferred", e.status === "verified" && "verified",
       on.has(e.id) && "on"].filter(Boolean).join(" ");
-    const deg = (mid.ang * 180) / Math.PI;
-    const nx = -Math.sin(mid.ang) * 11, ny = Math.cos(mid.ang) * 11;  // hazard badge beside the arrow
+    const deg = (mid.ang * 180) / Math.PI + (way < 0 ? 180 : 0);
     world.append(s("g", { class: cls, "data-id": e.id, onmousemove: (ev) => tip(ev, "edge", e.id), onmouseleave: hideTip,
       onclick: (ev) => { ev.stopPropagation(); pin("edge", e.id); } },
       s("path", { class: "line", d }),
-      s("path", { class: "arrow", d: "M5,0 L-4,-4 L-4,4 Z", transform: `translate(${mid.x},${mid.y}) rotate(${deg})` }),
-      e.hazards.length && s("g", { class: "badge", transform: `translate(${mid.x + nx},${mid.y + ny})` },
-        s("circle", { r: 6 }), s("text", { y: 3.5 }, "!")),
+      way !== 0 && s("path", { class: "arrow", d: "M5,0 L-4,-4 L-4,4 Z", transform: `translate(${mid.x},${mid.y}) rotate(${deg})` }),
       s("path", { class: "hit", d })));
   }
   // placed label boxes (and every node's dot), to keep labels from overlapping each other and other nodes
@@ -176,11 +205,10 @@ function draw() {
   for (const n of m.nodes) {
     const p = project(S.pos.get(n.id));
     const big = ["entrance", "destination", "room", "open_area"].includes(n.kind);
-    const t0 = n.evidence.length ? Math.min(...n.evidence.map((e) => e.t_ms)) : null;
     const name = n.name.length > 28 ? `${n.name.slice(0, 27)}…` : n.name;
-    const w = name.length * 6.4, r = big ? 8 : 6;
-    const spots = [[12, -1, "start"], [-12, -1, "end"], [12, 20, "start"], [12, -18, "start"], [-12, 20, "end"], [-12, -18, "end"]];
-    const box = (x, y, anchor) => ({ x0: p.x + (anchor === "end" ? x - w : x), x1: p.x + (anchor === "end" ? x : x + w), y0: p.y + y - 11, y1: p.y + y + 13 });
+    const w = name.length * 6.4, r = big ? 7 : 5;
+    const spots = [[12, 4, "start"], [-12, 4, "end"], [12, 18, "start"], [12, -10, "start"], [-12, 18, "end"], [-12, -10, "end"]];
+    const box = (x, y, anchor) => ({ x0: p.x + (anchor === "end" ? x - w : x), x1: p.x + (anchor === "end" ? x : x + w), y0: p.y + y - 11, y1: p.y + y + 3 });
     const free = (b) => !boxes.some((o) => o.id !== n.id && b.x0 < o.x1 && o.x0 < b.x1 && b.y0 < o.y1 && o.y0 < b.y1);
     const [lx, ly, anchor] = spots.find(([x, y, a]) => free(box(x, y, a))) || spots[0];
     boxes.push(box(lx, ly, anchor));
@@ -188,8 +216,25 @@ function draw() {
       onmousemove: (ev) => tip(ev, "node", n.id), onmouseleave: hideTip,
       onclick: (ev) => { ev.stopPropagation(); pin("node", n.id); } },
       s("circle", { r, fill: kindColor(n.kind) }),
-      s("text", { x: lx, y: ly, "text-anchor": anchor }, name),
-      s("text", { x: lx, y: ly + 12, class: "meta", "text-anchor": anchor }, `${n.id} · ${fmtT(t0)}`)));
+      s("text", { x: lx, y: ly, "text-anchor": anchor }, s("title", {}, `${n.id} · ${KINDS[n.kind] || n.kind}`), name)));
+  }
+}
+// What the cleaner left out (from the map without it), faint and dashed, under the published graph
+function drawPruned(world) {
+  const raw = S.raw, pruned = S.map.pruned || {};
+  if (!raw) return;
+  const pos = new Map(S.pos);
+  for (const n of raw.nodes) if (!pos.has(n.id) && n.position) pos.set(n.id, { x: n.position.x_m, y: n.position.y_m });
+  for (const e of raw.edges) {
+    if (!(e.id in pruned) || !pos.has(e.source) || !pos.has(e.target)) continue;
+    world.append(s("path", { class: "pruned-edge", d: smoothPath(edgePoints(e, pos).map(project)) },
+      s("title", {}, `${e.id} · ${pruned[e.id]}`)));
+  }
+  for (const n of raw.nodes) {
+    if (!(n.id in pruned) || !pos.has(n.id)) continue;
+    const p = project(pos.get(n.id));
+    world.append(s("g", { class: "pruned-node", transform: `translate(${p.x},${p.y})` }, s("title", {}, `${n.name} · ${pruned[n.id]}`),
+      s("circle", { r: 4 }), s("text", { x: 8, y: 4 }, n.name)));
   }
 }
 function highlighted() {
@@ -216,7 +261,8 @@ function tip(ev, type, id) {
     const e = S.edges.get(id);
     const img = e.candidates.at(Math.floor(e.candidates.length / 2)) || S.nodes.get(e.target).candidates[0];
     el.replaceChildren(h("b", {}, `${S.nodes.get(e.source).name} → ${S.nodes.get(e.target).name}`),
-      h("div", { class: "turn" }, [turnText(S.turns.get(e.id), true), fmtM(e.measured_distance_m ?? e.distance_m)].filter(Boolean).join(" · ")),
+      h("div", { class: "turn" }, [turnText(S.turns.get(e.id), true), fmtM(e.measured_distance_m ?? e.distance_m),
+        e.hazards.length && `⚠ ${e.hazards.length} hazard${e.hazards.length === 1 ? "" : "s"}`].filter(Boolean).join(" · ")),
       h("p", {}, e.instruction), img && h("img", { src: candUrl(img), alt: "" }));
   }
   el.hidden = false;
@@ -280,6 +326,8 @@ function pinCard() {
     qualityBlock(e.quality, true),
     ...items("Check", e.review_flags, "visual"),
     e.walked === false && h("p", { class: "hint" }, "Not walked directly: the walk passed other spots in between, so this connection is inferred."),
+    e.via?.length && h("p", { class: "hint" }, `Goes past ${e.via.map((i) => S.raw?.nodes.find((n) => n.id === i)?.name || i).join(", ")}: ` +
+      "spots too few walks saw, folded into this edge by the cleaner."),
     h("dl", { class: "kv" }, h("dt", {}, "Distance"), h("dd", {}, e.measured_distance_m != null ? `${fmtM(e.measured_distance_m)} (measured)` :
         e.distance_m != null ? `${fmtM(e.distance_m)} (from the steps, not measured)` : "unknown"),
       h("dt", {}, "Basis"), h("dd", {}, e.walked === false ? "inferred (not walked directly)" :
@@ -356,6 +404,21 @@ function relationList(n) {
       ` · ${headingText(r.heading_deg)} · ${STATUS_TEXT[r.status] || r.status}`),
       reviewBar([r.status === "verified" ? ["Unverify", { approve: false }] : ["Verify", { approve: true }], ["Hide", { hide: true }]],
         "relations", r.id))))];
+}
+function prunedList() {
+  const m = S.map, pruned = Object.entries(m.pruned || {});
+  if (!m.clean) return null;
+  const name = (id) => S.raw?.nodes.find((n) => n.id === id)?.name;
+  const edgeName = (id) => { const e = S.raw?.edges.find((x) => x.id === id); return e && `${name(e.source) || e.source} → ${name(e.target) || e.target}`; };
+  return [h("h3", {}, `Left out by the cleaner · ${pruned.length}`),
+    h("p", { class: "hint" }, `Only what the walks back up is published: edges walked by ≥ ${m.clean.params.min_edge_walks} walks ` +
+      `(weaker ones only where the map would fall apart), spots seen by ≥ ${m.clean.params.min_node_walks}. ` +
+      `Keep publishes an item anyway.`),
+    pruned.length ? h("ul", { class: "list pruned" }, pruned.map(([id, why]) => {
+      const kind = id.startsWith("e") ? "edges" : "nodes";
+      return h("li", {}, h("b", {}, (kind === "nodes" ? name(id) : edgeName(id)) || id), h("span", { class: "id" }, ` · ${id}`),
+        h("div", { class: "hint" }, why, " ", h("button", { class: "link", type: "button", onclick: () => saveReview(kind, id, { keep: true }) }, "keep")));
+    })) : h("p", { class: "hint" }, "Nothing: every node and edge is backed by enough walks.")];
 }
 function hiddenList() {
   const m = S.map;
@@ -484,6 +547,7 @@ function renderPanel() {
       h("span", { class: "dot", style: `--c:${kindColor(n.kind)}` }, n.name), " ", h("span", { class: "id" }, `· ${n.id}`), flagMark(n)))),
     h("h3", {}, "About this place"), h("p", {}, m.summary),
     m.notes.length && [h("h3", {}, "Notes"), h("ul", { class: "notes" }, m.notes.map((n) => h("li", {}, n)))],
+    prunedList(),
     hiddenList(),
     m.warnings.length && [h("h3", {}, "Pipeline warnings"), h("ul", { class: "notes warnings" }, m.warnings.map((n) => h("li", {}, n)))],
     h("h3", {}, "Build"),
@@ -506,16 +570,16 @@ function renderPanel() {
 }
 
 function legend() {
-  const kinds = [...new Set(S.map?.nodes.map((n) => n.kind) || [])];
+  const m = S.map, kinds = [...new Set(m?.nodes.map((n) => n.kind) || [])], edges = m?.edges || [];
   $("#legend").replaceChildren(...[
     ...kinds.map((k) => h("span", { class: "dot", style: `--c:${kindColor(k)}` }, KINDS[k] || k)),
-    h("span", { class: "ln", style: "--c:var(--edge)" }, "edge (arrow: walked direction)"),
-    h("span", { class: "haz" }, "hazards on the way"),
-    h("span", { class: "ln dash", style: "--c:var(--edge)" }, "low confidence"),
-    h("span", { class: "ln dot2", style: "--c:var(--edge)" }, "inferred, not walked"),
-    h("span", { class: "ln", style: "--c:var(--ok)" }, "verified"),
-    S.map?.quality && !S.map.quality.skipped && h("span", { class: "flag" }, "⚑ flagged by the quality check"),
-    S.walked && h("span", { class: "ln dash", style: "--c:var(--track)" }, "walked track")].filter(Boolean));
+    h("span", { class: "ln", style: "--c:var(--edge)" }, edges.some((e) => walkedWay(e)) ? "walked both ways (arrow: walked one way only)" : "walked both ways"),
+    edges.some((e) => e.confidence === "low") && h("span", { class: "ln dash", style: "--c:var(--edge)" }, "low confidence"),
+    edges.some((e) => e.walked === false) && h("span", { class: "ln dot2", style: "--c:var(--edge)" }, "inferred, not walked"),
+    edges.some((e) => e.status === "verified") && h("span", { class: "ln", style: "--c:var(--ok)" }, "verified"),
+    m?.quality && !m.quality.skipped && m.quality.flagged > 0 && h("span", { class: "flag" }, "⚑ flagged by the quality check"),
+    S.pruned && S.raw && h("span", { class: "ln dash", style: "--c:var(--pruned)" }, "left out by the cleaner"),
+    S.tracks && h("span", { class: "ln dash", style: "--c:var(--track)" }, "walked track")].filter(Boolean));
 }
 
 function zoom(src, caption) {
@@ -532,14 +596,19 @@ async function openMap(id) {
   try {
     const m = await getJSON(`/maps/${encodeURIComponent(id)}`);
     S.map = m;
+    S.raw = null;
+    if (m.clean) {  // names and shapes of what the cleaner left out
+      try { S.raw = await getJSON(`/maps/${encodeURIComponent(id)}?clean=false`); } catch { /* the published map is enough */ }
+    }
     S.nodes = new Map(m.nodes.map((n) => [n.id, n]));
     S.edges = new Map(m.edges.map((e) => [e.id, e]));
     S.refs = new Map((m.references || []).map((r) => [r.id, r]));
     layoutPositions(m);
     computeOrder(m);
     $("#title").textContent = `${m.place} — navigation graph`;
-    $("#subtitle").textContent = `${m.nodes.length} nodes · ${m.edges.length} edges · ${m.recordings.length} walk${m.recordings.length === 1 ? "" : "s"} · ` +
-      `layout dead-reckoned from steps and heading (approximate) · built ${fmtDate(m.build.built_at_utc)}`;
+    const cleaned = m.clean ? ` (cleaned from ${m.clean.nodes_before} / ${m.clean.edges_before})` : "";
+    $("#subtitle").textContent = `${m.nodes.length} nodes · ${m.edges.length} edges${cleaned} · ${m.recordings.length} walk${m.recordings.length === 1 ? "" : "s"} · ` +
+      `layout dead-reckoned (approximate) · built ${fmtDate(m.build.built_at_utc)}`;
     $("#maps").value = id;
     $("#empty").hidden = true;
   } catch (err) {
@@ -575,12 +644,29 @@ async function init() {
 $("#maps").addEventListener("change", (e) => { location.hash = e.target.value; });
 window.addEventListener("hashchange", () => { const id = decodeURIComponent(location.hash.slice(1)); if (id && id !== S.map?.map_id) openMap(id); });
 $("#fit").addEventListener("click", fit);
-$("#walk").addEventListener("click", (e) => {
-  S.walked = !S.walked;
-  e.currentTarget.setAttribute("aria-pressed", S.walked);
-  legend();
-  draw();
+function syncTools() {
+  for (const b of document.querySelectorAll("#style button")) b.setAttribute("aria-pressed", b.dataset.style === S.style);
+  $("#tracks").setAttribute("aria-pressed", S.tracks);
+  $("#pruned").setAttribute("aria-pressed", S.pruned);
+}
+$("#style").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b || b.dataset.style === S.style) return;
+  S.style = b.dataset.style;
+  savePref("style", S.style);
+  syncTools();
+  fit();
 });
+for (const [id, key] of [["tracks", "tracks"], ["pruned", "pruned"]]) {
+  $(`#${id}`).addEventListener("click", () => {
+    S[key] = !S[key];
+    savePref(key, S[key] ? "on" : "off");
+    syncTools();
+    legend();
+    draw();
+  });
+}
+syncTools();
 const svg = $("#svg");
 let drag = null;
 svg.addEventListener("pointerdown", (e) => {

@@ -147,6 +147,8 @@ uv run nav map llm itnig              # rerun only the LLM with the latest build
 uv run nav map refinish itnig         # redo post-processing from the saved LLM answer (no new LLM call)
 uv run nav map check itnig            # rerun the cheap quality check (TypeSafe Jev) on the published map
 uv run nav map review itnig           # write an editable review file; --apply <file> verifies / fixes / hides
+uv run nav map clean itnig            # what the cleaner leaves out of the published map and why; --apply republishes
+uv run nav map republish itnig        # publish the published build again with the current review and cleaner
 uv run nav map measure itnig "Main entrance" "Drinks area" 7 --sigma 0.3   # a distance measured on site: sets the scale
 uv run nav map route itnig "Main entrance" Stage [--trust verified|observed|any]
 uv run nav map pdr-replay itnig <rec_id> [--step-scale 0.85]  # replay a walk through the live dead-reckoning tracker
@@ -247,6 +249,19 @@ uv run nav map pull [<map_id> …]
    reports each one's residual. `nav map measure` edits a local map folder; for the team's maps, add the entry to
    `distances` with map-api's `PUT /api/v1/maps/<map_id>/review`, and nav-api serves the rescaled map. On a build whose distances came from steps it can only rescale uniformly (step
    errors aren't uniform), so rebuild first.
+8. **Clean** ([`clean.py`](nav/mapping/clean.py)): the published map keeps only what the walks back up. The LLM's
+   `confidence` doesn't follow the evidence (Itnig: a "high" bathroom seen once by one walk), so code decides:
+   inferred edges go; one edge per pair of spots, the strongest; a spot seen by fewer than 2 walks on the way
+   between two others is folded into one edge (steps chained, distances added, `via` lists it); edges walked by
+   at least 2 walks (either way) are the core, and weaker ones come back only where the map would otherwise fall
+   apart or a spot could no longer be reached the way it was walked (flagged in `review_flags`); a core edge no
+   shorter than the walked way around goes; spots left without edges go. Entrances, destinations, rooms, verified
+   items and anything the review touched are never pruned; the review's `keep` rescues an item. `pruned` in
+   map.json lists what was left out and why, `clean` the counts. The build's own map.json keeps everything, and the
+   next build starts from it, so a spot more walks back up comes back with its id. Itnig on 2026-10-10: 12 nodes /
+   19 edges → 10 / 13. `NAV_MAP_CLEAN=0` publishes the reviewed build as is; `GET /api/v1/maps/<map_id>?clean=false`
+   (map-api) shows it without the cleaner, and `POST /api/v1/maps/<map_id>/republish` applies the cleaner to the
+   published map without a new build.
 
 ### Navigation code
 [`nav/navigation/`](nav/navigation/) is the live side, small and causal. nav-api serves two of its pieces:
@@ -259,7 +274,7 @@ through it. Design: [`docs/main_idea.md`](docs/main_idea.md), [`docs/navigation_
 `GET /api/v1/schema/map`).
 
 Defaults can be changed with `NAV_EMBED_MODEL`, `NAV_PLACE_MODEL`, `NAV_TRANSCRIBE_MODEL`, `NAV_TRANSCRIBE_LANGUAGE` (unset: detected once per walk from all its voice notes), `NAV_MAP_LLM_MODEL` (default `opus`), `NAV_MAP_LLM_EFFORT` (default `medium`),
-`NAV_MAP_LANGUAGE` (default `en`), `NAV_QUALITY_MODEL` (default `jev-latest`), `NAV_MAP_LLM_BUDGET_USD` (default 5) and `NAV_GCS_MAPS_URL`. A build of a
+`NAV_MAP_LANGUAGE` (default `en`), `NAV_QUALITY_MODEL` (default `jev-latest`), `NAV_MAP_LLM_BUDGET_USD` (default 5), `NAV_MAP_CLEAN` (default on) and `NAV_GCS_MAPS_URL`. A build of a
 2-minute walk takes about 15 s of preprocessing on the GPU plus 4 minutes and about $1 of Claude Code.
 
 ```
@@ -274,7 +289,10 @@ data/maps/<map_id>/              map_id = slug of the place, e.g. "itnig"
 
 ### Viewer
 **https://map-api-613464313064.europe-southwest1.run.app/viz/** shows each map as a navigation graph: nodes at their dead-reckoned
-positions and edges along the walked path (with the whole walk as a faint track), the route in recording order
+positions and edges along the walked path, simplified and ending on their nodes (**Smooth**), or straight from node to
+node (**Straight**); an arrow only on edges walked one way. **Tracks** adds the whole walks, faint, and **Pruned**
+what the cleaner left out, dashed, with a list of reasons and a **keep** button each. The choices are remembered per
+browser. The route in recording order
 with turns, hover previews with the frame, and details pinned on click (description, landmarks, hazards, both
 instructions, frames, the walks and times that show it). **Directions** picks two nodes and chains the
 instructions along the shortest route (any edge, or only observed or verified ones). Nodes and edges show their

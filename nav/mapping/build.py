@@ -8,7 +8,8 @@
                                      positions aligned through shared nodes, measured walking distances, headings,
                                      status (observed / inferred), spatial relations as bearings
     publish                          reference images + their embeddings for live localization (references.py),
-                                     quality check (quality.py), human review overlay (review.py)
+                                     quality check (quality.py), human review overlay (review.py), then only what
+                                     the walks back up (clean.py)
 """
 
 from __future__ import annotations
@@ -777,13 +778,22 @@ def publish(build_dir: Path, cset: CandidateSet, draft: MapDraft, run, recording
     return BuildResult(build_dir, cset, pmap)
 
 
-def write_map(build_dir: Path, pmap: PlaceMap) -> PlaceMap:
-    """Save a build's map, and publish it with the place's review applied as the place's map.json."""
+def published_map(map_dir: Path, pmap: PlaceMap, clean: bool | None = None) -> PlaceMap:
+    """A build's map as the place publishes it: the review applied, then cleaned (clean.py) unless turned off."""
+    from nav import config
+    from nav.mapping.clean import clean_map
     from nav.mapping.review import apply_review, load_review
 
+    review = load_review(map_dir)
+    out = apply_review(pmap, review)
+    return clean_map(out, review) if (config.MAP_CLEAN if clean is None else clean) else out
+
+
+def write_map(build_dir: Path, pmap: PlaceMap) -> PlaceMap:
+    """Save a build's map, and publish it with the place's review applied, cleaned, as the place's map.json."""
     (build_dir / "map.json").write_text(pmap.model_dump_json(indent=1))
     map_dir = build_dir.parent.parent
-    published = apply_review(pmap, load_review(map_dir))
+    published = published_map(map_dir, pmap)
     tmp = map_dir / ".map.json.tmp"
     tmp.write_text(published.model_dump_json(indent=1))
     tmp.replace(map_dir / "map.json")
@@ -798,6 +808,6 @@ def build_map_of(map_dir: Path) -> tuple[Path, PlaceMap]:
 
 
 def republish(map_dir: Path) -> PlaceMap:
-    """Apply the (changed) review to the published build again: no new LLM call, no recomputation."""
+    """Apply the (changed) review and the cleaner to the published build again: no new LLM call, no recomputation."""
     build_dir, pmap = build_map_of(map_dir)
     return write_map(build_dir, pmap)
