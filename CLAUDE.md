@@ -87,6 +87,10 @@ recordings made there land in the team bucket.
 - Two step detectors disagree on Itnig (offline band-pass in motion.py ~153 steps, causal StepDetector in
   navigation/pdr.py ~97); the tracker re-learns step length at each node, but a walk with counted steps is needed.
 - Status is per direction: an edge walked target -> source has `status` inferred and `reverse_status` observed.
+- Walks in the opposite direction don't fold with the first walk's frames (the other side of a spot looks
+  different), so each walk's dead-reckoned x/y is in its own frame: compare across walks only via map_x_m/map_y_m
+  (aligned through folded candidates) or after finish (aligned through nodes). The LLM joins walks by words, order
+  and distances; continuity keeps edge orientation so per-direction review stays put.
 - `nvidia-smi` may report "Driver/library version mismatch" after a driver update without reboot; CUDA still works.
 
 ## Product decisions

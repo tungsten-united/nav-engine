@@ -11,6 +11,8 @@
                                      quality check (quality.py), human review overlay (review.py)
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import re
@@ -106,6 +108,15 @@ def select_candidates(place: str, preps: list[Prepared], p: SelectParams, embed_
                         marks=f.marks, voice=f.voice) for f in g.frames],
             possibly_same_as=sorted(set(same))))
 
+    # Positions comparable across walks, where walks share a folded candidate (for the LLM; finish aligns again
+    # through the nodes it makes).
+    offsets, _ = align_recordings({c.id: c.views for c in candidates})
+    for c in candidates:
+        for v in c.views:
+            if v.rec_id in offsets:
+                v.motion.map_x_m = round(v.motion.x_m + float(offsets[v.rec_id][0]), 2)
+                v.motion.map_y_m = round(v.motion.y_m + float(offsets[v.rec_id][1]), 2)
+
     recordings = []
     for prep in preps:
         m = prep.manifest
@@ -127,6 +138,7 @@ def select_candidates(place: str, preps: list[Prepared], p: SelectParams, embed_
             notes=m.notes, step_length_m=m.step_length_m, motion="video" if prep.track.source == "video" else "imu",
             heading=prep.track.heading_kind, fov_deg=prep.calibration.fov_deg,
             video_offset_ms=prep.calibration.offset_ms, walked_m=round(float(prep.track.walked_m[-1]), 1),
+            aligned=m.rec_id in offsets,
             frames_sampled=len(prep.frames), frames_usable=sum(f.usable for f in prep.frames),
             marks=prep.marks, voice=[{k: v[k] for k in ("t_ms", "t_end_ms", "text")} for v in prep.voice],
             timeline=timeline))
@@ -204,10 +216,10 @@ def finish_map(draft: MapDraft, cset: CandidateSet, build: BuildInfo, build_rel:
     warp = _loop_closure(nodes, cands, offsets, warnings)
     by_id = {n.id: n for n in nodes}
     tracks = tracks or {}
-    used = {c for n in nodes for c in n.candidates}
+    timelines = _node_timelines(nodes, cands)
+    passes = {e.id: _passes(e, timelines) for e in edges}
     for e in edges:
-        e.measured_distance_m = _measured(by_id[e.source], by_id[e.target], cands, video_recs)
-        _edge_path(e, by_id[e.source], by_id[e.target], cands, tracks, warp, used)
+        _edge_walks(e, by_id[e.source], by_id[e.target], passes[e.id], tracks, warp, video_recs)
     for e in edges:
         if e.basis == "inferred" and e.walked:  # the LLM knows better that this wasn't walked
             ends = [by_id[e.source].position, by_id[e.target].position]
@@ -219,7 +231,7 @@ def finish_map(draft: MapDraft, cset: CandidateSet, build: BuildInfo, build_rel:
         warnings.append(f"edge {e.id} ({by_id[e.source].name} -> {by_id[e.target].name}) dropped: inferred with low "
                         f"confidence")
         edges.remove(e)
-    _edge_turns(edges, by_id, cands, tracks)
+    _edge_turns(edges, passes, tracks)
     for e in edges:
         steps_m = [st.distance_m for st in e.steps if st.distance_m is not None]
         e.distance_m = e.measured_distance_m if e.measured_distance_m is not None else (
@@ -230,7 +242,7 @@ def finish_map(draft: MapDraft, cset: CandidateSet, build: BuildInfo, build_rel:
         if problem := first_step_problem(e):
             warnings.append(f"edge {e.id}: {problem}")
             e.review_flags.append(problem)
-        _edge_status(e, by_id, cands, tracks)
+        _edge_status(e, passes[e.id], tracks)
     for n in nodes:
         n.review_flags = ([f"{n.confidence} confidence"] if n.confidence != "high" else []) + \
                          ([] if n.landmarks else ["no arrival cue"])
@@ -311,41 +323,34 @@ def instruction_kind(e: PlaceEdge) -> InstructionKind | None:
             "bear_right": "turn_right", "turn_around": "turn_around"}.get(a, "straight")
 
 
-def _edge_status(e: PlaceEdge, by_id: dict[str, PlaceNode], cands: dict[str, Candidate],
-                 tracks: dict[str, list]) -> None:
-    """Which way the edge was walked (observed) and which is only deduced (inferred); headings when leaving the
-    source and reaching the target, from the phone's heading (or the walked path's shape without one)."""
+def _edge_status(e: PlaceEdge, passes: list[Pass], tracks: dict[str, list]) -> None:
+    """Each direction is observed once a walk went that way, else inferred; headings when leaving the source and
+    reaching the target, from the phone's heading on the best pass (or the walked path's shape without one)."""
     e.instruction_kind = instruction_kind(e)
-    other = "inferred" if e.bidirectional else None
     if not e.walked:
-        e.status, e.reverse_status = "inferred", other
+        e.status, e.reverse_status = "inferred", "inferred" if e.bidirectional else None
         e.review_flags.append("inferred: no walk went directly between these two")
         return
-    visits = _closest_visits(by_id[e.source], by_id[e.target], cands)
-    src, tgt = visits if visits else ([], [])
-    forward = not src or not tgt or min(v.t_ms for v in src) < min(v.t_ms for v in tgt)
-    if forward:
-        e.status, e.reverse_status = "observed", other
-        if e.bidirectional:
-            e.review_flags.append("the way back was not walked")
-    else:
-        e.status, e.reverse_status = "inferred", "observed" if e.bidirectional else None
+    e.status = "observed" if e.walked_forward else "inferred"
+    e.reverse_status = ("observed" if e.walked_back else "inferred") if e.bidirectional else None
+    if not e.walked_forward:
         e.review_flags.append("only walked from the target to the source")
-    pts = tracks.get(e.walked_in or "", [])
-    if src and tgt and pts and len(pts[0]) >= 4:
-        if forward:
-            t_leave, t_reach = max(v.t_ms for v in src), min(v.t_ms for v in tgt)
-            dep = _circular_mean([p[3] for p in pts if t_leave < p[0] <= t_leave + TURN_WINDOW_MS and p[3] is not None])
-            arr = _heading_before(pts, t_reach)
+    elif e.bidirectional and not e.walked_back:
+        e.review_flags.append("the way back was not walked")
+    best = _best_pass(passes)
+    pts = tracks.get(best.rec_id, []) if best else []
+    dep = arr = None
+    if best and pts and len(pts[0]) >= 4:
+        leave = _circular_mean([p[3] for p in pts if best.t_leave < p[0] <= best.t_leave + TURN_WINDOW_MS
+                                and p[3] is not None])
+        reach = _heading_before(pts, best.t_reach)
+        if best.forward:
+            dep, arr = leave, reach
         else:  # walked target -> source: this direction is that walk turned around
-            t_leave, t_reach = max(v.t_ms for v in tgt), min(v.t_ms for v in src)
-            back_dep = _circular_mean([p[3] for p in pts if t_leave < p[0] <= t_leave + TURN_WINDOW_MS
-                                       and p[3] is not None])
-            back_arr = _heading_before(pts, t_reach)
-            dep = None if back_arr is None else back_arr + 180
-            arr = None if back_dep is None else back_dep + 180
-    else:
-        dep, arr = (_end_heading(e.path, False), _end_heading(e.path, True)) if len(e.path) >= 2 else (None, None)
+            dep = None if reach is None else reach + 180
+            arr = None if leave is None else leave + 180
+    elif len(e.path) >= 2:
+        dep, arr = _end_heading(e.path, False), _end_heading(e.path, True)
     e.departure_heading_deg = None if dep is None else round(dep % 360, 1)
     e.arrival_heading_deg = None if arr is None else round(arr % 360, 1)
 
@@ -367,19 +372,20 @@ def _mean_xy(views: list[View]) -> np.ndarray:
     return np.mean([(v.motion.x_m, v.motion.y_m) for v in views], axis=0)
 
 
-def _place_nodes(nodes: list[PlaceNode], cands: dict[str, Candidate]) -> dict[str, np.ndarray]:
-    """Dead-reckoned position per node: its first visit in each recording, recordings shifted onto each other
-    through the nodes they share (headings are compass-anchored, so only translation is fitted). Returns the
-    per-recording shift."""
+def align_recordings(groups: dict[str, list[View]]) -> tuple[dict[str, np.ndarray], dict[str, dict[str, np.ndarray]]]:
+    """Shift each recording's dead-reckoned frame onto a common one through what several recordings show (nodes, or
+    candidates folded across walks): headings are compass-anchored, so only translation is fitted. The recording
+    with the most groups is the reference; recordings that share nothing with the aligned ones are left out.
+    Returns (shift per recording, {recording: {group: mean position of its first visit there}})."""
     local: dict[str, dict[str, np.ndarray]] = {}
-    for n in nodes:
+    for gid, views in groups.items():
         per_rec: dict[str, list[View]] = {}
-        for v in _node_views(n, cands):
+        for v in views:
             per_rec.setdefault(v.rec_id, []).append(v)
-        for rec, views in per_rec.items():
-            local.setdefault(rec, {})[n.id] = _mean_xy(_visits(views)[0])
+        for rec, vs in per_rec.items():
+            local.setdefault(rec, {})[gid] = _mean_xy(_visits(vs)[0])
     if not local:
-        return {}
+        return {}, local
     order = sorted(local, key=lambda r: -len(local[r]))
     offsets = {order[0]: np.zeros(2)}
     progress = True
@@ -387,14 +393,21 @@ def _place_nodes(nodes: list[PlaceNode], cands: dict[str, Candidate]) -> dict[st
         progress = False
         placed = {}
         for rec, off in offsets.items():
-            for nid, xy in local[rec].items():
-                placed.setdefault(nid, []).append(xy + off)
+            for gid, xy in local[rec].items():
+                placed.setdefault(gid, []).append(xy + off)
         for rec in order:
-            shared = [nid for nid in local[rec] if nid in placed] if rec not in offsets else []
+            shared = [gid for gid in local[rec] if gid in placed] if rec not in offsets else []
             if shared:
-                offsets[rec] = np.mean([np.mean(placed[nid], axis=0) - local[rec][nid] for nid in shared], axis=0)
+                offsets[rec] = np.mean([np.mean(placed[gid], axis=0) - local[rec][gid] for gid in shared], axis=0)
                 progress = True
                 break
+    return offsets, local
+
+
+def _place_nodes(nodes: list[PlaceNode], cands: dict[str, Candidate]) -> dict[str, np.ndarray]:
+    """Dead-reckoned position per node: its first visit in each recording, recordings shifted onto each other
+    through the nodes they share. Returns the per-recording shift."""
+    offsets, local = align_recordings({n.id: _node_views(n, cands) for n in nodes})
     pos: dict[str, list] = {}
     for rec, off in offsets.items():
         for nid, xy in local[rec].items():
@@ -441,25 +454,84 @@ def _loop_closure(nodes: list[PlaceNode], cands: dict[str, Candidate], offsets: 
     return warp
 
 
-def _edge_path(e: PlaceEdge, a: PlaceNode, b: PlaceNode, cands: dict[str, Candidate], tracks: dict[str, list],
-               warp: dict, used: set[str]) -> None:
-    """Path of an edge: the stretch of a walk between the closest-in-time views of its two nodes, loop-closed."""
-    pairs = [(abs(x.t_ms - y.t_ms), x, y) for x in _node_views(a, cands) for y in _node_views(b, cands)
-             if x.rec_id == y.rec_id and x.rec_id in tracks and x.rec_id in warp]
-    if not pairs or a.position is None or b.position is None:
+@dataclass
+class Pass:
+    """One walk going directly between an edge's two nodes: consecutive on that walk's timeline of nodes."""
+
+    rec_id: str
+    left: list[View]  # the visit of the node it left
+    reached: list[View]  # the visit of the node it reached next
+    forward: bool  # source -> target (else target -> source)
+
+    @property
+    def t_leave(self) -> float:
+        return max(v.t_ms for v in self.left)
+
+    @property
+    def t_reach(self) -> float:
+        return min(v.t_ms for v in self.reached)
+
+    def walked_m(self) -> float:
+        """Between the centres of the two visits."""
+        return abs(float(np.mean([v.motion.walked_m for v in self.reached]))
+                   - float(np.mean([v.motion.walked_m for v in self.left])))
+
+
+def _node_timelines(nodes: list[PlaceNode], cands: dict[str, Candidate]) -> dict[str, list[tuple[str, list[View]]]]:
+    """Per recording, the visits of the map's nodes in time order: [(node id, the visit's views)]."""
+    out: dict[str, list[tuple[str, list[View]]]] = {}
+    for n in nodes:
+        per_rec: dict[str, list[View]] = {}
+        for v in _node_views(n, cands):
+            per_rec.setdefault(v.rec_id, []).append(v)
+        for rec, views in per_rec.items():
+            out.setdefault(rec, []).extend((n.id, visit) for visit in _visits(views))
+    for tl in out.values():
+        tl.sort(key=lambda item: item[1][0].t_ms)
+    return out
+
+
+def _passes(e: PlaceEdge, timelines: dict[str, list[tuple[str, list[View]]]]) -> list[Pass]:
+    """Every time a walk went directly between the edge's nodes, in either direction, over all the walks."""
+    out = []
+    for rec, tl in timelines.items():
+        for (a, va), (b, vb) in zip(tl, tl[1:]):
+            if (a, b) == (e.source, e.target):
+                out.append(Pass(rec, va, vb, True))
+            elif (a, b) == (e.target, e.source):
+                out.append(Pass(rec, va, vb, False))
+    return out
+
+
+def _best_pass(passes: list[Pass], video_recs: set[str] = frozenset()) -> Pass | None:
+    """The pass that stands for the edge: forward if any, then the shortest (detours and dwells are longer)."""
+    def key(p: Pass):
+        return (not p.forward, p.rec_id in video_recs, p.walked_m(), p.t_reach - p.t_leave)
+    return min(passes, key=key) if passes else None
+
+
+def _edge_walks(e: PlaceEdge, a: PlaceNode, b: PlaceNode, passes: list[Pass], tracks: dict[str, list], warp: dict,
+                video_recs: set[str]) -> None:
+    """How often each direction was walked, the measured distance (the shortest pass with step counts), and the
+    walked path of the best pass, loop-closed. No pass at all: the LLM inferred this connection."""
+    e.walked_forward = sum(p.forward for p in passes)
+    e.walked_back = len(passes) - e.walked_forward
+    ends = [p for p in (a.position, b.position) if p is not None]
+    if not passes:
+        e.walked, e.path, e.measured_distance_m = False, ends, None
         return
-    _, va, vb = min(pairs, key=lambda p: p[0])
-    lo, hi = sorted((va.t_ms, vb.t_ms))
-    e.walked_at_ms, e.walked_in = va.t_ms, va.rec_id
-    # Not walked directly if the walk passed another node in between: the LLM inferred this connection.
-    others = [v for c in cands.values() for v in c.views if v.rec_id == va.rec_id and lo < v.t_ms < hi
-              and c.id not in a.candidates and c.id not in b.candidates and c.id in used]
-    if others:
-        e.walked, e.path, e.measured_distance_m = False, [a.position, b.position], None
+    e.walked = True
+    measured = [p.walked_m() for p in passes if p.rec_id not in video_recs]
+    e.measured_distance_m = round(min(measured), 1) if measured else None
+    best = _best_pass(passes, video_recs)
+    e.walked_in = best.rec_id
+    e.walked_at_ms = best.t_leave if best.forward else best.t_reach  # when that walk was at the source
+    if best.rec_id not in tracks or best.rec_id not in warp or len(ends) < 2:
         return
-    f = warp[va.rec_id]
-    inner = [Point(x_m=px, y_m=py) for p in tracks[va.rec_id] if lo < p[0] < hi for px, py in [f(*p[:3])]]
-    if va.t_ms > vb.t_ms:
+    f = warp[best.rec_id]
+    inner = [Point(x_m=px, y_m=py) for p in tracks[best.rec_id] if best.t_leave < p[0] < best.t_reach
+             for px, py in [f(*p[:3])]]
+    if not best.forward:
         inner.reverse()  # the walk went target -> source; keep the path oriented source -> target
     e.path = [a.position, *inner, b.position]
 
@@ -524,29 +596,24 @@ def _circular_mean(degs: list[float]) -> float | None:
     return float(np.degrees(np.angle(np.exp(1j * np.radians(degs)).mean()))) if degs else None
 
 
-def _edge_turns(edges: list[PlaceEdge], by_id: dict[str, PlaceNode], cands: dict[str, Candidate],
-                tracks: dict[str, list]) -> None:
+def _edge_turns(edges: list[PlaceEdge], passes: dict[str, list[Pass]], tracks: dict[str, list]) -> None:
     """Turn when leaving each walked edge's source, from the phone's heading: the heading at the end of the source
     pass (how the previous instruction leaves you standing there) vs the heading over the next seconds of walking
     toward the target. Measuring around the node's centre instead books the turn you make while arriving at a spot
     onto leaving it. Builds without headings in tracks.json fall back to the walked paths' geometry."""
     for e in edges:
-        if not e.walked:
+        best = _best_pass([p for p in passes.get(e.id, []) if p.forward])
+        if not e.walked or best is None:  # leaving the source in this direction wasn't observed
             continue
-        visits = _closest_visits(by_id[e.source], by_id[e.target], cands)
-        pts = tracks.get(e.walked_in or "", [])
-        if visits and pts and len(pts[0]) >= 4:
-            src, tgt = visits
-            t_end, t_next = max(v.t_ms for v in src), min(v.t_ms for v in tgt)
-            if t_next <= t_end:  # walked the other way: leaving the source in this direction wasn't observed
-                continue
+        pts = tracks.get(best.rec_id, [])
+        if pts and len(pts[0]) >= 4:
+            t_end = best.t_leave
             at_end = [p for p in pts if p[0] <= t_end and p[3] is not None]
             h_end = at_end[-1][3] if at_end else None  # how you stand at the end of the pass
             # not capped at the target: on short edges the turn is made while already approaching it
             h_out = _circular_mean([p[3] for p in pts if t_end < p[0] <= t_end + TURN_WINDOW_MS and p[3] is not None])
             if h_end is not None and h_out is not None:
                 e.turn_deg = round(angle_diff(h_end, h_out))
-            continue
     if all(len(p) >= 4 for pts in tracks.values() for p in pts[:1]) and tracks:
         return
     order = sorted((e for e in edges if e.walked and e.walked_at_ms is not None and len(e.path) >= 2),
@@ -556,28 +623,6 @@ def _edge_turns(edges: list[PlaceEdge], by_id: dict[str, PlaceNode], cands: dict
             h0, h1 = _end_heading(prev.path, True), _end_heading(e.path, False)
             if h0 is not None and h1 is not None:
                 e.turn_deg = round(angle_diff(h0, h1))
-
-
-def _closest_visits(a: PlaceNode, b: PlaceNode, cands: dict[str, Candidate]) -> tuple[list[View], list[View]] | None:
-    """The visits of a and b closest in time within one recording (a node can be passed several times)."""
-    va_all, vb_all = _node_views(a, cands), _node_views(b, cands)
-    pairs = [(abs(x.t_ms - y.t_ms), x, y) for x in va_all for y in vb_all if x.rec_id == y.rec_id]
-    if not pairs:
-        return None
-    _, x, y = min(pairs, key=lambda p: p[0])
-    visit = lambda views, v: [w for w in views if w.rec_id == v.rec_id and abs(w.t_ms - v.t_ms) <= VISIT_S * 1000]
-    return visit(va_all, x), visit(vb_all, y)
-
-
-def _measured(a: PlaceNode, b: PlaceNode, cands: dict[str, Candidate], video_recs: set[str] = frozenset()
-              ) -> float | None:
-    """Walked distance between the centres of the two nodes' closest visits (not from walks without sensors: their
-    distances are guesses from time)."""
-    visits = _closest_visits(a, b, cands)
-    if not visits or visits[0][0].rec_id in video_recs:
-        return None
-    wa, wb = (float(np.mean([v.motion.walked_m for v in vs])) for vs in visits)
-    return round(abs(wa - wb), 1)
 
 
 def build_map(place: str, *, recordings_root: Path, maps_root: Path, cache_root: Path, params: SelectParams,
@@ -706,6 +751,9 @@ def publish(build_dir: Path, cset: CandidateSet, draft: MapDraft, run, recording
         draft, retired = stabilize(draft, cset, json.loads((build_dir / "previous.json").read_text()), build_id)
     pmap = finish_map(draft, cset, info, f"builds/{build_id}", tracks)
     pmap.retired = retired
+    if dropped := [f"{r.id} ({r.name})" for r in retired if r.build_id == build_id and r.kind == "node"]:
+        pmap.warnings.append(f"previous nodes not in this build (retired; their review entries wait): "
+                             f"{', '.join(dropped)}. Check the notes: a rebuild should keep them.")
     from nav import config
     from nav.mapping.quality import check_map
     from nav.mapping.references import add_references

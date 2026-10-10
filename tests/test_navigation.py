@@ -230,6 +230,80 @@ def test_routes_use_trusted_edges_in_the_walked_direction():
     assert plan_route(m, "n1", "n1") == []
 
 
+# --- a second walk in the opposite direction ----------------------------------------------------------------
+def two_walks():
+    """Walk 1 goes A -> B -> C eastwards; walk 2 starts at C and goes back westwards (its own frame starts at C).
+    The photos of the two walks don't fold (seen from the other side): the LLM joins them in nodes."""
+    def view(rec, t, x, h):
+        return View(rec_id=rec, t_ms=t * 1000, sharpness=1,
+                    motion=Motion(walked_m=abs(x), heading_deg=h, x_m=x, y_m=0, pitch_deg=0, moving=True))
+    cands = [Candidate(id="c01", image="f", reason=[], views=[view("r1", 0, 0, 90)]),
+             Candidate(id="c02", image="f", reason=[], views=[view("r1", 10, 10, 90)]),
+             Candidate(id="c03", image="f", reason=[], views=[view("r1", 20, 20, 90)]),
+             Candidate(id="c04", image="f", reason=[], views=[view("r2", 0, 0, 270)]),
+             Candidate(id="c05", image="f", reason=[], views=[view("r2", 10, -10, 270)]),
+             Candidate(id="c06", image="f", reason=[], views=[view("r2", 20, -20, 270)])]
+    tracks = {"r1": [[t * 1000, float(t), 0.0, 90.0] for t in range(21)],
+              "r2": [[t * 1000, -float(t), 0.0, 270.0] for t in range(21)]}
+    rec = lambda r: RecordingInfo(rec_id=r, created_at_utc=datetime(2026, 10, 10, tzinfo=timezone.utc),  # noqa: E731
+                                  duration_s=20, notes="", step_length_m=0.7, heading="compass", walked_m=20,
+                                  frames_sampled=20, frames_usable=20, marks=[], voice=[], timeline=[])
+    cset = CandidateSet(place="T", map_id="t", recordings=[rec("r1"), rec("r2")], candidates=cands, params={},
+                        embed_model="m")
+    return cset, tracks
+
+
+def walk_draft(nodes: list[tuple[str, list[str]]], edges: list[tuple[str, str, str]]) -> MapDraft:
+    node = lambda i, c: {"id": i, "name": f"Spot {i}", "kind": "room", "description": "", "landmarks": ["wall"],  # noqa: E731
+                         "hazards": [], "visual_cues": [], "floor": None, "candidates": c, "relations": [],
+                         "confidence": "high"}
+    edge = lambda i, a, b: {"id": i, "source": a, "target": b, "kind": "walk", "bidirectional": True,  # noqa: E731
+                            "basis": "walked", "steps": [{"action": "straight", "distance_m": 10, "along": None,
+                                                          "until": f"until {b}"}],
+                            "instruction": f"{a} to {b}", "reverse_instruction": f"{b} to {a}", "landmarks": [],
+                            "hazards": [], "visual_cues": [], "candidates": [], "confidence": "medium"}
+    return MapDraft.model_validate({"place": "T", "language": "en", "summary": "s", "notes": [],
+                                    "nodes": [node(i, c) for i, c in nodes],
+                                    "edges": [edge(i, a, b) for i, a, b in edges]})
+
+
+def test_a_walk_in_the_opposite_direction_keeps_the_map_and_confirms_it():
+    from nav.mapping.build import align_recordings
+    from nav.mapping.continuity import previous_context, stabilize
+
+    cset, tracks = two_walks()
+    first_set = cset.model_copy(update={"recordings": cset.recordings[:1], "candidates": cset.candidates[:3]})
+    first = finish_map(walk_draft([("n1", ["c01"]), ("n2", ["c02"]), ("n3", ["c03"])],
+                                  [("e1", "n1", "n2"), ("e2", "n2", "n3")]), first_set, BUILD, "b0",
+                       {"r1": tracks["r1"]})
+    assert [(e.status, e.reverse_status) for e in first.edges] == [("observed", "inferred")] * 2
+    review = Review(edges={"e2": EdgeReview(approve=True)})  # someone checked B -> C
+
+    # The rebuild: the LLM joins walk 2's frames to the nodes, with scratch ids, and writes B-C the other way round.
+    d = walk_draft([("x", ["c03", "c04"]), ("y", ["c02", "c05"]), ("z", ["c01", "c06"])],
+                   [("k", "x", "y"), ("j", "y", "z")])
+    d, retired = stabilize(d, cset, previous_context(first, first_set), "b1")
+    assert retired == [] and [n.id for n in d.nodes] == ["n3", "n2", "n1"]
+    by = {e.id: e for e in d.edges}
+    assert (by["e2"].source, by["e2"].target) == ("n2", "n3")  # turned back to the previous orientation
+    assert by["e2"].instruction == "y to x" and by["e2"].reverse_instruction == "x to y"
+    assert by["e2"].steps[0].action == "turn_around" and (by["e1"].source, by["e1"].target) == ("n1", "n2")
+
+    m = finish_map(d, cset, BUILD, "b1", tracks)
+    pos = {n.id: (n.position.x_m, n.position.y_m) for n in m.nodes}
+    assert pos == {"n1": (0, 0), "n2": (10, 0), "n3": (20, 0)}  # walk 2 shifted onto walk 1 through the nodes
+    e1, e2 = sorted(m.edges, key=lambda e: e.id)
+    assert (e2.walked_forward, e2.walked_back) == (1, 1) and (e2.status, e2.reverse_status) == ("observed",) * 2
+    assert e2.measured_distance_m == 10 and e2.departure_heading_deg == 90 and e2.arrival_heading_deg == 90
+    assert "the way back was not walked" not in e2.review_flags
+    published = apply_review(m, review)
+    assert next(e for e in published.edges if e.id == "e2").status == "verified"  # the review kept its direction
+
+    # Before the LLM: walks that share a folded frame get positions in one frame.
+    offsets, _ = align_recordings({"c03": [*cset.candidates[2].views, *cset.candidates[3].views]})
+    assert offsets["r2"].tolist() == [20, 0] and offsets["r1"].tolist() == [0, 0]
+
+
 # --- dead reckoning along a route ----------------------------------------------------------------------------
 def test_step_detector_counts_a_walk():
     t, acc = walking_accel(seconds=20, cadence=1.8)

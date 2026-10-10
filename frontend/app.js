@@ -252,9 +252,9 @@ async function start() {
   btn.disabled = true;
   msg.textContent = "";
   let video = null, audio = null;
-  const place = $("place").value.trim();
+  const place = $("place-pick").value || $("place").value.trim();
   if (!place) {
-    msg.textContent = "Enter the place you are mapping.";
+    msg.textContent = "Pick the place, or name the new place you are mapping.";
     $("place").focus();
     btn.disabled = false;
     return;
@@ -383,7 +383,16 @@ async function stop() {
 async function loadRecent() {
   const pr = await api("GET", "/places").catch(() => null);
   if (pr?.ok) {
-    $("places").replaceChildren(...(await pr.json()).map((p) => Object.assign(document.createElement("option"), { value: p.place })));
+    // Places newest first; the one picked last on this phone (or the newest) is preselected, so a new walk of the
+    // same building joins its map without typing (a typo would start a separate map).
+    const places = await pr.json(), pick = $("place-pick");
+    let last = null;
+    try { last = localStorage.getItem("nav.place"); } catch {}
+    pick.replaceChildren(...places.map((p) => Object.assign(document.createElement("option"), {
+      value: p.place, textContent: `${p.place} (${p.recordings} walk${p.recordings === 1 ? "" : "s"})` })),
+      Object.assign(document.createElement("option"), { value: "", textContent: "New place…" }));
+    pick.value = places.some((p) => p.place === last) ? last : places[0]?.place ?? "";
+    placeChanged();
   }
   const r = await api("GET", "/recordings").catch(() => null);
   if (!r?.ok) return;
@@ -396,7 +405,15 @@ async function loadRecent() {
   }));
 }
 
+function placeChanged() {
+  const isNew = !$("place-pick").value;
+  $("place").hidden = !isNew;
+  try { if (!isNew) localStorage.setItem("nav.place", $("place-pick").value); } catch {}
+}
+
 // --- wiring ------------------------------------------------------------------------------------------------
+$("place-pick").onchange = () => { placeChanged(); if (!$("place-pick").value) $("place").focus(); };
+placeChanged();
 $("start").onclick = start;
 $("stop").onclick = stop;
 $("again").onclick = () => { $("done").hidden = true; $("setup").hidden = false; $("done-summary").textContent = ""; loadRecent(); };

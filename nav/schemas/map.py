@@ -187,6 +187,10 @@ class Motion(BaseModel):
     y_m: float
     pitch_deg: float | None  # camera elevation: 0 = level, + up, - down
     moving: bool
+    # the same position in a frame shared by the walks (aligned through frames they share); None when this walk
+    # shares none with the others
+    map_x_m: float | None = None
+    map_y_m: float | None = None
 
 
 class View(BaseModel):
@@ -233,6 +237,7 @@ class RecordingInfo(BaseModel):
     heading: str | None = None  # compass (north-referenced) | gyro (relative to the start) | video | none
     fov_deg: float | None = None  # horizontal field of view of the video (calibrated, or the default)
     video_offset_ms: float = 0  # subtracted from video times to put frames on the sensor clock (calibrated)
+    aligned: bool | None = None  # its views have map_x_m / map_y_m (it shares frames with the other walks)
     walked_m: float
     frames_sampled: int
     frames_usable: int
@@ -367,6 +372,8 @@ class PlaceEdge(MapEdge):
     departure_heading_deg: float | None = None  # walking direction when leaving the source (map frame)
     arrival_heading_deg: float | None = None  # walking direction when reaching the target
     reference_views: list[str] = []  # outgoing ReferenceImage ids along this edge
+    walked_forward: int | None = None  # walks that went source -> target directly (None: built before this was counted)
+    walked_back: int | None = None  # ... and target -> source
 
 
 class LlmRun(BaseModel):

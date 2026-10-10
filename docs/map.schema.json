@@ -567,6 +567,30 @@
      },
      "title": "Reference Views",
      "type": "array"
+    },
+    "walked_forward": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Walked Forward"
+    },
+    "walked_back": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Walked Back"
     }
    },
    "required": [

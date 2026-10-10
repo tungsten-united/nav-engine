@@ -282,7 +282,8 @@ function pinCard() {
     e.walked === false && h("p", { class: "hint" }, "Not walked directly: the walk passed other spots in between, so this connection is inferred."),
     h("dl", { class: "kv" }, h("dt", {}, "Distance"), h("dd", {}, e.measured_distance_m != null ? `${fmtM(e.measured_distance_m)} (measured)` :
         e.distance_m != null ? `${fmtM(e.distance_m)} (from the steps, not measured)` : "unknown"),
-      h("dt", {}, "Basis"), h("dd", {}, e.walked === false ? "inferred (not walked directly)" : "walked"),
+      h("dt", {}, "Basis"), h("dd", {}, e.walked === false ? "inferred (not walked directly)" :
+        e.walked_forward != null ? `walked ${e.walked_forward}× →, ${e.walked_back}× ←` : "walked"),
       S.turns.has(e.id) && [h("dt", {}, "Turn"), h("dd", {}, turnText(S.turns.get(e.id), true))],
       e.departure_heading_deg != null && [h("dt", {}, "Heading"), h("dd", {}, `leave ${headingText(e.departure_heading_deg)}` +
         (e.arrival_heading_deg != null ? `, arrive ${headingText(e.arrival_heading_deg)}` : ""))]),

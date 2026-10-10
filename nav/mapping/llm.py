@@ -50,11 +50,19 @@ people. The app will use it to tell people where they are and to give spoken, st
 - The walker's voice notes and tags are ground truth about what is where: name things with their words, and make
   a tagged door, junction, stairs or lift a node unless the photos clearly contradict it. Transcripts can contain
   speech-recognition mistakes; read them with the photos.
-- A node is one spot you can stand at, not a whole row or zone. Each view has a dead-reckoned position
-  (`views[].motion.x_m`, `y_m`, in metres, drifting a few metres per minute of walking). Two passes more than
-  about 15 m apart are two nodes joined by an edge, even if they look alike or the walker says "the same tables
-  from another angle" (that means the far end of the same row). Merge passes into one node only when the photos show
-  the same spot and the positions roughly agree.
+- A node is one spot you can stand at, not a whole row or zone. Each view has a dead-reckoned position in its own
+  walk (`views[].motion.x_m`, `y_m`, in metres from where that walk started, drifting a few metres per minute of
+  walking), and in a frame shared by the walks (`map_x_m`, `map_y_m`) when its walk shares frames with the others
+  (`recordings[].aligned`); null otherwise. Compare positions within one walk with x/y, across walks only with
+  map_x/map_y. Two passes more than about 15 m apart are two nodes joined by an edge, even if they look alike or the
+  walker says "the same tables from another angle" (that means the far end of the same row). Merge passes into one
+  node only when the photos show the same spot and the positions (where comparable) roughly agree.
+- Walks can start anywhere and cross the place in another order or the opposite direction. The same spot is then
+  seen from the other side, so its photos rarely look alike and are seldom folded into one candidate. Recognise it
+  from the walker's words and tags (each walk says where it starts), the order of places on the timelines (a walk
+  in the opposite direction passes them in reverse order), the distances and turns between them, and fixed things
+  seen from both sides; then make it one node that cites the candidates of every walk. A walk that goes the
+  other way along an existing connection is the same edge walked back, not a new edge.
 
 ## Edges
 - Connectivity comes from the timelines. `basis` is "walked" when a walk went from the source's frames to the
@@ -115,6 +123,9 @@ walks are still in the candidates). For each previous node, `candidates` lists t
 frames now (ignore `evidence`, it is for code).
 - Keep the previous map where the evidence still supports it: the same nodes with the same names and kinds, citing
   those candidates, and the same connections. People already know the place by these names.
+- Keep each previous edge's `source` and `target` as they were, even when a new walk went the other way: describe
+  that way in `reverse_instruction`. New walks of the same spots go into the existing nodes (add their candidates),
+  so the map gains evidence, not duplicates.
 - Add nodes and edges for what is new: spots only the new walks reach, or that the previous map missed.
 - Merge, split, rename or drop a previous node only when the photos, voice notes or positions show it was wrong, and
   say what changed and why in `notes`.

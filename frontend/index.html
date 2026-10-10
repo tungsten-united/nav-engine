@@ -15,10 +15,12 @@
     <p class="hint">Walk around freely and pass by every spot that should be on the map, in any order.
       Hold the phone upright with the rear camera facing forward.
       Hold <b>Talk</b> to describe where you are, or tap it to start and tap again to stop.
-      Tap a tag whenever you pass one. Several walks of the same place build one map.</p>
-    <label for="place">Place</label>
-    <input id="place" type="text" placeholder="Office, 3rd floor" autocomplete="off" list="places" required>
-    <datalist id="places"></datalist>
+      Tap a tag whenever you pass one. Every walk of a place adds to its map: pick the place, start anywhere, walk
+      in any direction, and say where you start.</p>
+    <label for="place-pick">Place</label>
+    <select id="place-pick"><option value="">New place…</option></select>
+    <input id="place" type="text" placeholder="Name of the new place, e.g. Office, 3rd floor" autocomplete="off"
+      aria-label="New place name" hidden>
     <label for="holding">Phone position</label>
     <select id="holding">
       <option value="handheld_portrait">In hand, upright</option>
@@ -28,7 +30,7 @@
       <option value="other">Other</option>
     </select>
     <label for="notes">Notes (optional)</label>
-    <input id="notes" type="text" placeholder="Started at the main entrance" autocomplete="off">
+    <input id="notes" type="text" placeholder="Where you start, e.g. at the main entrance" autocomplete="off">
     <label for="step">Step length (m)</label>
     <input id="step" type="number" min="0.3" max="1.2" step="0.05" value="0.7" inputmode="decimal">
     <button id="start" class="big">Start recording</button>

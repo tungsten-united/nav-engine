@@ -113,7 +113,9 @@ curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret:
 
 ## Maps
 
-Every walk of a place feeds one **semantic topological map** of that place: nodes are spots worth naming (entrance,
+Every walk of a place feeds one **semantic topological map** of that place (the phone app's **Place** dropdown picks
+an existing place, so a new walk joins its map; walks may start anywhere and go in any direction: say where you
+start): nodes are spots worth naming (entrance,
 doors, junctions, rooms, areas, stairs, lifts, destinations, landmarks), and edges are walkable connections with
 spoken, egocentric instructions both ways. The format is in [`nav/schemas/map.py`](nav/schemas/map.py).
 
@@ -171,6 +173,11 @@ uv run nav map pull [<map_id> …]
    When the place already has a map, it goes into the build as `previous.json` (each old node with the new
    candidates that show its frames) and the LLM is told to keep it where the evidence holds: same nodes, names and
    connections, adding what is new and explaining any merge, split or drop in `notes`.
+   **More walks of a place** improve the same map rather than making a new one. Walks are aligned before the LLM
+   (`map_x_m` / `map_y_m` on each view) through candidates folded across them; a walk in the opposite direction
+   usually shares none (spots seen from the other side don't look alike), so the LLM joins its frames to the
+   existing nodes from the walker's words, the reverse order of places on its timeline, distances and turns, and is
+   told to keep every previous edge's direction (code turns an edge written the other way back).
 4. **Finish**: **stable ids** ([`continuity.py`](nav/mapping/continuity.py)): code, not the LLM, assigns them. A node
    that shares the most evidence frames with a previous node (same recording, within 3 s) keeps its id, new nodes
    get the next unused number, edges keep theirs when they join the same two nodes, and ids that disappear go to
@@ -182,6 +189,9 @@ uv run nav map pull [<map_id> …]
    for drawing. Edges no walk went along directly (it passed other nodes in between) are marked inferred. Code
    derives each edge's reverse steps and checks its first step against the turn the walk made leaving the source
    (heading at the end of the source pass vs the next 6 s of walking).
+   Edges use **every walk** that went directly between their nodes: `walked_forward` / `walked_back` counts, each
+   direction `observed` once walked, the measured distance is the shortest pass, the path and headings come from
+   the best one. A rebuild that drops a previous node says so in `warnings`.
    For the navigation side ([`docs/navigation_stack.md`](docs/navigation_stack.md)) it also stores: each direction's
    **status** (`observed`: a walk went that way; `inferred`: deduced, e.g. the way back) and the walking heading
    when leaving the source and reaching the target (map frame, compass-referenced: `frame`); **relations** (the
