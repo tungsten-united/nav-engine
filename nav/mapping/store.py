@@ -26,10 +26,11 @@ class MapStore:
             raise NotFound(map_id)
         return PlaceMap.model_validate_json(path.read_text())
 
-    def summaries(self) -> list[MapSummary]:
+    def summaries(self, get=None) -> list[MapSummary]:
+        """`get`: how to read a map (default: parse its map.json; nav-api passes its cache)."""
         out = []
         for d in sorted(self.root.glob("*/map.json")) if self.root.is_dir() else []:
-            m = self.get(d.parent.name)
+            m = (get or self.get)(d.parent.name)
             out.append(MapSummary(map_id=m.map_id, place=m.place, built_at_utc=m.build.built_at_utc,
                                   recordings=len(m.recordings), nodes=len(m.nodes), edges=len(m.edges)))
         return sorted(out, key=lambda s: s.built_at_utc, reverse=True)

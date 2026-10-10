@@ -65,8 +65,10 @@ class InferenceClient:
         attempt, last = 0, ""
         while True:
             wait = None
+            left = max(1.0, end - time.monotonic())  # no single request outlives the deadline
             try:
-                r = self.http.request(method, path, **kw)
+                r = self.http.request(method, path, timeout=httpx.Timeout(min(95.0, left), connect=min(10.0, left)),
+                                      **kw)
             except httpx.TransportError as e:  # connect/read errors and timeouts: the host may be down or restarting
                 last = f"{type(e).__name__}: {e}"
             else:
@@ -88,25 +90,33 @@ class InferenceClient:
             log.info("inference host: %s; retrying %s %s in %.0f s", last, method, path, wait)
             self._sleep(wait)
 
-    def health(self) -> dict:
-        return self._send("GET", "/infer/v1/health", deadline_s=30).json()
+    def health(self, deadline_s: float = 30) -> dict:
+        return self._send("GET", "/infer/v1/health", deadline_s=deadline_s).json()
 
     # --- models ---------------------------------------------------------------------------------------------------
-    def _vectors(self, endpoint: str, paths: list[Path], model: str) -> np.ndarray:
+    def _vectors(self, endpoint: str, images: list[tuple[str, bytes]], model: str, live: bool = False,
+                 deadline_s: float | None = None) -> np.ndarray:
         out = []
-        for i in range(0, len(paths), MAX_IMAGES):
-            files = [("images", (p.name, p.read_bytes(), "image/jpeg")) for p in paths[i:i + MAX_IMAGES]]
-            j = self._send("POST", f"/infer/v1/{endpoint}", data={"model": model}, files=files).json()
+        data = {"model": model, **({"priority": "live"} if live else {})}
+        for i in range(0, len(images), MAX_IMAGES):
+            files = [("images", (name, content, "image/jpeg")) for name, content in images[i:i + MAX_IMAGES]]
+            j = self._send("POST", f"/infer/v1/{endpoint}", deadline_s=deadline_s, data=data, files=files).json()
             if j["model"] != model or j["n"] != len(files):
                 raise InferenceError(f"{endpoint}: asked {len(files)} x {model}, got {j['n']} x {j['model']}")
             out.append(np.frombuffer(base64.b64decode(j["data"]), dtype="<f4").reshape(j["n"], j["dim"]))
         return np.concatenate(out).astype(np.float32) if out else np.zeros((0, 0), np.float32)
 
     def embed(self, paths: list[Path], model: str) -> np.ndarray:
-        return self._vectors("embed", paths, model)
+        return self._vectors("embed", [(p.name, p.read_bytes()) for p in paths], model)
 
     def place(self, paths: list[Path], model: str) -> np.ndarray:
-        return self._vectors("place", paths, model)
+        return self._vectors("place", [(p.name, p.read_bytes()) for p in paths], model)
+
+    def place_live(self, images: list[bytes], model: str, deadline_s: float) -> np.ndarray:
+        """Place embeddings of live camera frames (JPEG bytes) for nav-api: ahead of queued map-build calls on the
+        host, and given up after `deadline_s` (InferenceUnavailable) rather than keeping a walking user waiting."""
+        return self._vectors("place", [(f"live{i}.jpg", b) for i, b in enumerate(images)], model, live=True,
+                             deadline_s=deadline_s)
 
     def match(self, paths: list[Path], pairs: list[tuple[int, int]]) -> list[int]:
         out = [0] * len(pairs)

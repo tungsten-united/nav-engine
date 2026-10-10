@@ -15,7 +15,7 @@ from nav.mapping.motion import RATE_HZ, angle_diff, load_motion
 from nav.mapping.select import Frame, SelectParams, group_frames, mark_usable, select_in_recording
 from nav.mapping.verify import candidate_pairs, match_pairs
 from nav.mapping.store import MapStore
-from nav.recorder.app import create_app
+from nav.map_api.app import create_app
 from nav.recorder.store import RecordingStore
 from nav.schemas.map import (
     BuildInfo,

@@ -6,13 +6,13 @@ Access is the gate (the worker sends the service token), so the app has no auth 
 
 It shares one GPU with whatever else runs on this computer, so it protects itself:
 - one model call at a time (a single GPU slot), at most NAV_INFER_QUEUE requests waiting; beyond that 503 with
-  Retry-After, which the client honours;
+  Retry-After, which the client honours; live localization frames (nav-api) jump the queue of map-build calls;
 - hard caps per request (images, pairs, bytes), so every request finishes well inside Cloudflare's 100 s;
 - one Claude Code job at a time, at most NAV_INFER_JOB_QUEUE waiting; jobs are submitted and polled, never held open.
 
     GET  /infer/v1/health
     POST /infer/v1/embed       images[] (JPEG), model          -> {model, n, dim, data: base64 float32}
-    POST /infer/v1/place       images[] (JPEG), model          -> same, MegaLoc
+    POST /infer/v1/place       images[] (JPEG), model, priority? -> same, MegaLoc (priority=live: ahead of batches)
     POST /infer/v1/match       images[] (JPEG), pairs: [[i,j]] -> {inliers: [...]}
     POST /infer/v1/transcribe  audio, model                    -> {text}
     POST /infer/v1/jobs/map-draft   job_id, place, language, model, effort, budget_usd, candidates, previous?, frames[]
@@ -30,6 +30,7 @@ import tempfile
 import threading
 import time
 import queue as queue_mod
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Protocol
@@ -103,22 +104,62 @@ class Busy(Exception):
 
 
 class GpuSlot:
-    """One model call at a time; at most `queue` more waiting, the rest are turned away (503)."""
+    """One model call at a time; at most `queue` more waiting, the rest are turned away (503).
 
-    def __init__(self, queue: int):
-        self.queue = queue
-        self.pending = 0  # running + waiting
-        self._sem = asyncio.Semaphore(1)
+    Live calls (a walking user's camera frame, from nav-api) go ahead of every waiting batch call (map builds) and have
+    their own `live_queue` places, so they only ever wait for the call that is running and for other live calls."""
 
-    async def run(self, fn: Callable, *args):
-        if self.pending >= 1 + self.queue:
+    def __init__(self, queue: int, live_queue: int = 2):
+        self.queue, self.live_queue = queue, live_queue
+        self.pending = 0  # batch calls running + waiting
+        self.live_pending = 0  # live calls running + waiting
+        self._busy = False
+        self._waiting: dict[bool, deque[asyncio.Future]] = {True: deque(), False: deque()}
+
+    async def run(self, fn: Callable, *args, live: bool = False):
+        if live and self.live_pending >= 1 + self.live_queue:
+            raise Busy(retry_after=1)
+        if not live and self.pending >= 1 + self.queue:
             raise Busy(retry_after=min(30, 2 * self.pending))
-        self.pending += 1
+        if live:
+            self.live_pending += 1
+        else:
+            self.pending += 1
         try:
-            async with self._sem:
+            await self._acquire(live)
+            try:
                 return await run_in_threadpool(fn, *args)
+            finally:
+                self._release()
         finally:
-            self.pending -= 1
+            if live:
+                self.live_pending -= 1
+            else:
+                self.pending -= 1
+
+    async def _acquire(self, live: bool) -> None:
+        if not self._busy and not any(self._waiting.values()):
+            self._busy = True
+            return
+        fut = asyncio.get_running_loop().create_future()
+        self._waiting[live].append(fut)
+        try:
+            await fut  # _release hands the slot over by resolving it (_busy stays True)
+        except asyncio.CancelledError:
+            if fut in self._waiting[live]:
+                self._waiting[live].remove(fut)
+            elif fut.done() and not fut.cancelled():
+                self._release()  # it was handed over just as this call was cancelled: pass it on
+            raise
+
+    def _release(self) -> None:
+        for waiting in (self._waiting[True], self._waiting[False]):
+            while waiting:
+                fut = waiting.popleft()
+                if not fut.done():
+                    fut.set_result(None)
+                    return
+        self._busy = False
 
 
 def _write_atomic(path: Path, data: bytes) -> None:
@@ -256,7 +297,7 @@ def create_infer_app(backend: Backend | None = None, jobs_dir: Path | None = Non
     def health() -> dict:
         torch = sys.modules.get("torch")  # only reported once a model has loaded it
         gpu_name = torch.cuda.get_device_name(0) if torch is not None and torch.cuda.is_available() else None
-        return {"ok": True, "models": backend.models, "gpu": gpu_name, "gpu_pending": gpu.pending,
+        return {"ok": True, "models": backend.models, "gpu": gpu_name, "gpu_pending": gpu.pending, "gpu_live_pending": gpu.live_pending,
                 "gpu_queue": gpu.queue, "jobs_pending": jobs.pending, "jobs_queue": jobs.queue}
 
     @app.post(f"{api}/embed")
@@ -266,10 +307,11 @@ def create_infer_app(backend: Backend | None = None, jobs_dir: Path | None = Non
         return vectors(model, await gpu.run(backend.embed, data, model))
 
     @app.post(f"{api}/place")
-    async def place(model: str = Form(...), images: list[UploadFile] = File(...)) -> dict:
+    async def place(model: str = Form(...), images: list[UploadFile] = File(...), priority: str = Form("batch")) -> dict:
+        """priority=live: a camera frame of someone walking (nav-api), served before waiting map-build calls."""
         check_model("place", model)
         data = await read_images(images, MAX_IMAGES)
-        return vectors(model, await gpu.run(backend.place, data, model))
+        return vectors(model, await gpu.run(backend.place, data, model, live=priority == "live"))
 
     @app.post(f"{api}/match")
     async def match(pairs: str = Form(...), images: list[UploadFile] = File(...)) -> dict:

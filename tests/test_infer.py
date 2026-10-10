@@ -17,6 +17,8 @@ from nav.mapping.build import run_llm_on_build
 from test_mapping import candidate_set, draft
 
 MODELS = {"embed": "dino", "place": "megaloc", "transcribe": "whisper"}
+# The client bounds each request by its deadline; Starlette's TestClient (standing in for the network) ignores that.
+pytestmark = pytest.mark.filterwarnings("ignore:You should not use the 'timeout' argument")
 
 
 class Stub:
@@ -196,3 +198,65 @@ def test_map_job_through_the_host_lands_like_a_local_run(host, tmp_path, monkeyp
     stub.release.set()
     assert http.get("/infer/v1/jobs/nope").status_code == 404
     assert http.get("/infer/v1/jobs/a/files/../../etc").status_code == 404
+
+
+def test_gpu_slot_serves_live_calls_before_waiting_batches():
+    async def main():
+        slot = GpuSlot(queue=4, live_queue=1)
+        gate, order = threading.Event(), []
+
+        def work(name):
+            if name == "build-1":
+                gate.wait(2)
+            order.append(name)
+            return name
+
+        first = asyncio.create_task(slot.run(work, "build-1"))
+        await asyncio.sleep(0.05)
+        batch = [asyncio.create_task(slot.run(work, f"build-{i}")) for i in (2, 3)]
+        await asyncio.sleep(0.05)
+        live = asyncio.create_task(slot.run(work, "live", live=True))
+        await asyncio.sleep(0.05)
+        assert slot.live_pending == 1
+        extra = asyncio.create_task(slot.run(work, "live-2", live=True))  # one more may wait
+        await asyncio.sleep(0.05)
+        with pytest.raises(Busy):  # the live lane is full; the batch queue is not what limits it
+            await slot.run(work, "live-3", live=True)
+        gate.set()
+        await asyncio.gather(first, live, extra, *batch)
+        assert order == ["build-1", "live", "live-2", "build-2", "build-3"]
+        assert slot.pending == slot.live_pending == 0 and not slot._busy
+
+    asyncio.run(main())
+
+
+def test_gpu_slot_survives_a_cancelled_waiter():
+    async def main():
+        slot = GpuSlot(queue=2)
+        gate = threading.Event()
+        first = asyncio.create_task(slot.run(lambda: gate.wait(2)))
+        await asyncio.sleep(0.05)
+        waiter = asyncio.create_task(slot.run(lambda: "never"))
+        await asyncio.sleep(0.05)
+        waiter.cancel()
+        gate.set()
+        await first
+        assert await slot.run(lambda: "next") == "next" and slot.pending == 0
+
+    asyncio.run(main())
+
+
+def test_live_frames_go_in_the_live_lane(host):
+    stub, client, http = host
+    gpu, seen = http.app.state.gpu, []
+    place = stub.place
+
+    def spy(images, model):
+        seen.append((gpu.live_pending, gpu.pending))
+        return place(images, model)
+
+    stub.place = spy
+    v = client.place_live([b"abc", b"de"], "megaloc", deadline_s=2)
+    assert v.shape == (2, 3) and v[:, 2].tolist() == [3, 2]
+    client.place([p for p in frames(http.app.state.jobs.root.parent, 1)], "megaloc")
+    assert seen == [(1, 0), (0, 1)]

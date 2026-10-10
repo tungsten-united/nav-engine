@@ -57,3 +57,16 @@ INFER_PORT = int(os.environ.get("NAV_INFER_PORT", "8451"))
 INFER_JOBS_DIR = Path(os.environ.get("NAV_INFER_JOBS_DIR", DATA_DIR / "infer-jobs")).resolve()
 INFER_QUEUE = int(os.environ.get("NAV_INFER_QUEUE", "4"))  # model requests waiting for the GPU before 503
 INFER_JOB_QUEUE = int(os.environ.get("NAV_INFER_JOB_QUEUE", "2"))  # map jobs waiting behind the running one
+
+# Which service `nav serve` runs: map-api (recordings, map builds, review, the debugging frontend) or nav-api (the
+# live side for the app: published maps, routes, localization; read-only on the data).
+APP = os.environ.get("NAV_APP", "map-api")
+NAV_API_PORT = int(os.environ.get("NAV_NAV_API_PORT", "8452"))  # local default of `nav serve --app nav-api`
+# nav-api: where the debugging frontend lives (old bookmarks of /, /dash/ ... on nav-api's URL are sent there).
+FRONTEND_URL = (os.environ.get("NAV_FRONTEND_URL") or "").rstrip("/") or None
+LIVE_INFER_DEADLINE_S = float(os.environ.get("NAV_LIVE_INFER_DEADLINE_S", "8"))  # a live frame fails fast
+MAP_RELOAD_S = float(os.environ.get("NAV_MAP_RELOAD_S", "30"))  # how often nav-api checks for a newly published map
+# Localization status (nav/navigation/localize.py): placeholders until tuned on venue images.
+LOC_CONFIRM_SCORE = float(os.environ.get("NAV_LOC_CONFIRM_SCORE", "0.6"))
+LOC_CONFIRM_MARGIN = float(os.environ.get("NAV_LOC_CONFIRM_MARGIN", "0.05"))
+LOC_LOST_SCORE = float(os.environ.get("NAV_LOC_LOST_SCORE", "0.45"))

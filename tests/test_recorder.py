@@ -5,7 +5,7 @@ import pyarrow.parquet as pq
 import pytest
 from fastapi.testclient import TestClient
 
-from nav.recorder.app import create_app
+from nav.map_api.app import create_app
 from nav.recorder.store import RecordingStore
 
 API = "/api/v1"
@@ -154,7 +154,7 @@ def test_web_app_served(client):
     r = client.get("/")
     assert r.status_code == 200 and "Nav Recorder" in r.text
     assert client.get("/app.js").status_code == 200
-    assert client.get(f"{API}/health").json() == {"ok": True, "schema_version": 1}
+    assert client.get(f"{API}/health").json() == {"ok": True, "service": "map-api", "schema_version": 1}
 
 
 def test_dashboard_served(client):

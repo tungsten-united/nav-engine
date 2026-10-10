@@ -9,6 +9,7 @@ dependencies = [
     "pydantic>=2.8",
     "pyarrow>=17",
     "typer>=0.12",
+    "python-multipart>=0.0.9",  # form uploads: nav-api's live frames, the inference host
 ]
 
 [project.scripts]
@@ -34,7 +35,6 @@ models = [
     "torchvision>=0.23",
     "transformers>=4.56",
     "accelerate>=1.0",
-    "python-multipart>=0.0.9",
     # Same-place check between frames (ALIKED + LightGlue). Not on PyPI; pinned commit.
     "lightglue @ git+https://github.com/cvg/LightGlue@eb42fee2d71449efb0aa5c10549752b5d75384d8",
 ]
