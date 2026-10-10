@@ -513,6 +513,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "pyarrow" },
     { name = "pydantic" },
+    { name = "python-multipart" },
     { name = "typer" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -534,7 +535,6 @@ map = [
 models = [
     { name = "accelerate" },
     { name = "lightglue" },
-    { name = "python-multipart" },
     { name = "torch" },
     { name = "torchvision" },
     { name = "transformers" },
@@ -545,6 +545,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "pyarrow", specifier = ">=17" },
     { name = "pydantic", specifier = ">=2.8" },
+    { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "typer", specifier = ">=0.12" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
@@ -566,7 +567,6 @@ map = [
 models = [
     { name = "accelerate", specifier = ">=1.0" },
     { name = "lightglue", git = "https://github.com/cvg/LightGlue?rev=eb42fee2d71449efb0aa5c10549752b5d75384d8" },
-    { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "torch", specifier = ">=2.8", index = "https://download.pytorch.org/whl/cu128" },
     { name = "torchvision", specifier = ">=0.23", index = "https://download.pytorch.org/whl/cu128" },
     { name = "transformers", specifier = ">=4.56" },

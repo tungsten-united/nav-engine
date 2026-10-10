@@ -18,7 +18,7 @@ from nav.mapping.select import SelectParams
 from nav.mapping.store import MapStore
 from nav.navigation.pdr import GraphTracker, StepDetector, detect_steps
 from nav.navigation.route import Hop, plan_route
-from nav.recorder.app import create_app
+from nav.map_api.app import create_app
 from nav.recorder.store import RecordingStore
 from nav.schemas.map import (
     BuildInfo,

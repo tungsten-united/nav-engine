@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from nav.mapping.store import MapStore
-from nav.recorder.app import create_app
+from nav.map_api.app import create_app
 from nav.recorder.store import RecordingStore
 from test_recorder import API, CREATE, create, finish, upload, webm  # noqa: F401 (webm is a fixture)
 
@@ -127,7 +127,7 @@ def _no_env_settings(monkeypatch):
 
 
 def test_large_files_are_served_in_ranges_under_the_cloud_run_cap(tmp_path, monkeypatch):
-    monkeypatch.setattr("nav.recorder.app.MAX_RESPONSE", 1000)
+    monkeypatch.setattr("nav.web.MAX_RESPONSE", 1000)
     data = bytes(range(256)) * 20  # 5120 bytes
     with TestClient(app(tmp_path)) as c:
         rec_id = create(c)
@@ -144,3 +144,16 @@ def test_large_files_are_served_in_ranges_under_the_cloud_run_cap(tmp_path, monk
         assert whole.status_code == 200 and whole.content == data and "content-length" not in whole.headers
         small = c.get(f"{API}/recordings/{rec_id}/files/manifest.json")
         assert small.status_code == 200 and small.json()["rec_id"] == rec_id
+
+
+def test_localization_and_navigation_pages_are_served_with_hashed_assets(tmp_path):
+    with TestClient(app(tmp_path, api_token="s3cret")) as c:
+        loc = c.get("/loc/")
+        assert loc.status_code == 200 and "Nav Localize" in loc.text
+        assert 'src="../config.js?v=' in loc.text and 'src="loc-core.js?v=' in loc.text and 'href="loc.css?v=' in loc.text
+        nav = c.get("/nav/")
+        assert nav.status_code == 200 and "Nav Navigate" in nav.text
+        assert 'src="../loc/loc-core.js?v=' in nav.text and 'src="nav.js?v=' in nav.text
+        assert 'href="../loc/loc.css?v=' in nav.text
+        assert c.get("/nav", follow_redirects=False).headers["location"] == "/nav/"
+        assert c.get("/loc/loc-core.js").status_code == 200 and c.get("/nav/nav.js").status_code == 200

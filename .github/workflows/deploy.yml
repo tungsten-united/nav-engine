@@ -1,9 +1,9 @@
-# Deploy nav-api to Cloud Run (tungsten-united, europe-southwest1) from main.
+# Deploy map-api and nav-api to Cloud Run (tungsten-united, europe-southwest1) from main: one image, map-api first.
 #
 #   git tag v0.2.0 origin/main && git push origin v0.2.0     # or: Actions > Deploy > Run workflow (on main)
 #
 # Only commits on main deploy: a tag on any other commit stops before touching Google Cloud. Tests run first, then
-# deploy/cloudrun.sh builds the Dockerfile, pushes it to Artifact Registry and deploys, exactly as from a laptop.
+# deploy/cloudrun.sh builds the Dockerfile, pushes it to Artifact Registry and deploys both, exactly as from a laptop.
 # Google auth is keyless (GitHub OIDC -> workload identity pool "github" -> nav-deployer); setup in README.md,
 # "Deployment". Secrets stay in Secret Manager; this workflow never sees them. Helium's nav-infer is not touched.
 name: Deploy
@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-nav-api
+  group: deploy-cloud-run
   cancel-in-progress: false
 
 jobs:
@@ -28,7 +28,7 @@ jobs:
           version: "0.11.16"
       # No torch: the models run on the inference host; their tests use fakes.
       - run: uv sync --frozen --no-default-groups --group dev --group map
-      - run: uv run --no-sync --with python-multipart pytest -q
+      - run: uv run --no-sync pytest -q
 
   deploy:
     needs: test
@@ -54,9 +54,11 @@ jobs:
           service_account: nav-deployer@tungsten-united.iam.gserviceaccount.com
       - uses: google-github-actions/setup-gcloud@v2
       - name: Deploy
-        run: deploy/cloudrun.sh deploy | tee url.txt
+        run: deploy/cloudrun.sh deploy all
       - name: Smoke test
         run: |
-          URL=$(tail -n1 url.txt)
-          curl -fsS "$URL/api/v1/health" | tee /dev/stderr | grep -q '"ok":true'
-          echo "Deployed $GITHUB_REF_NAME (${GITHUB_SHA::7}) to $URL" >> "$GITHUB_STEP_SUMMARY"
+          for svc in map-api nav-api; do
+            URL=$(deploy/cloudrun.sh url "$svc")
+            curl -fsS "$URL/api/v1/health" | tee /dev/stderr | grep -q "\"service\":\"$svc\""
+            echo "Deployed $GITHUB_REF_NAME (${GITHUB_SHA::7}): $svc at $URL" >> "$GITHUB_STEP_SUMMARY"
+          done

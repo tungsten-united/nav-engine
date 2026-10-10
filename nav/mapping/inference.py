@@ -50,6 +50,15 @@ def place_files(paths: Sequence[Path | str], model: str) -> np.ndarray:
     return embed_places([load_rgb(p) for p in paths], model)
 
 
+def place_live(images: Sequence[bytes], model: str, deadline_s: float) -> np.ndarray:
+    """MegaLoc place embeddings of live camera frames (JPEG bytes), for nav-api."""
+    if client := remote():
+        return client.place_live(list(images), model, deadline_s)
+    from nav.mapping.models import embed_places
+
+    return embed_places([load_rgb(b) for b in images], model)
+
+
 def local_pair_inliers(images: Sequence[ImageSource], pairs: Sequence[tuple[int, int]]) -> list[int]:
     """ALIKED + LightGlue inliers for each (i, j) pair of images; each image's features are extracted once."""
     from nav.mapping.models import count_inliers, local_features

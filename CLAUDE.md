@@ -1,16 +1,24 @@
 # nav-engine
 
 Navigation engine for a blind-navigation app. The **recorder** (phone web app + API) captures free walks through a
-place; the **map pipeline** turns all walks of a place into one semantic topological map. Next: localization.
+place; the **map pipeline** turns all walks of a place into one semantic topological map; **nav-api** serves the
+live side (maps, routes, localization) to the navigation app.
 
 ## Layout
 - `nav/schemas/recording.py` — the recording format (schema_version 1). Source of truth for what is stored.
-- `nav/recorder/app.py` — FastAPI app factory: `/api/v1` (+ map builds) + the debugging frontend; optional token,
-  CORS, no-delete for the public deployment; `store.py` — filesystem storage, idempotent uploads, `finalize`
-  (chunks → `video.mp4`, batches → parquet/jsonl).
+- Two HTTP services, one image (`nav serve --app map-api|nav-api`, env `NAV_APP`); shared bits (token, CORS,
+  no-cache, files under Cloud Run's cap, cache-busted pages) in `nav/web.py`:
+  - `nav/map_api/app.py` — **map-api**: recordings, map builds, review, map files + the debugging frontend; no-delete
+    for the public deployment.
+  - `nav/nav_api/app.py` — **nav-api**: the lean, read-only live API for the app: published maps, routes, localization
+    (`maps.py`: published maps + reference embeddings cached, reloaded when map.json changes). Formats in
+    `nav/schemas/navigation.py`.
+- `nav/recorder/store.py` — recording storage, idempotent uploads, `finalize` (chunks → `video.mp4`, batches →
+  parquet/jsonl).
 - `frontend/` — the debugging frontend, kept here for reference and direct API testing (the frontend team copies it):
-  phone app at `/`, `dash/` (recordings, uPlot from jsdelivr), `viz/` (map viewer, SVG). Vanilla JS, no build step.
-  `config.js` sets the API base (default: the Cloud Run worker; `?api=` overrides) and the token.
+  phone app at `/`, `dash/` (recordings, uPlot from jsdelivr), `viz/` (map viewer, SVG), `loc/` and `nav/` (nav-api
+  debuggers; `loc/loc-core.js` is shared). Vanilla JS, no build step. `config.js`: `NAV` = map-api, `NAV.nav` =
+  nav-api, each with its base (`?api=`, `?navapi=`) and token (`?token=`, `?navtoken=`).
 - `nav/schemas/map.py` — the map format: `MapDraft` (what the LLM writes; its JSON Schema must stay valid for
   Anthropic structured outputs) and `PlaceMap` (stored: draft + evidence, positions, distances, build info).
 - `nav/mapping/` — map pipeline: `prepare.py` (per-recording cache: frames, embeddings, transcripts), `frames.py`,
@@ -19,16 +27,19 @@ place; the **map pipeline** turns all walks of a place into one semantic topolog
   `build.py` (orchestration + finish), `quality.py` (TypeSafe Jev check), `store.py`, `calibrate.py` (video yaw,
   sensor-to-video offset, FOV), `references.py` (reference images + embeddings for live VPR), `review.py`
   (human review overlay `maps/<id>/review.json`; published map.json = latest build + review).
-- `nav/navigation/` — reference code for the live side: `route.py` (routes over verified edges), `pdr.py`
-  (causal step detector + GraphTracker, `nav map pdr-replay`).
+- `nav/navigation/` — the live side, small and causal so it ports to TS: `route.py` (routes over verified edges),
+  `localize.py` (VPR against reference embeddings → ranked nodes, confirmed/uncertain/lost), `pdr.py` (causal step
+  detector + GraphTracker, `nav map pdr-replay`).
 - `docs/` — the navigation-side design (`main_idea.md`, `navigation_stack.md`, by LPA, from
   tungsten-united/demo-repository@navigation) and `map.schema.json` (regenerate: `nav map schema --out ...`; a test checks it).
 - `nav/mapping/inference.py` — every model call on files: local models, or the inference host when `NAV_INFER_URL` is set.
-- `nav/infer/` — inference host: `server.py` (`nav infer serve`: models + Claude Code map job over HTTP, one GPU slot,
-  bounded queues, 503 + Retry-After), `client.py` (chunking, retries, Cloudflare service token).
-- `nav/cli.py` — `nav serve`, `nav infer serve`, `nav rec list|show|finalize|import|push|pull`,
+- `nav/infer/` — inference host: `server.py` (`nav infer serve`: models + Claude Code map job over HTTP, one GPU slot
+  where nav-api's live frames go ahead of queued batch calls, bounded queues, 503 + Retry-After), `client.py`
+  (chunking, retries, deadlines, Cloudflare service token).
+- `nav/cli.py` — `nav serve [--app nav-api]`, `nav infer serve`, `nav rec list|show|finalize|import|push|pull`,
   `nav map setup|build|llm|refinish|check|review|route|pdr-replay|schema|list|show|push|pull`.
-- `Dockerfile` + `deploy/cloudrun.sh` — the Cloud Run worker; `deploy/nav-infer.service`, `deploy/nav-recorder.service` — helium units.
+- `Dockerfile` + `deploy/cloudrun.sh` + `deploy/{map-api,nav-api}.env.yaml` — the two Cloud Run services;
+  `deploy/nav-infer.service`, `deploy/nav-recorder.service` (helium-nav: map-api serving the debugging pages) — helium units.
 - `data/recordings/<rec_id>/` — recordings (gitignored). Shared copy for the team: `gs://tungsten-united-nav-recordings/recordings/<rec_id>/`
   (project `tungsten-united`, not the active gcloud project `kotie-app`), via `nav rec push|pull` (`gcloud storage rsync`, no deletes, skips `raw/`).
 - `data/maps/<map_id>/` — maps (gitignored), shared under `gs://tungsten-united-nav-recordings/maps/<map_id>/` via
@@ -37,28 +48,34 @@ place; the **map pipeline** turns all walks of a place into one semantic topolog
 ## Run / test
 ```sh
 uv sync && uv run pytest
-deploy/cloudrun.sh                         # build the Dockerfile, push, deploy nav-api (rerun after every change)
+deploy/cloudrun.sh [deploy] [map-api|nav-api|all]   # build the image, push, deploy (rerun after every change)
 systemctl --user restart nav-infer         # inference host, 127.0.0.1:8451 (deploy/nav-infer.service)
 journalctl --user -u nav-infer -f
 ```
-Deployment (2026-10-10):
-- **nav-api** on Cloud Run, project `tungsten-united`, `europe-southwest1`:
-  https://nav-api-613464313064.europe-southwest1.run.app. The bucket is mounted at `/data` (GCS FUSE). One instance;
-  `NAV_API_TOKEN` gates `/api/*` (`deploy/cloudrun.sh token` prints it); deleting is off. Secrets come from Secret
-  Manager (`deploy/cloudrun.sh secrets` reloads them from this machine). Logs:
-  `gcloud run services logs read nav-api --region europe-southwest1 --project tungsten-united`.
+Deployment (Cloud Run, project `tungsten-united`, `europe-southwest1`; the bucket mounted at `/data`, GCS FUSE):
+- **map-api** — https://map-api-613464313064.europe-southwest1.run.app: one instance, bucket read-write, deleting off,
+  serves the debugging frontend (coworkers use it). Token: secret `map-api-token`.
+- **nav-api** — https://nav-api-613464313064.europe-southwest1.run.app (the URL of the old all-in-one service): 1–3
+  instances, bucket read-only, service account `nav-api` (bucket viewer). Token: secret `nav-api-token` (the token
+  from before the split; map-api's started as a copy). Page paths redirect to map-api.
+- `NAV_API_TOKEN` gates `/api/*` on each (`deploy/cloudrun.sh token map-api|nav-api` prints it). Secrets come from
+  Secret Manager (`deploy/cloudrun.sh secrets` reloads them from this machine). Logs:
+  `gcloud run services logs read <service> --region europe-southwest1 --project tungsten-united`.
 - **nav-infer** on helium, published as https://helium-nav-infer.oscarmartinez.dev (`tunnel-expose nav-infer 8451`).
-  The worker sends the `helium-clients` service token. This machine only does inference for the cloud.
-- **nav-recorder** (the old all-in-one on helium-nav.oscarmartinez.dev, `tunnel-expose nav 8450`) is still running
-  for now; after cutover helium only pulls maps (`nav map push` would overwrite the cloud's map.json).
+  Both services send the `helium-clients` service token. This machine only does inference for the cloud.
+- **nav-recorder** on helium-nav.oscarmartinez.dev (`tunnel-expose nav 8450`): `nav serve` (map-api code, local
+  data) whose pages call the Cloud Run services; restart it after pulling to get new pages. Helium only pulls maps
+  (`nav map push` would overwrite the cloud's map.json).
 Cloudflare Access gates every `helium-*` host: browser login for people, the `helium-clients` service token for
 workers (`~/.cloudflared/access-service-token.env`, headers `CF-Access-Client-Id/Secret`). The app has no auth of its own.
 
 Browser end-to-end check: headless `/usr/bin/chromium` via `uvx --from playwright python` with
 `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`, sensor permissions granted, synthetic
 `devicemotion` / `deviceorientationabsolute` events dispatched from the page. Run it against a throwaway
-`NAV_DATA_DIR` on another port (open the page with `?api=http://127.0.0.1:<port>`), never the live service:
-recordings made there land in the team bucket.
+`NAV_DATA_DIR` on other ports (open the page with `?api=http://127.0.0.1:<map-api port>&navapi=...<nav-api port>`),
+never the live services: recordings made there land in the team bucket. For /loc and /nav, copy a published map
+(map.json + its build folder) and a recording into the throwaway dir; a throwaway `nav infer serve --port ...` keeps
+the live inference host out of it.
 
 ## Things learned the hard way
 - Chrome's MP4 MediaRecorder only emits data at keyframes (in practice at stop); WebM honours the timeslice.
@@ -84,6 +101,8 @@ recordings made there land in the team bucket.
 - Cloud Build's default service account has no rights in tungsten-united, so `deploy/cloudrun.sh` builds the image
   with local docker and pushes it to Artifact Registry.
 - Behind Cloud Run IAM, `Authorization` carries Google's identity token, so the app's token is also accepted as `?token=`.
+- A cold inference host loads MegaLoc on its first place call (~10 s+), longer than nav-api's live deadline (8 s):
+  the first frame after nav-infer restarts gets a 503; the next ones take ~30 ms on the GPU.
 - Two step detectors disagree on Itnig (offline band-pass in motion.py ~153 steps, causal StepDetector in
   navigation/pdr.py ~97); the tracker re-learns step length at each node, but a walk with counted steps is needed.
 - Status is per direction: an edge walked target -> source has `status` inferred and `reverse_status` observed.

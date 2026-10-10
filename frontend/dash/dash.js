@@ -3,6 +3,7 @@
 "use strict";
 
 const API = NAV.API; // frontend/config.js
+document.getElementById("api-docs").href = NAV.docs;
 const TAGS = { door: "Door", junction: "Junction", stairs: "Stairs", lift: "Lift", destination: "Destination" };
 const HOLDING = { handheld_portrait: "in hand, upright", handheld_landscape: "in hand, sideways", chest_mount: "chest mount",
   lanyard: "lanyard", other: "other" };

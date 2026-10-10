@@ -13,12 +13,23 @@ maps = typer.Typer(no_args_is_help=True, help="Build, inspect and share the map 
 app.add_typer(maps, name="map")
 
 
+APPS = {"map-api": "nav.map_api.app:create_app", "nav-api": "nav.nav_api.app:create_nav_app"}
+
+
 @app.command()
-def serve(host: str = config.HOST, port: int = config.PORT, reload: bool = False) -> None:
-    """Run the recorder (phone web app + /api/v1)."""
+def serve(app_name: str = typer.Option(config.APP, "--app", help="map-api: recordings, map builds, review and the "
+                                       "debugging frontend. nav-api: the live API (maps, routes, localization)."),
+          host: str = config.HOST, port: int = typer.Option(None, help="Default: NAV_PORT (8450) for map-api, "
+                                                            "NAV_NAV_API_PORT (8452) for nav-api."),
+          reload: bool = False) -> None:
+    """Run one of the two HTTP services (default NAV_APP, else map-api)."""
     import uvicorn
 
-    uvicorn.run("nav.recorder.app:create_app", factory=True, host=host, port=port, reload=reload,
+    if app_name not in APPS:
+        raise typer.BadParameter(f"--app must be one of {', '.join(APPS)}")
+    _logging()
+    port = port or (config.NAV_API_PORT if app_name == "nav-api" else config.PORT)
+    uvicorn.run(APPS[app_name], factory=True, host=host, port=port, reload=reload,
                 proxy_headers=True, forwarded_allow_ips="127.0.0.1")
 
 

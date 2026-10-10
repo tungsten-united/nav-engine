@@ -1,5 +1,5 @@
 [Unit]
-Description=nav-engine recorder (phone web app + /api/v1) on 127.0.0.1:8450
+Description=nav-engine map-api on 127.0.0.1:8450 (helium-nav: the debugging pages, which call the Cloud Run services)
 After=network-online.target
 
 [Service]

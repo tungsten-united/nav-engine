@@ -1,33 +1,32 @@
-"""Recorder server: the recordings and maps API (/api/v1, OpenAPI docs at /docs) and the debugging frontend
-(frontend/: phone app at /, /dash/, /viz/).
+"""map-api: recordings, map builds, review and map files (/api/v1, OpenAPI docs at /docs), and the debugging
+frontend (frontend/: phone recorder at /, /dash/, /viz/, and /loc/ + /nav/, which exercise nav-api).
 
 Two deployments, same code:
-- helium: bound to localhost behind the Cloudflare Tunnel; Cloudflare Access is the gate (browser login for people,
-  the "helium-clients" service token for workers), so the app has no auth of its own (NAV_API_TOKEN unset).
-- Cloud Run: public, so NAV_API_TOKEN gates /api/* (Bearer header, or ?token= where a <video>/<img> can't send
-  headers), NAV_CORS_ORIGINS lets other frontends call it, and NAV_ALLOW_DELETE=0 keeps the shared data.
+- Cloud Run (service map-api, deploy/cloudrun.sh): public, so NAV_API_TOKEN gates /api/* (Bearer header, or ?token=
+  where a <video>/<img> can't send headers), NAV_CORS_ORIGINS lets other frontends call it, and NAV_ALLOW_DELETE=0
+  keeps the shared data. This is where coworkers open the debugging frontend.
+- helium (helium-nav.oscarmartinez.dev): bound to localhost behind the Cloudflare Tunnel; Cloudflare Access is the gate
+  (browser login for people, the "helium-clients" service token for workers), so no token of its own. Its pages call
+  the Cloud Run services (frontend/config.js).
+
+The live side (maps for the app, routes, localization) is nav-api (nav/nav_api/app.py).
 """
 
-import hashlib
-import hmac
 import json
 import logging
-import mimetypes
-import re
 import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Response
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from nav import config
+from nav import config, web
 from nav.mapping.store import MapStore
-from nav.recorder.store import Conflict, NotFound, RecordingStore
+from nav.recorder.store import NotFound, RecordingStore
 from nav.mapping.review import Review, load_review, save_review
 from nav.schemas.map import MapSummary, PlaceMap
 from nav.schemas.recording import (
@@ -45,39 +44,17 @@ from nav.schemas.recording import (
 
 log = logging.getLogger(__name__)
 _DEFAULT = object()
-# Cloud Run cuts an HTTP/1 response with a Content-Length over 32 MiB (the browser sees a 500): larger files are
-# served in ranges of at most this much, or streamed without a length.
-MAX_RESPONSE = 8 * 1024 * 1024
-RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
-
-
-def _read(path: Path, start: int, end: int):
-    with path.open("rb") as f:
-        f.seek(start)
-        left = end - start + 1
-        while left > 0 and (chunk := f.read(min(1 << 20, left))):
-            left -= len(chunk)
-            yield chunk
-
-
-def send_file(request: Request, path: Path) -> Response:
-    """FileResponse, except for files over MAX_RESPONSE: a Range request gets at most MAX_RESPONSE bytes back (an
-    open-ended range may be answered short; video players then ask for the next range), and a plain GET is
-    streamed without a Content-Length."""
-    size = path.stat().st_size
-    if size <= MAX_RESPONSE:
-        return FileResponse(path)
-    media = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-    m = RANGE_RE.fullmatch((request.headers.get("range") or "").strip())
-    if m and (m[1] or m[2]):
-        start, end = (int(m[1]), int(m[2]) if m[2] else size - 1) if m[1] else (max(0, size - int(m[2])), size - 1)
-        if start >= size or start > end:
-            return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
-        end = min(end, size - 1, start + MAX_RESPONSE - 1)
-        return StreamingResponse(_read(path, start, end), status_code=206, media_type=media,
-                                 headers={"Content-Range": f"bytes {start}-{end}/{size}",
-                                          "Content-Length": str(end - start + 1), "Accept-Ranges": "bytes"})
-    return StreamingResponse(_read(path, 0, size - 1), media_type=media, headers={"Accept-Ranges": "bytes"})
+# The debugging pages: folder -> (assets to cache-bust, what it is). "" is the phone recorder at /.
+PAGES = {
+    "": (("config.js", "app.js", "style.css"), "Phone recorder"),
+    "dash": (("../config.js", "dash.js", "dash.css"), "Recordings dashboard: places and walks, video with tags, "
+             "voice and sensors on one timeline"),
+    "viz": (("../config.js", "viz.js", "viz.css"), "Map viewer: the graph of each place, details, directions"),
+    "loc": (("../config.js", "loc-core.js", "loc.js", "loc.css"),
+            "Localization debugger (nav-api): camera, recording or image -> ranked nodes"),
+    "nav": (("../config.js", "../loc/loc-core.js", "nav.js", "../loc/loc.css"),
+            "Navigation debugger (nav-api): routes, spoken instructions, live checkpoints"),
+}
 
 
 class BuildRequest(BaseModel):
@@ -100,41 +77,10 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
     cors_origin_regex = config.CORS_ORIGIN_REGEX if cors_origin_regex is _DEFAULT else cors_origin_regex
     allow_delete = config.ALLOW_DELETE if allow_delete is _DEFAULT else allow_delete
     cache_dir = cache_dir or config.CACHE_DIR
-    app = FastAPI(title="nav-engine recorder", version=f"schema-{SCHEMA_VERSION}")
+    app = FastAPI(title="nav-engine map-api", version=f"schema-{SCHEMA_VERSION}")
     app.state.store = store
 
-    @app.exception_handler(NotFound)
-    async def _not_found(_: Request, e: NotFound):
-        return JSONResponse({"detail": f"not found: {e}"}, status_code=404)
-
-    @app.exception_handler(Conflict)
-    async def _conflict(_: Request, e: Conflict):
-        return JSONResponse({"detail": str(e)}, status_code=409)
-
-    @app.middleware("http")
-    async def no_stale_assets(request: Request, call_next):
-        # Cloudflare caches .js/.css at the edge by default: a new page with an old app.js breaks the app.
-        response = await call_next(request)
-        response.headers["Cache-Control"] = "no-store" if request.url.path.startswith("/api/") else "no-cache"
-        return response
-
-    if api_token:
-        @app.middleware("http")
-        async def require_token(request: Request, call_next):
-            path = request.url.path
-            if path.startswith("/api/") and path != "/api/v1/health" and request.method != "OPTIONS":
-                # Either place: behind Cloud Run IAM the Authorization header carries Google's identity token.
-                auth = request.headers.get("authorization", "")
-                given = [auth[7:] if auth.lower().startswith("bearer ") else "", request.query_params.get("token", "")]
-                if not any(hmac.compare_digest(g.encode(), api_token.encode()) for g in given):
-                    return JSONResponse({"detail": "missing or wrong API token"}, status_code=401,
-                                        headers={"WWW-Authenticate": "Bearer", "Cache-Control": "no-store"})
-            return await call_next(request)
-
-    if cors_origins or cors_origin_regex:  # added last: outermost, so 401s and preflights get CORS headers too
-        app.add_middleware(CORSMiddleware, allow_origins=cors_origins, allow_origin_regex=cors_origin_regex,
-                           allow_methods=["*"], allow_headers=["Authorization", "Content-Type", "X-Nav-User"],
-                           max_age=600)
+    web.setup(app, api_token=api_token, cors_origins=cors_origins, cors_origin_regex=cors_origin_regex)
 
     async def body(request: Request) -> bytes:
         if int(request.headers.get("content-length") or 0) > config.MAX_UPLOAD_BYTES:
@@ -158,7 +104,7 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
 
     @app.get(f"{api}/health")
     def health() -> dict:
-        return {"ok": True, "schema_version": SCHEMA_VERSION}
+        return {"ok": True, "service": "map-api", "schema_version": SCHEMA_VERSION}
 
     @app.post(f"{api}/recordings", status_code=201)
     def create(req: RecordingCreate, request: Request) -> Manifest:
@@ -229,7 +175,7 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
 
     @app.get(f"{api}/recordings/{{rec_id}}/files/{{path:path}}")
     def file(rec_id: str, path: str, request: Request) -> Response:
-        return send_file(request, store.file(rec_id, path))
+        return web.send_file(request, store.file(rec_id, path))
 
     @app.get(f"{api}/recordings/{{rec_id}}/series/{{stream}}")
     def series(rec_id: str, stream: str, max_points: int = Query(20000, ge=100)) -> dict[str, list]:
@@ -273,7 +219,7 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
     @app.get(f"{api}/maps/{{map_id}}/files/{{path:path}}")
     def map_file(map_id: str, path: str, request: Request) -> Response:
         """Frames, candidates.json, the Claude Code job files ... of any build (paths as in map.json)."""
-        return send_file(request, maps.file(map_id, path))
+        return web.send_file(request, maps.file(map_id, path))
 
     # --- map builds -------------------------------------------------------------------------------------------
     building: dict = {}  # the build in progress: {map_id, build_id}
@@ -389,39 +335,17 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
             raise NotFound(build_id)
         return json.loads(maps.file(map_id, f"builds/{build_id}/status.json").read_text())
 
-    def page(folder: Path, assets: tuple[str, ...]) -> HTMLResponse:
-        # Cache-bust assets by content hash: Cloudflare forces a 4 h browser TTL on .js/.css, the page itself isn't cached.
-        html = (folder / "index.html").read_text()
-        for name in assets:
-            digest = hashlib.sha256((folder / name).read_bytes()).hexdigest()[:10]
-            html = html.replace(f'"{name}"', f'"{name}?v={digest}"')
-        return HTMLResponse(html)
-
     if web_dir:
-        @app.get("/", include_in_schema=False)
-        @app.get("/index.html", include_in_schema=False)
-        def index() -> HTMLResponse:
-            return page(web_dir, ("config.js", "app.js", "style.css"))
+        for folder, (assets, doc) in PAGES.items():
+            def show(folder=folder, assets=assets) -> HTMLResponse:
+                return web.page(web_dir / folder, assets)
 
-        @app.get("/dash", include_in_schema=False)
-        def dash_redirect() -> RedirectResponse:
-            return RedirectResponse("/dash/")
-
-        @app.get("/dash/", include_in_schema=False)
-        @app.get("/dash/index.html", include_in_schema=False)
-        def dash() -> HTMLResponse:
-            """Recordings dashboard: browse places and walks, play video with tags/voice/sensors on one timeline."""
-            return page(web_dir / "dash", ("../config.js", "dash.js", "dash.css"))
-
-        @app.get("/viz", include_in_schema=False)
-        def viz_redirect() -> RedirectResponse:
-            return RedirectResponse("/viz/")
-
-        @app.get("/viz/", include_in_schema=False)
-        @app.get("/viz/index.html", include_in_schema=False)
-        def viz() -> HTMLResponse:
-            """Map viewer: the graph of each place, node and edge details with their frames, directions between nodes."""
-            return page(web_dir / "viz", ("../config.js", "viz.js", "viz.css"))
+            show.__doc__ = doc
+            prefix = f"/{folder}/" if folder else "/"
+            app.get(prefix, include_in_schema=False)(show)
+            app.get(f"{prefix}index.html", include_in_schema=False)(show)
+            if folder:
+                app.get(f"/{folder}", include_in_schema=False)(lambda prefix=prefix: RedirectResponse(prefix))
 
         app.mount("/", StaticFiles(directory=web_dir, html=True), name="web")
     return app
