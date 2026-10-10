@@ -1,0 +1,2217 @@
+{
+ "place": "Glories Basement",
+ "language": "en",
+ "summary": "A long, busy shopping-mall basement reached by an escalator down from the street plaza and through automatic glass doors. One main tiled corridor, about 180 metres of walking, runs past shops, two sets of escalators to the upper floor, a café and a children's playground. It turns right at a wide hall with a big pillar and later bears left at the Orange phone shop. At the far end, a second set of automatic doors leads into a food court, where Honest Greens is on the left and Hamburguesa Nostra is on the right.",
+ "nodes": [
+  {
+   "id": "n1",
+   "name": "Entrance escalator",
+   "kind": "entrance",
+   "description": "Top of the escalator that goes down from the street plaza into the mall basement. Moving handrails on both sides, open-air plaza noise behind you.",
+   "landmarks": [
+    "moving rubber handrails on both sides",
+    "metal comb plate where the escalator starts",
+    "outdoor plaza noise and crowd"
+   ],
+   "hazards": [
+    "escalator: step on and off carefully",
+    "crowded plaza at the top"
+   ],
+   "visual_cues": [
+    "escalator with glass balustrade and green lights",
+    "illuminated shop signs on the plaza above",
+    "planter beside the escalator lower down"
+   ],
+   "floor": "0",
+   "candidates": [],
+   "relations": [
+    {
+     "id": "n1:escalator",
+     "subject": "Escalator",
+     "candidate": "c01",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 1495.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c01.jpg",
+     "viewpoint_heading_deg": 31.9,
+     "bearing_deg": 0.0,
+     "heading_deg": 31.9,
+     "arrival_heading_deg": 15.5,
+     "direction": "ahead",
+     "status": "observed"
+    }
+   ],
+   "confidence": "high",
+   "evidence": [
+    {
+     "candidate": "c01",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 1495.2,
+     "image": ""
+    },
+    {
+     "candidate": "c02",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 10414.2,
+     "image": ""
+    },
+    {
+     "candidate": "c03",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 12357.2,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 1.2,
+    "y_m": 1.8
+   }
+  },
+  {
+   "id": "n2",
+   "name": "Mall entrance doors",
+   "kind": "door",
+   "description": "Foot of the entrance escalator, on smooth stone floor with a drainage grate. Automatic sliding glass doors lead into the indoor mall, with the busy tiled corridor beyond.",
+   "landmarks": [
+    "metal grate across the floor at the escalator foot",
+    "automatic sliding glass doors",
+    "indoor crowd noise beyond the doors"
+   ],
+   "hazards": [
+    "escalator exit: keep moving away from it",
+    "glass doors",
+    "people queuing near the escalator"
+   ],
+   "visual_cues": [
+    "glass sliding doors with red striped band",
+    "Sprinter shop sign visible through the doors",
+    "dark marble floor with drainage channel"
+   ],
+   "floor": "-1",
+   "candidates": [],
+   "relations": [
+    {
+     "id": "n2:automatic-glass-doors",
+     "subject": "Automatic glass doors",
+     "candidate": "c06",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 42194.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c06.jpg",
+     "viewpoint_heading_deg": 72.8,
+     "bearing_deg": 3.9,
+     "heading_deg": 76.7,
+     "arrival_heading_deg": 49.2,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n2:sprinter-shop",
+     "subject": "Sprinter shop",
+     "candidate": "c06",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 42194.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c06.jpg",
+     "viewpoint_heading_deg": 72.8,
+     "bearing_deg": 3.9,
+     "heading_deg": 76.7,
+     "arrival_heading_deg": 49.2,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n2:entrance-escalator",
+     "subject": "Entrance escalator",
+     "candidate": "c06",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 42194.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c06.jpg",
+     "viewpoint_heading_deg": 72.8,
+     "bearing_deg": 180.0,
+     "heading_deg": 252.8,
+     "arrival_heading_deg": 49.2,
+     "direction": "behind",
+     "status": "inferred"
+    }
+   ],
+   "confidence": "high",
+   "evidence": [
+    {
+     "candidate": "c05",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 38232.2,
+     "image": ""
+    },
+    {
+     "candidate": "c06",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 42194.2,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 6.7,
+    "y_m": 6.1
+   }
+  },
+  {
+   "id": "n3",
+   "name": "Sprinter shop",
+   "kind": "landmark",
+   "description": "Just inside the mall, a wide tiled hall curves around a round opening in the ceiling, with the Sprinter sports shop front in front of you. Beyond it, the corridor continues past a large potted plant and a pillar.",
+   "landmarks": [
+    "smooth large floor tiles",
+    "shop front glass ahead",
+    "large potted plant beside a pillar"
+   ],
+   "hazards": [
+    "potted plant and information pillar at the side of the walkway"
+   ],
+   "visual_cues": [
+    "Sprinter sign with green screens",
+    "round atrium with mirrored ceiling ring",
+    "black vase-shaped planter",
+    "escalators visible ahead"
+   ],
+   "floor": "-1",
+   "candidates": [],
+   "relations": [
+    {
+     "id": "n3:sprinter-shop",
+     "subject": "Sprinter shop",
+     "candidate": "c07",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 47308.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c07.jpg",
+     "viewpoint_heading_deg": 93.2,
+     "bearing_deg": 0.0,
+     "heading_deg": 93.2,
+     "arrival_heading_deg": 90.9,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n3:second-escalators",
+     "subject": "Second escalators",
+     "candidate": "c09",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 59507.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c09.jpg",
+     "viewpoint_heading_deg": 24.7,
+     "bearing_deg": 13.5,
+     "heading_deg": 38.2,
+     "arrival_heading_deg": 90.9,
+     "direction": "left",
+     "status": "observed"
+    },
+    {
+     "id": "n3:planter",
+     "subject": "Planter",
+     "candidate": "c09",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 59507.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c09.jpg",
+     "viewpoint_heading_deg": 24.7,
+     "bearing_deg": -1.9,
+     "heading_deg": 22.8,
+     "arrival_heading_deg": 90.9,
+     "direction": "left",
+     "status": "observed"
+    }
+   ],
+   "confidence": "high",
+   "evidence": [
+    {
+     "candidate": "c07",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 47308.2,
+     "image": ""
+    },
+    {
+     "candidate": "c08",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 51621.2,
+     "image": ""
+    },
+    {
+     "candidate": "c09",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 59507.2,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 13.7,
+    "y_m": 8.6
+   }
+  },
+  {
+   "id": "n4",
+   "name": "Second escalators",
+   "kind": "stairs",
+   "description": "A pair of escalators going up to the upper floor, on the left of the corridor, with a large round pillar on the right. The floor here is smooth stone and you can hear the escalators hum.",
+   "landmarks": [
+    "escalator hum",
+    "large round pillar",
+    "glass balustrade at escalator side"
+   ],
+   "hazards": [
+    "escalator entrances open onto the walkway",
+    "people stepping off the escalators"
+   ],
+   "visual_cues": [
+    "escalators with round no-entry signs on the glass",
+    "JD shop sign behind",
+    "white sparkly pillar",
+    "LED ceiling lines"
+   ],
+   "floor": "-1",
+   "candidates": [],
+   "relations": [
+    {
+     "id": "n4:escalators-up",
+     "subject": "Escalators up",
+     "candidate": "c12",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 75084.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c12.jpg",
+     "viewpoint_heading_deg": 359.1,
+     "bearing_deg": -1.9,
+     "heading_deg": 357.2,
+     "arrival_heading_deg": 33.0,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n4:pillar",
+     "subject": "Pillar",
+     "candidate": "c11",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 69198.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c11.jpg",
+     "viewpoint_heading_deg": 33.5,
+     "bearing_deg": 13.5,
+     "heading_deg": 47.0,
+     "arrival_heading_deg": 33.0,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n4:jd-shop",
+     "subject": "JD shop",
+     "candidate": "c12",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 75084.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c12.jpg",
+     "viewpoint_heading_deg": 359.1,
+     "bearing_deg": -3.9,
+     "heading_deg": 355.2,
+     "arrival_heading_deg": 33.0,
+     "direction": "ahead",
+     "status": "observed"
+    }
+   ],
+   "confidence": "high",
+   "evidence": [
+    {
+     "candidate": "c11",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 69198.2,
+     "image": ""
+    },
+    {
+     "candidate": "c12",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 75084.2,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 21.2,
+    "y_m": 17.1
+   }
+  },
+  {
+   "id": "n5",
+   "name": "Rituals shop",
+   "kind": "landmark",
+   "description": "Corridor section with shop fronts on the right; Rituals cosmetics shop is there, likely with a strong scent. Café tables and a round pillar are to the left.",
+   "landmarks": [
+    "likely fragrance from the cosmetics shop",
+    "café chairs and tables to the left",
+    "round pillar"
+   ],
+   "hazards": [
+    "café chairs and tables near the walkway on the left"
+   ],
+   "visual_cues": [
+    "Rituals round sign and lit lettering",
+    "Serveis sign with LED frame",
+    "pillar with WiFi logo",
+    "green plant wall"
+   ],
+   "floor": "-1",
+   "candidates": [],
+   "relations": [
+    {
+     "id": "n5:rituals-shop",
+     "subject": "Rituals shop",
+     "candidate": "c14",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 85080.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c14.jpg",
+     "viewpoint_heading_deg": 65.7,
+     "bearing_deg": 7.7,
+     "heading_deg": 73.4,
+     "arrival_heading_deg": 58.5,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n5:cafe-tables",
+     "subject": "Café tables",
+     "candidate": "c16",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 91404.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c16.jpg",
+     "viewpoint_heading_deg": 9.3,
+     "bearing_deg": -3.9,
+     "heading_deg": 5.4,
+     "arrival_heading_deg": 58.5,
+     "direction": "left",
+     "status": "observed"
+    }
+   ],
+   "confidence": "high",
+   "evidence": [
+    {
+     "candidate": "c14",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 85080.2,
+     "image": ""
+    },
+    {
+     "candidate": "c15",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 88929.2,
+     "image": ""
+    },
+    {
+     "candidate": "c16",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 91404.2,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 27.9,
+    "y_m": 23.5
+   }
+  },
+  {
+   "id": "n6",
+   "name": "Ice cream café",
+   "kind": "open_area",
+   "description": "Café seating with an ice cream counter on the left side of the corridor; the Celio clothes shop is on the right. Tables and chairs spread out to the left around a pillar.",
+   "landmarks": [
+    "ice cream counter on the left, at waist height",
+    "chairs and tables on the left",
+    "likely sweet smell and café chatter"
+   ],
+   "hazards": [
+    "loose chairs and tables on the left"
+   ],
+   "visual_cues": [
+    "glass ice cream display",
+    "Celio round sign",
+    "Sfera shop sign beyond the tables"
+   ],
+   "floor": "-1",
+   "candidates": [],
+   "relations": [
+    {
+     "id": "n6:ice-cream-counter",
+     "subject": "Ice cream counter",
+     "candidate": "c20",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 106531.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c20.jpg",
+     "viewpoint_heading_deg": 31.0,
+     "bearing_deg": -13.5,
+     "heading_deg": 17.5,
+     "arrival_heading_deg": 97.6,
+     "direction": "left",
+     "status": "observed"
+    },
+    {
+     "id": "n6:cafe-tables",
+     "subject": "Café tables",
+     "candidate": "c20",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 106531.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c20.jpg",
+     "viewpoint_heading_deg": 31.0,
+     "bearing_deg": 0.0,
+     "heading_deg": 31.0,
+     "arrival_heading_deg": 97.6,
+     "direction": "left",
+     "status": "observed"
+    },
+    {
+     "id": "n6:celio-shop",
+     "subject": "Celio shop",
+     "candidate": "c19",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 99414.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c19.jpg",
+     "viewpoint_heading_deg": 54.1,
+     "bearing_deg": 15.5,
+     "heading_deg": 69.6,
+     "arrival_heading_deg": 97.6,
+     "direction": "ahead",
+     "status": "observed"
+    }
+   ],
+   "confidence": "high",
+   "evidence": [
+    {
+     "candidate": "c19",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 99414.2,
+     "image": ""
+    },
+    {
+     "candidate": "c20",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 106531.2,
+     "image": ""
+    },
+    {
+     "candidate": "c21",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 109173.2,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 37.6,
+    "y_m": 29.5
+   }
+  },
+  {
+   "id": "n7",
+   "name": "Intimissimi shop",
+   "kind": "landmark",
+   "description": "Straight corridor with shop fronts on the right, including Intimissimi. A low curved bench around a planter is on the left.",
+   "landmarks": [
+    "low curved bench around a planter on the left",
+    "shop glass on the right"
+   ],
+   "hazards": [
+    "low bench edge on the left"
+   ],
+   "visual_cues": [
+    "Intimissimi and Intimissimi Uomo signs",
+    "white bench around palm planter",
+    "KIKO sign further on"
+   ],
+   "floor": "-1",
+   "candidates": [],
+   "relations": [
+    {
+     "id": "n7:intimissimi-shop",
+     "subject": "Intimissimi shop",
+     "candidate": "c24",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 120337.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c24.jpg",
+     "viewpoint_heading_deg": 77.0,
+     "bearing_deg": 3.9,
+     "heading_deg": 80.9,
+     "arrival_heading_deg": 74.6,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n7:planter-bench",
+     "subject": "Planter bench",
+     "candidate": "c22",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 112547.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c22.jpg",
+     "viewpoint_heading_deg": 47.8,
+     "bearing_deg": -11.6,
+     "heading_deg": 36.2,
+     "arrival_heading_deg": 74.6,
+     "direction": "ahead",
+     "status": "observed"
+    }
+   ],
+   "confidence": "high",
+   "evidence": [
+    {
+     "candidate": "c22",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 112547.2,
+     "image": ""
+    },
+    {
+     "candidate": "c23",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 116556.2,
+     "image": ""
+    },
+    {
+     "candidate": "c24",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 120337.2,
+     "image": ""
+    },
+    {
+     "candidate": "c25",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 123509.2,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 46.0,
+    "y_m": 35.4
+   }
+  },
+  {
+   "id": "n8",
+   "name": "Body Shop junction",
+   "kind": "junction",
+   "description": "A wide hall where the route turns right. A large round pillar stands here and there is a jewellery kiosk ahead, with more echo than in the corridor.",
+   "landmarks": [
+    "large round pillar",
+    "more open, echoing space",
+    "kiosk counter ahead"
+   ],
+   "hazards": [
+    "pillars in open floor",
+    "kiosk counters"
+   ],
+   "visual_cues": [
+    "The Body Shop sign",
+    "curved glass Gant shop",
+    "sparkly white pillars",
+    "candy kiosk with lit display"
+   ],
+   "floor": "-1",
+   "candidates": [],
+   "relations": [
+    {
+     "id": "n8:the-body-shop",
+     "subject": "The Body Shop",
+     "candidate": "c27",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 141490.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c27.jpg",
+     "viewpoint_heading_deg": 64.2,
+     "bearing_deg": -5.8,
+     "heading_deg": 58.4,
+     "arrival_heading_deg": 50.4,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n8:gant-shop",
+     "subject": "Gant shop",
+     "candidate": "c27",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 141490.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c27.jpg",
+     "viewpoint_heading_deg": 64.2,
+     "bearing_deg": 13.5,
+     "heading_deg": 77.7,
+     "arrival_heading_deg": 50.4,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n8:pillar",
+     "subject": "Pillar",
+     "candidate": "c28",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 147164.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c28.jpg",
+     "viewpoint_heading_deg": 82.8,
+     "bearing_deg": -5.8,
+     "heading_deg": 77.0,
+     "arrival_heading_deg": 50.4,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n8:kiosk",
+     "subject": "Kiosk",
+     "candidate": "c28",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 147164.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c28.jpg",
+     "viewpoint_heading_deg": 82.8,
+     "bearing_deg": 7.7,
+     "heading_deg": 90.5,
+     "arrival_heading_deg": 50.4,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n8:playground",
+     "subject": "Playground",
+     "candidate": "c28",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 147164.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c28.jpg",
+     "viewpoint_heading_deg": 82.8,
+     "bearing_deg": 90.0,
+     "heading_deg": 172.8,
+     "arrival_heading_deg": 50.4,
+     "direction": "right",
+     "status": "inferred"
+    }
+   ],
+   "confidence": "high",
+   "evidence": [
+    {
+     "candidate": "c27",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 141490.2,
+     "image": ""
+    },
+    {
+     "candidate": "c28",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 147164.2,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 62.6,
+    "y_m": 48.9
+   }
+  },
+  {
+   "id": "n9",
+   "name": "Playground",
+   "kind": "landmark",
+   "description": "A children's playground on a soft floor on the left of the corridor. It is likely loud with children's voices. Shop fronts, including the Merkal shoe shop, are on the right, and there are large pillars along the left.",
+   "landmarks": [
+    "children's voices",
+    "soft rubber play floor on the left",
+    "large pillars on the left"
+   ],
+   "hazards": [
+    "playground equipment and running children on the left"
+   ],
+   "visual_cues": [
+    "blue and orange play mat with yellow climbing frames",
+    "Merkal sign",
+    "Orange shop sign ahead"
+   ],
+   "floor": "-1",
+   "candidates": [],
+   "relations": [
+    {
+     "id": "n9:playground",
+     "subject": "Playground",
+     "candidate": "c34",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 192891.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c34.jpg",
+     "viewpoint_heading_deg": 101.9,
+     "bearing_deg": 0.0,
+     "heading_deg": 101.9,
+     "arrival_heading_deg": 130.0,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n9:merkal-shop",
+     "subject": "Merkal shop",
+     "candidate": "c32",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 187744.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c32.jpg",
+     "viewpoint_heading_deg": 135.6,
+     "bearing_deg": 17.4,
+     "heading_deg": 153.0,
+     "arrival_heading_deg": 130.0,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n9:orange-shop",
+     "subject": "Orange shop",
+     "candidate": "c35",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 196835.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c35.jpg",
+     "viewpoint_heading_deg": 145.1,
+     "bearing_deg": -1.9,
+     "heading_deg": 143.2,
+     "arrival_heading_deg": 130.0,
+     "direction": "ahead",
+     "status": "observed"
+    }
+   ],
+   "confidence": "high",
+   "evidence": [
+    {
+     "candidate": "c32",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 187744.2,
+     "image": ""
+    },
+    {
+     "candidate": "c33",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 190286.2,
+     "image": ""
+    },
+    {
+     "candidate": "c34",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 192891.2,
+     "image": ""
+    },
+    {
+     "candidate": "c35",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 196835.2,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 90.7,
+    "y_m": 25.9
+   }
+  },
+  {
+   "id": "n10",
+   "name": "Orange shop",
+   "kind": "junction",
+   "description": "The corridor bends here at the Orange phone shop, which faces you. The route bears left.",
+   "landmarks": [
+    "shop front across the end of the corridor",
+    "round pillar"
+   ],
+   "hazards": [
+    "pillar in the walkway"
+   ],
+   "visual_cues": [
+    "orange Orange shop front",
+    "round pillar with ceiling dish"
+   ],
+   "floor": "-1",
+   "candidates": [],
+   "relations": [
+    {
+     "id": "n10:orange-shop",
+     "subject": "Orange shop",
+     "candidate": "c37",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 210941.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c37.jpg",
+     "viewpoint_heading_deg": 131.3,
+     "bearing_deg": 1.9,
+     "heading_deg": 133.2,
+     "arrival_heading_deg": 136.9,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n10:emma-shop",
+     "subject": "Emma shop",
+     "candidate": "c37",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 210941.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c37.jpg",
+     "viewpoint_heading_deg": 131.3,
+     "bearing_deg": -90.0,
+     "heading_deg": 41.3,
+     "arrival_heading_deg": 136.9,
+     "direction": "left",
+     "status": "inferred"
+    }
+   ],
+   "confidence": "high",
+   "evidence": [
+    {
+     "candidate": "c36",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 204992.2,
+     "image": ""
+    },
+    {
+     "candidate": "c37",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 210941.2,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 100.0,
+    "y_m": 16.8
+   }
+  },
+  {
+   "id": "n11",
+   "name": "Emma shop",
+   "kind": "landmark",
+   "description": "Corridor with the Emma mattress shop on the right. On the left there is a seating spot with armchairs and a vending machine.",
+   "landmarks": [
+    "armchairs on the left",
+    "vending machine on the left",
+    "shop glass on the right"
+   ],
+   "hazards": [
+    "armchairs and a large plant on the left"
+   ],
+   "visual_cues": [
+    "Emma sign with orange glow",
+    "red AEGA vending machine",
+    "yellow armchairs",
+    "Serveis sign"
+   ],
+   "floor": "-1",
+   "candidates": [],
+   "relations": [
+    {
+     "id": "n11:emma-shop",
+     "subject": "Emma shop",
+     "candidate": "c41",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 237246.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c41.jpg",
+     "viewpoint_heading_deg": 78.2,
+     "bearing_deg": 13.5,
+     "heading_deg": 91.7,
+     "arrival_heading_deg": 74.6,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n11:vending-machine",
+     "subject": "Vending machine",
+     "candidate": "c40",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 234504.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c40.jpg",
+     "viewpoint_heading_deg": 62.9,
+     "bearing_deg": 1.9,
+     "heading_deg": 64.8,
+     "arrival_heading_deg": 74.6,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n11:seating",
+     "subject": "Seating",
+     "candidate": "c40",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 234504.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c40.jpg",
+     "viewpoint_heading_deg": 62.9,
+     "bearing_deg": -15.5,
+     "heading_deg": 47.4,
+     "arrival_heading_deg": 74.6,
+     "direction": "ahead",
+     "status": "observed"
+    }
+   ],
+   "confidence": "high",
+   "evidence": [
+    {
+     "candidate": "c40",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 234504.2,
+     "image": ""
+    },
+    {
+     "candidate": "c41",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 237246.2,
+     "image": ""
+    },
+    {
+     "candidate": "c42",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 240789.2,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 123.2,
+    "y_m": 16.1
+   }
+  },
+  {
+   "id": "n12",
+   "name": "Third escalators",
+   "kind": "stairs",
+   "description": "A pair of escalators on the left of the corridor, behind a glass balustrade, with a thin pillar beside them. They go up to the upper floor, and you can hear them hum.",
+   "landmarks": [
+    "escalator hum",
+    "glass balustrade on the left",
+    "thin pillar"
+   ],
+   "hazards": [
+    "escalator openings on the left"
+   ],
+   "visual_cues": [
+    "colourful geometric panels in yellow, orange and blue",
+    "round signs on escalator glass",
+    "Mercat sign"
+   ],
+   "floor": "-1",
+   "candidates": [],
+   "relations": [
+    {
+     "id": "n12:escalators-up",
+     "subject": "Escalators up",
+     "candidate": "c44",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 247940.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c44.jpg",
+     "viewpoint_heading_deg": 50.6,
+     "bearing_deg": -3.9,
+     "heading_deg": 46.7,
+     "arrival_heading_deg": 79.5,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n12:pillar",
+     "subject": "Pillar",
+     "candidate": "c44",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 247940.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c44.jpg",
+     "viewpoint_heading_deg": 50.6,
+     "bearing_deg": 3.9,
+     "heading_deg": 54.5,
+     "arrival_heading_deg": 79.5,
+     "direction": "ahead",
+     "status": "observed"
+    }
+   ],
+   "confidence": "high",
+   "evidence": [
+    {
+     "candidate": "c43",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 244897.2,
+     "image": ""
+    },
+    {
+     "candidate": "c44",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 247940.2,
+     "image": ""
+    },
+    {
+     "candidate": "c45",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 251882.2,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 131.1,
+    "y_m": 18.5
+   }
+  },
+  {
+   "id": "n13",
+   "name": "Bar kiosk",
+   "kind": "landmark",
+   "description": "A round bar counter with high stools, standing in the open hall to the left. There is a large pillar nearby, and the curved corridor carries on to the right toward the food court.",
+   "landmarks": [
+    "counter edge and high stools on the left",
+    "large round pillar"
+   ],
+   "hazards": [
+    "high stools around the kiosk"
+   ],
+   "visual_cues": [
+    "wooden slatted curved ceiling",
+    "Honest Greens sign in the distance",
+    "orange lamp shades on the kiosk"
+   ],
+   "floor": "-1",
+   "candidates": [],
+   "relations": [
+    {
+     "id": "n13:bar-kiosk",
+     "subject": "Bar kiosk",
+     "candidate": "c48",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 263954.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c48.jpg",
+     "viewpoint_heading_deg": 61.9,
+     "bearing_deg": -1.9,
+     "heading_deg": 60.0,
+     "arrival_heading_deg": 76.2,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n13:honest-greens",
+     "subject": "Honest Greens",
+     "candidate": "c48",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 263954.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c48.jpg",
+     "viewpoint_heading_deg": 61.9,
+     "bearing_deg": 11.6,
+     "heading_deg": 73.5,
+     "arrival_heading_deg": 76.2,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n13:pillar",
+     "subject": "Pillar",
+     "candidate": "c48",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 263954.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c48.jpg",
+     "viewpoint_heading_deg": 61.9,
+     "bearing_deg": -14.7,
+     "heading_deg": 47.2,
+     "arrival_heading_deg": 76.2,
+     "direction": "ahead",
+     "status": "observed"
+    }
+   ],
+   "confidence": "high",
+   "evidence": [
+    {
+     "candidate": "c47",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 258107.2,
+     "image": ""
+    },
+    {
+     "candidate": "c48",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 263954.2,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 141.7,
+    "y_m": 22.4
+   }
+  },
+  {
+   "id": "n14",
+   "name": "Food court doors",
+   "kind": "door",
+   "description": "Automatic glass doors into the food court. The sound changes to restaurant chatter and the smell of food (likely).",
+   "landmarks": [
+    "automatic doors",
+    "restaurant noise beyond"
+   ],
+   "hazards": [
+    "glass doors"
+   ],
+   "visual_cues": [
+    "glass front with hanging plants",
+    "Honest Greens lit sign",
+    "Lapost shop on the right",
+    "dark floor tiles"
+   ],
+   "floor": "-1",
+   "candidates": [],
+   "relations": [
+    {
+     "id": "n14:honest-greens",
+     "subject": "Honest Greens",
+     "candidate": "c51",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 281502.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c51.jpg",
+     "viewpoint_heading_deg": 76.3,
+     "bearing_deg": -5.8,
+     "heading_deg": 70.5,
+     "arrival_heading_deg": 72.9,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n14:automatic-doors",
+     "subject": "Automatic doors",
+     "candidate": "c51",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 281502.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c51.jpg",
+     "viewpoint_heading_deg": 76.3,
+     "bearing_deg": 0.0,
+     "heading_deg": 76.3,
+     "arrival_heading_deg": 72.9,
+     "direction": "ahead",
+     "status": "observed"
+    }
+   ],
+   "confidence": "high",
+   "evidence": [
+    {
+     "candidate": "c51",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 281502.2,
+     "image": ""
+    },
+    {
+     "candidate": "c52",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 285148.2,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 159.4,
+    "y_m": 27.5
+   }
+  },
+  {
+   "id": "n15",
+   "name": "Honest Greens",
+   "kind": "destination",
+   "description": "The Honest Greens restaurant seating, with wooden tables and high stools on a textured floor, on the left of the food court aisle. It is likely busy with diners and smells of food.",
+   "landmarks": [
+    "textured pebble-like floor under the tables",
+    "high wooden stools",
+    "diners' voices"
+   ],
+   "hazards": [
+    "menu stands at the aisle edge",
+    "high stools",
+    "pushchairs between tables"
+   ],
+   "visual_cues": [
+    "yellow lit 'honest greens' sign",
+    "hanging plants",
+    "patterned tile mat with menu board"
+   ],
+   "floor": "-1",
+   "candidates": [],
+   "relations": [
+    {
+     "id": "n15:honest-greens-tables",
+     "subject": "Honest Greens tables",
+     "candidate": "c60",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 314457.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c60.jpg",
+     "viewpoint_heading_deg": 37.2,
+     "bearing_deg": 3.9,
+     "heading_deg": 41.1,
+     "arrival_heading_deg": 79.9,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n15:hamburguesa-nostra",
+     "subject": "Hamburguesa Nostra",
+     "candidate": "c60",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 314457.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c60.jpg",
+     "viewpoint_heading_deg": 37.2,
+     "bearing_deg": 90.0,
+     "heading_deg": 127.2,
+     "arrival_heading_deg": 79.9,
+     "direction": "right",
+     "status": "inferred"
+    },
+    {
+     "id": "n15:food-court-doors",
+     "subject": "Food court doors",
+     "candidate": "c54",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 294639.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c54.jpg",
+     "viewpoint_heading_deg": 75.7,
+     "bearing_deg": 180.0,
+     "heading_deg": 255.7,
+     "arrival_heading_deg": 82.2,
+     "direction": "behind",
+     "status": "inferred"
+    }
+   ],
+   "confidence": "high",
+   "evidence": [
+    {
+     "candidate": "c54",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 294639.2,
+     "image": ""
+    },
+    {
+     "candidate": "c55",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 297177.2,
+     "image": ""
+    },
+    {
+     "candidate": "c59",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 312554.2,
+     "image": ""
+    },
+    {
+     "candidate": "c60",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 314457.2,
+     "image": ""
+    },
+    {
+     "candidate": "c60",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 314757.2,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 169.6,
+    "y_m": 30.5
+   }
+  },
+  {
+   "id": "n16",
+   "name": "Hamburguesa Nostra",
+   "kind": "destination",
+   "description": "Hamburguesa Nostra's burger restaurant, opposite Honest Greens across the food court aisle. It has high tables and stools behind menu boards, and a strip of different tiles marks its edge.",
+   "landmarks": [
+    "mosaic strip in the floor at the edge of its seating",
+    "high stools and tables",
+    "menu boards"
+   ],
+   "hazards": [
+    "menu stands",
+    "high stools"
+   ],
+   "visual_cues": [
+    "curved blue 'Hamburguesa Nostra' sign",
+    "burger posters",
+    "blue mosaic border"
+   ],
+   "floor": "-1",
+   "candidates": [],
+   "relations": [
+    {
+     "id": "n16:hamburguesa-nostra",
+     "subject": "Hamburguesa Nostra",
+     "candidate": "c57",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 305996.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c57.jpg",
+     "viewpoint_heading_deg": 126.1,
+     "bearing_deg": 0.0,
+     "heading_deg": 126.1,
+     "arrival_heading_deg": 91.7,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n16:honest-greens",
+     "subject": "Honest Greens",
+     "candidate": "c57",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 305996.2,
+     "viewpoint_image": "builds/20261010T180958Z/frames/c57.jpg",
+     "viewpoint_heading_deg": 126.1,
+     "bearing_deg": -90.0,
+     "heading_deg": 36.1,
+     "arrival_heading_deg": 91.7,
+     "direction": "left",
+     "status": "inferred"
+    }
+   ],
+   "confidence": "high",
+   "evidence": [
+    {
+     "candidate": "c57",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 305996.2,
+     "image": ""
+    },
+    {
+     "candidate": "c58",
+     "rec_id": "20261010T180004Z_4d83",
+     "t_ms": 309682.2,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 174.2,
+    "y_m": 31.5
+   }
+  }
+ ],
+ "edges": [
+  {
+   "id": "e1",
+   "source": "n1",
+   "target": "n2",
+   "kind": "stairs",
+   "bidirectional": true,
+   "steps": [
+    {
+     "action": "stairs_down",
+     "distance_m": 5.0,
+     "along": "moving handrail on your right",
+     "until": "the steps flatten and you step off onto a metal plate"
+    }
+   ],
+   "instruction": "Hold the right handrail and ride the escalator down, about 5 metres. Step off where the steps flatten onto a metal plate. The automatic glass doors are just ahead.",
+   "reverse_instruction": "Turn so the glass doors are behind you and find the escalator foot. Hold the handrail and ride up about 5 metres, then step off onto the street plaza.",
+   "landmarks": [
+    "moving handrail",
+    "metal comb plate at the bottom"
+   ],
+   "hazards": [
+    "escalator",
+    "crowd at the foot"
+   ],
+   "visual_cues": [
+    "glass balustrade with green lights",
+    "planter on the right side"
+   ],
+   "candidates": [],
+   "confidence": "high",
+   "distance_m": 7.1,
+   "measured_distance_m": 7.1,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 5.0,
+     "along": "moving handrail on your left",
+     "until": "moving rubber handrails on both sides"
+    }
+   ],
+   "walked_at_ms": 12357.2,
+   "walked_in": "20261010T180004Z_4d83",
+   "turn_deg": 10.0,
+   "reverse_status": "inferred",
+   "review_flags": [
+    "the way back was not walked"
+   ],
+   "instruction_kind": "straight",
+   "departure_heading_deg": 53.4,
+   "arrival_heading_deg": 49.2,
+   "walked_forward": 1,
+   "walked_back": 0
+  },
+  {
+   "id": "e2",
+   "source": "n2",
+   "target": "n3",
+   "kind": "door",
+   "bidirectional": true,
+   "steps": [
+    {
+     "action": "straight",
+     "distance_m": 3.0,
+     "along": null,
+     "until": "you are through the automatic glass doors onto smooth tiles"
+    }
+   ],
+   "instruction": "Go straight through the automatic sliding glass doors and walk about 3 metres onto smooth tiles. The Sprinter sports shop is just ahead and the hall opens up.",
+   "reverse_instruction": "Walk about 3 metres back through the automatic glass doors. The floor turns to stone and the escalator is just ahead.",
+   "landmarks": [
+    "automatic sliding doors",
+    "floor change to smooth tiles"
+   ],
+   "hazards": [
+    "glass doors"
+   ],
+   "visual_cues": [
+    "Sprinter sign"
+   ],
+   "candidates": [],
+   "confidence": "high",
+   "distance_m": 7.7,
+   "measured_distance_m": 7.7,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 3.0,
+     "along": null,
+     "until": "metal grate across the floor at the escalator foot"
+    }
+   ],
+   "walked_at_ms": 42194.2,
+   "walked_in": "20261010T180004Z_4d83",
+   "turn_deg": 16.0,
+   "reverse_status": "inferred",
+   "review_flags": [
+    "the way back was not walked"
+   ],
+   "instruction_kind": "straight",
+   "departure_heading_deg": 87.2,
+   "arrival_heading_deg": 90.9,
+   "walked_forward": 1,
+   "walked_back": 0
+  },
+  {
+   "id": "e3",
+   "source": "n3",
+   "target": "n4",
+   "kind": "walk",
+   "bidirectional": true,
+   "steps": [
+    {
+     "action": "bear_left",
+     "distance_m": 6.0,
+     "along": "shop fronts on your right",
+     "until": "you hear the escalators humming ahead on your left"
+    }
+   ],
+   "instruction": "Bear left past the large potted plant and walk about 6 metres with shop fronts on your right. The escalators hum ahead on your left, by a big round pillar.",
+   "reverse_instruction": "With the escalators behind you, walk about 6 metres, shop fronts on your left, bearing right past a large potted plant. The Sprinter shop is ahead.",
+   "landmarks": [
+    "large potted plant",
+    "escalator hum"
+   ],
+   "hazards": [
+    "planter at the walkway edge"
+   ],
+   "visual_cues": [
+    "Women'secret shop",
+    "escalators ahead"
+   ],
+   "candidates": [],
+   "confidence": "high",
+   "distance_m": 12.0,
+   "measured_distance_m": 12.0,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 6.0,
+     "along": "shop fronts on your left",
+     "until": "smooth large floor tiles"
+    }
+   ],
+   "walked_at_ms": 59507.2,
+   "walked_in": "20261010T180004Z_4d83",
+   "turn_deg": 4.0,
+   "reverse_status": "inferred",
+   "review_flags": [
+    "the way back was not walked"
+   ],
+   "instruction_kind": "straight",
+   "departure_heading_deg": 38.7,
+   "arrival_heading_deg": 33.0,
+   "walked_forward": 1,
+   "walked_back": 0
+  },
+  {
+   "id": "e4",
+   "source": "n4",
+   "target": "n5",
+   "kind": "walk",
+   "bidirectional": true,
+   "steps": [
+    {
+     "action": "bear_right",
+     "distance_m": 6.0,
+     "along": "shop fronts on your right",
+     "until": "you likely smell fragrance from the Rituals shop on your right"
+    }
+   ],
+   "instruction": "Bear right, leaving the escalators behind on your left, and walk about 6 metres with shop fronts on your right. Rituals, likely with a strong scent, is on your right.",
+   "reverse_instruction": "Walk about 6 metres with shop fronts on your left, bearing left. The escalators hum just ahead on your left, by a big pillar.",
+   "landmarks": [
+    "escalator hum fades",
+    "likely fragrance"
+   ],
+   "hazards": [],
+   "visual_cues": [
+    "Serveis sign",
+    "Rituals round sign"
+   ],
+   "candidates": [],
+   "confidence": "high",
+   "distance_m": 9.9,
+   "measured_distance_m": 9.9,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 6.0,
+     "along": "shop fronts on your left",
+     "until": "escalator hum"
+    }
+   ],
+   "walked_at_ms": 75084.2,
+   "walked_in": "20261010T180004Z_4d83",
+   "turn_deg": 46.0,
+   "reverse_status": "inferred",
+   "review_flags": [
+    "the way back was not walked"
+   ],
+   "instruction_kind": "turn_right",
+   "departure_heading_deg": 45.0,
+   "arrival_heading_deg": 58.5,
+   "walked_forward": 1,
+   "walked_back": 0
+  },
+  {
+   "id": "e5",
+   "source": "n5",
+   "target": "n6",
+   "kind": "walk",
+   "bidirectional": true,
+   "steps": [
+    {
+     "action": "straight",
+     "distance_m": 6.0,
+     "along": "shop fronts on your right",
+     "until": "you reach the ice cream counter and café tables on your left"
+    }
+   ],
+   "instruction": "Walk straight about 6 metres with shop fronts on your right. The café tables and ice cream counter are on your left. Mind the chairs.",
+   "reverse_instruction": "Keeping the café on your right, walk straight about 6 metres with shop fronts on your left. Rituals is on your left.",
+   "landmarks": [
+    "café chatter",
+    "counter on the left"
+   ],
+   "hazards": [
+    "café chairs"
+   ],
+   "visual_cues": [
+    "Celio sign",
+    "ice cream display"
+   ],
+   "candidates": [],
+   "confidence": "high",
+   "distance_m": 13.3,
+   "measured_distance_m": 13.3,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 6.0,
+     "along": "shop fronts on your left",
+     "until": "likely fragrance from the cosmetics shop"
+    }
+   ],
+   "walked_at_ms": 91404.2,
+   "walked_in": "20261010T180004Z_4d83",
+   "turn_deg": 69.0,
+   "reverse_status": "inferred",
+   "review_flags": [
+    "the first step is straight, but the walk turned right 69° when leaving n5",
+    "the way back was not walked"
+   ],
+   "instruction_kind": "turn_right",
+   "departure_heading_deg": 78.0,
+   "arrival_heading_deg": 97.6,
+   "walked_forward": 1,
+   "walked_back": 0
+  },
+  {
+   "id": "e6",
+   "source": "n6",
+   "target": "n7",
+   "kind": "walk",
+   "bidirectional": true,
+   "steps": [
+    {
+     "action": "bear_right",
+     "distance_m": 3.0,
+     "along": "shop fronts on your right",
+     "until": "a low curved bench around a planter is on your left"
+    }
+   ],
+   "instruction": "Bear slightly right and walk about 3 metres. A low curved bench around a planter is on your left, and the Intimissimi shop is ahead on your right.",
+   "reverse_instruction": "With the planter bench on your right, walk about 3 metres, bearing slightly left. The café tables and ice cream counter are on your right.",
+   "landmarks": [
+    "low curved bench"
+   ],
+   "hazards": [
+    "low bench edge"
+   ],
+   "visual_cues": [
+    "palm planter with white bench"
+   ],
+   "candidates": [],
+   "confidence": "high",
+   "distance_m": 10.7,
+   "measured_distance_m": 10.7,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 3.0,
+     "along": "shop fronts on your left",
+     "until": "ice cream counter on the left, at waist height"
+    }
+   ],
+   "walked_at_ms": 109173.2,
+   "walked_in": "20261010T180004Z_4d83",
+   "turn_deg": -7.0,
+   "reverse_status": "inferred",
+   "review_flags": [
+    "the way back was not walked"
+   ],
+   "instruction_kind": "straight",
+   "departure_heading_deg": 55.2,
+   "arrival_heading_deg": 74.6,
+   "walked_forward": 1,
+   "walked_back": 0
+  },
+  {
+   "id": "e7",
+   "source": "n7",
+   "target": "n8",
+   "kind": "walk",
+   "bidirectional": true,
+   "steps": [
+    {
+     "action": "straight",
+     "distance_m": 15.0,
+     "along": "shop fronts on your right",
+     "until": "the hall widens and echoes, with a big round pillar just ahead"
+    }
+   ],
+   "instruction": "Walk straight about 15 metres with shop fronts on your right. The hall widens and echoes more, with a big round pillar just ahead.",
+   "reverse_instruction": "With the big pillar behind you, walk straight about 15 metres down the corridor, shop fronts on your left, to the Intimissimi shop and the planter bench on your right.",
+   "landmarks": [
+    "wider, echoing hall",
+    "round pillar"
+   ],
+   "hazards": [
+    "pillars"
+   ],
+   "visual_cues": [
+    "The Body Shop sign",
+    "Gant curved glass shop"
+   ],
+   "candidates": [],
+   "confidence": "high",
+   "distance_m": 21.6,
+   "measured_distance_m": 21.6,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 15.0,
+     "along": "shop fronts on your left",
+     "until": "low curved bench around a planter on the left"
+    }
+   ],
+   "walked_at_ms": 123509.2,
+   "walked_in": "20261010T180004Z_4d83",
+   "turn_deg": -8.0,
+   "reverse_status": "inferred",
+   "review_flags": [
+    "the way back was not walked"
+   ],
+   "instruction_kind": "straight",
+   "departure_heading_deg": 47.6,
+   "arrival_heading_deg": 50.4,
+   "walked_forward": 1,
+   "walked_back": 0
+  },
+  {
+   "id": "e8",
+   "source": "n8",
+   "target": "n9",
+   "kind": "walk",
+   "bidirectional": true,
+   "steps": [
+    {
+     "action": "turn_right",
+     "distance_m": 9.0,
+     "along": "shop fronts on your right",
+     "until": "you pass a large plant on your left"
+    },
+    {
+     "action": "straight",
+     "distance_m": 24.0,
+     "along": "shop fronts on your right",
+     "until": "you hear children playing on your left"
+    }
+   ],
+   "instruction": "Turn right and walk about 9 metres with shop fronts on your right. Keep straight about 24 metres more until you hear children at the playground on your left.",
+   "reverse_instruction": "With the playground on your right, walk straight about 24 metres, shop fronts on your left, then about 9 metres more and turn left into the wide hall with a big pillar.",
+   "landmarks": [
+    "children's voices",
+    "large pillars on the left"
+   ],
+   "hazards": [
+    "pillars and plants on the left"
+   ],
+   "visual_cues": [
+    "Calzedonia and Tezenis signs",
+    "Merkal sign"
+   ],
+   "candidates": [],
+   "confidence": "high",
+   "distance_m": 38.6,
+   "measured_distance_m": 38.6,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 24.0,
+     "along": "shop fronts on your left",
+     "until": "you pass a large plant on your left"
+    },
+    {
+     "action": "straight",
+     "distance_m": 9.0,
+     "along": "shop fronts on your left",
+     "until": "large round pillar"
+    }
+   ],
+   "walked_at_ms": 147164.2,
+   "walked_in": "20261010T180004Z_4d83",
+   "turn_deg": 28.0,
+   "reverse_status": "inferred",
+   "review_flags": [
+    "the way back was not walked"
+   ],
+   "instruction_kind": "straight",
+   "departure_heading_deg": 109.6,
+   "arrival_heading_deg": 130.0,
+   "walked_forward": 1,
+   "walked_back": 0
+  },
+  {
+   "id": "e9",
+   "source": "n9",
+   "target": "n10",
+   "kind": "walk",
+   "bidirectional": true,
+   "steps": [
+    {
+     "action": "straight",
+     "distance_m": 7.0,
+     "along": "shop fronts on your right",
+     "until": "a shop front faces you where the corridor bends"
+    }
+   ],
+   "instruction": "Continue straight about 7 metres, with large pillars on your left. The Orange phone shop faces you where the corridor bends left.",
+   "reverse_instruction": "With the Orange shop behind you, walk straight about 7 metres, shop fronts on your left. The playground is on your right.",
+   "landmarks": [
+    "pillars on the left"
+   ],
+   "hazards": [
+    "pillar in the walkway"
+   ],
+   "visual_cues": [
+    "Orange shop sign"
+   ],
+   "candidates": [],
+   "confidence": "high",
+   "distance_m": 13.2,
+   "measured_distance_m": 13.2,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 7.0,
+     "along": "shop fronts on your left",
+     "until": "children's voices"
+    }
+   ],
+   "walked_at_ms": 196835.2,
+   "walked_in": "20261010T180004Z_4d83",
+   "turn_deg": -4.0,
+   "reverse_status": "inferred",
+   "review_flags": [
+    "the way back was not walked"
+   ],
+   "instruction_kind": "straight",
+   "departure_heading_deg": 140.1,
+   "arrival_heading_deg": 136.9,
+   "walked_forward": 1,
+   "walked_back": 0
+  },
+  {
+   "id": "e10",
+   "source": "n10",
+   "target": "n11",
+   "kind": "walk",
+   "bidirectional": true,
+   "steps": [
+    {
+     "action": "bear_left",
+     "distance_m": 20.0,
+     "along": "shop fronts on your right",
+     "until": "armchairs and a vending machine are on your left"
+    }
+   ],
+   "instruction": "Bear left at the Orange shop and walk about 20 metres. You pass a perfume kiosk on your left. When armchairs and a vending machine are on your left, the Emma shop is on your right.",
+   "reverse_instruction": "With the armchairs on your right, walk about 20 metres, shop fronts on your left. You pass a perfume kiosk on your right and bear right at the Orange shop.",
+   "landmarks": [
+    "perfume kiosk counter on the left",
+    "armchairs on the left"
+   ],
+   "hazards": [
+    "kiosk counter on the left"
+   ],
+   "visual_cues": [
+    "Dubes perfume kiosk",
+    "Emma orange-lit shop"
+   ],
+   "candidates": [],
+   "confidence": "high",
+   "distance_m": 25.3,
+   "measured_distance_m": 25.3,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 20.0,
+     "along": "shop fronts on your left",
+     "until": "shop front across the end of the corridor"
+    }
+   ],
+   "walked_at_ms": 210941.2,
+   "walked_in": "20261010T180004Z_4d83",
+   "turn_deg": -15.0,
+   "reverse_status": "inferred",
+   "review_flags": [
+    "the way back was not walked"
+   ],
+   "instruction_kind": "straight",
+   "departure_heading_deg": 120.8,
+   "arrival_heading_deg": 74.6,
+   "walked_forward": 1,
+   "walked_back": 0
+  },
+  {
+   "id": "e11",
+   "source": "n11",
+   "target": "n12",
+   "kind": "walk",
+   "bidirectional": true,
+   "steps": [
+    {
+     "action": "straight",
+     "distance_m": 3.0,
+     "along": "shop fronts on your right",
+     "until": "you hear the escalators on your left"
+    }
+   ],
+   "instruction": "Continue straight about 3 metres. The escalators are on your left behind a glass balustrade; you hear them hum.",
+   "reverse_instruction": "With the escalators behind you, walk straight about 3 metres. The armchairs and vending machine are on your right, and the Emma shop is on your left.",
+   "landmarks": [
+    "escalator hum"
+   ],
+   "hazards": [
+    "escalator openings on the left"
+   ],
+   "visual_cues": [
+    "colourful geometric panels"
+   ],
+   "candidates": [],
+   "confidence": "high",
+   "distance_m": 8.7,
+   "measured_distance_m": 8.7,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 3.0,
+     "along": "shop fronts on your left",
+     "until": "armchairs on the left"
+    }
+   ],
+   "walked_at_ms": 240789.2,
+   "walked_in": "20261010T180004Z_4d83",
+   "turn_deg": -23.0,
+   "reverse_status": "inferred",
+   "review_flags": [
+    "the way back was not walked"
+   ],
+   "instruction_kind": "straight",
+   "departure_heading_deg": 75.6,
+   "arrival_heading_deg": 79.5,
+   "walked_forward": 1,
+   "walked_back": 0
+  },
+  {
+   "id": "e12",
+   "source": "n12",
+   "target": "n13",
+   "kind": "walk",
+   "bidirectional": true,
+   "steps": [
+    {
+     "action": "bear_right",
+     "distance_m": 6.0,
+     "along": "shop fronts on your right",
+     "until": "a bar counter with high stools is ahead on your left"
+    }
+   ],
+   "instruction": "Bear slightly right, away from the escalators, and walk about 6 metres past a snack counter on your right. A round bar kiosk with high stools is on your left.",
+   "reverse_instruction": "With the bar kiosk behind you, walk about 6 metres, bearing slightly left, with shop fronts on your left. The escalators hum on your right.",
+   "landmarks": [
+    "snack counter on the right",
+    "high stools"
+   ],
+   "hazards": [
+    "high stools"
+   ],
+   "visual_cues": [
+    "Lot's sign",
+    "kiosk with orange lamps"
+   ],
+   "candidates": [],
+   "confidence": "high",
+   "distance_m": 11.7,
+   "measured_distance_m": 11.7,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 6.0,
+     "along": "shop fronts on your left",
+     "until": "escalator hum"
+    }
+   ],
+   "walked_at_ms": 251882.2,
+   "walked_in": "20261010T180004Z_4d83",
+   "turn_deg": 24.0,
+   "reverse_status": "inferred",
+   "review_flags": [
+    "the way back was not walked"
+   ],
+   "instruction_kind": "straight",
+   "departure_heading_deg": 73.4,
+   "arrival_heading_deg": 76.2,
+   "walked_forward": 1,
+   "walked_back": 0
+  },
+  {
+   "id": "e13",
+   "source": "n13",
+   "target": "n14",
+   "kind": "walk",
+   "bidirectional": true,
+   "steps": [
+    {
+     "action": "straight",
+     "distance_m": 15.0,
+     "along": "curved wall of shop windows on your right",
+     "until": "you reach the automatic doors and hear the restaurants"
+    }
+   ],
+   "instruction": "Walk straight about 15 metres, following the curved wall of shop windows on your right, to the automatic glass doors. Restaurant noise grows louder ahead.",
+   "reverse_instruction": "Go back through the doors and walk straight about 15 metres, curved shop windows on your left, to the round bar kiosk with high stools on your right.",
+   "landmarks": [
+    "curved wall on the right",
+    "restaurant noise"
+   ],
+   "hazards": [
+    "glass doors"
+   ],
+   "visual_cues": [
+    "Veritas shop",
+    "wooden slatted ceiling",
+    "Honest Greens sign through glass"
+   ],
+   "candidates": [],
+   "confidence": "high",
+   "distance_m": 18.7,
+   "measured_distance_m": 18.7,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 15.0,
+     "along": "curved wall of shop windows on your left",
+     "until": "counter edge and high stools on the left"
+    }
+   ],
+   "walked_at_ms": 263954.2,
+   "walked_in": "20261010T180004Z_4d83",
+   "turn_deg": 4.0,
+   "reverse_status": "inferred",
+   "review_flags": [
+    "the way back was not walked"
+   ],
+   "instruction_kind": "straight",
+   "departure_heading_deg": 71.8,
+   "arrival_heading_deg": 72.9,
+   "walked_forward": 1,
+   "walked_back": 0
+  },
+  {
+   "id": "e14",
+   "source": "n14",
+   "target": "n15",
+   "kind": "walk",
+   "bidirectional": true,
+   "steps": [
+    {
+     "action": "straight",
+     "distance_m": 8.0,
+     "along": null,
+     "until": "wooden tables and high stools are on your left"
+    }
+   ],
+   "instruction": "Go straight through the doors and walk about 8 metres. Honest Greens' tables and high stools are on your left; there are diners and likely food smells. Mind the menu stands.",
+   "reverse_instruction": "With Honest Greens on your right, walk straight about 8 metres to the automatic glass doors.",
+   "landmarks": [
+    "diners' voices",
+    "high stools"
+   ],
+   "hazards": [
+    "menu stands",
+    "high stools"
+   ],
+   "visual_cues": [
+    "honest greens sign",
+    "Hamburguesa Nostra sign on the right"
+   ],
+   "candidates": [],
+   "confidence": "high",
+   "distance_m": 10.7,
+   "measured_distance_m": 10.7,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 8.0,
+     "along": null,
+     "until": "automatic doors"
+    }
+   ],
+   "walked_at_ms": 285148.2,
+   "walked_in": "20261010T180004Z_4d83",
+   "turn_deg": -2.0,
+   "reverse_status": "inferred",
+   "review_flags": [
+    "the way back was not walked"
+   ],
+   "instruction_kind": "straight",
+   "departure_heading_deg": 71.8,
+   "arrival_heading_deg": 82.2,
+   "walked_forward": 1,
+   "walked_back": 0
+  },
+  {
+   "id": "e15",
+   "source": "n15",
+   "target": "n16",
+   "kind": "walk",
+   "bidirectional": true,
+   "steps": [
+    {
+     "action": "bear_right",
+     "distance_m": 3.0,
+     "along": null,
+     "until": "a strip of different tiles and high stools are on your right"
+    }
+   ],
+   "instruction": "Bear right and cross the aisle, about 3 metres. Hamburguesa Nostra's high tables and menu boards are on your right, and a textured strip in the floor marks the edge.",
+   "reverse_instruction": "With Hamburguesa Nostra behind you, cross the aisle about 3 metres. Honest Greens' wooden tables and stools are ahead.",
+   "landmarks": [
+    "textured floor strip",
+    "high stools"
+   ],
+   "hazards": [
+    "menu stands",
+    "high stools"
+   ],
+   "visual_cues": [
+    "blue Hamburguesa Nostra sign",
+    "blue mosaic border"
+   ],
+   "candidates": [],
+   "confidence": "medium",
+   "distance_m": 2.5,
+   "measured_distance_m": 2.5,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 3.0,
+     "along": null,
+     "until": "textured pebble-like floor under the tables"
+    }
+   ],
+   "walked_at_ms": 297177.2,
+   "walked_in": "20261010T180004Z_4d83",
+   "turn_deg": 10.0,
+   "reverse_status": "observed",
+   "instruction_kind": "straight",
+   "departure_heading_deg": 56.7,
+   "arrival_heading_deg": 91.7,
+   "walked_forward": 1,
+   "walked_back": 1
+  }
+ ],
+ "notes": [
+  "The map comes from a single walk (20261010T180004Z_4d83), so every edge has been walked only once, in one direction. Reverse instructions are mirrored, not recorded.",
+  "Floor levels are assumed: the plaza at the top of the entrance escalator is labelled '0' and everything after the escalator '-1'. It is not known whether the entrance escalator also runs up; check before using the reverse of e1.",
+  "The 'stairs' tags at c12 and c45 are escalators up to the upper floor that the walker passed but did not take. They are mapped as stair nodes beside the route. Their upper ends were not recorded.",
+  "'there is a playground to the net' was read as 'to the left', which matches c34.",
+  "The walker said 'turn left' at the Orange shop, but the motion data gives about 57° (c38 turn_deg). So e10 uses bear_left by the rule.",
+  "Uncertain turns: e5 (c16) uses straight even though turns zigzag at c17 to c19; c16 looked left at the café tables. e6 follows c21's +37° turn_at as bear_right.",
+  "After arriving, the walker stepped across the aisle to Hamburguesa Nostra (c56 to c58) and turned back about 68° left to Honest Greens (c59, c60). That return is the same edge e15 walked back.",
+  "Left out: c18 (blurred close-up of a sign). Several corridor frames are cited only as edge evidence: c04, c10, c13, c17, c26, c29 to c31, c38, c39, c46, c49, c50, c53, c56.",
+  "Odometry is approximate. The long 24 m stretch before the playground has no frames in between.",
+  "Record next: walks in the opposite direction, the upper ends of the escalators, other entrances, and the food court beyond Honest Greens."
+ ],
+ "map_id": "glories-basement",
+ "recordings": [
+  "20261010T180004Z_4d83"
+ ],
+ "build": {
+  "build_id": "20261010T180958Z",
+  "built_at_utc": "2026-10-10T18:09:58Z",
+  "pipeline_version": "mvp-2",
+  "params": {
+   "fps": 1.0,
+   "image_long_side": 768,
+   "min_sharpness_rel": 0.35,
+   "min_brightness": 25,
+   "max_brightness": 235,
+   "max_abs_pitch_deg": 55,
+   "novelty_sim": 0.8,
+   "min_gap_m": 2.0,
+   "turn_deg": 60,
+   "max_gap_m": 10.0,
+   "anchor_before_s": 2.0,
+   "anchor_after_s": 4.0,
+   "dup_sim": 0.92,
+   "hint_sim": 0.45,
+   "retrieve_k": 10,
+   "min_inliers": 300,
+   "revisit_min_s": 30,
+   "max_candidates": 60,
+   "calibrate": true,
+   "odometry": true
+  },
+  "embed_model": "facebook/dinov2-base",
+  "embed_dim": 1536,
+  "place_model": "gmberton/MegaLoc:5fe0dd697c4a70ba3e23607f6716ab3c606b16db",
+  "transcribe_model": "openai/whisper-large-v3-turbo",
+  "transcribe_languages": {
+   "20261010T180004Z_4d83": "en"
+  },
+  "llm": {
+   "backend": "claude_code",
+   "model": "claude-opus-5-5",
+   "effort": "medium",
+   "cost_usd": 1.2264604000000001,
+   "duration_s": 248.9,
+   "session_id": "0b226e6d-fcd7-4d79-8650-fb92258dda39"
+  },
+  "candidates": 60
+ },
+ "warnings": [
+  "summary uses visual words in spoken text: orange",
+  "node n10 uses visual words in spoken text: orange",
+  "edge e9 uses visual words in spoken text: orange",
+  "edge e10 uses visual words in spoken text: orange",
+  "candidates not used by any node: c04, c10, c13, c17, c18, c26, c29, c30, c31, c38, c39, c46, c49, c50, c53, c56",
+  "edge e5: the first step is straight, but the walk turned right 69° when leaving n5",
+  "jev: node n10: relies on sight",
+  "jev: node n16: relies on sight",
+  "jev: edge e9: relies on sight"
+ ],
+ "frame": {
+  "heading_source": "compass",
+  "heading_zero_abs_deg": 0.0,
+  "step_length_m": 0.49,
+  "live_step_length_m": 0.524
+ }
+}

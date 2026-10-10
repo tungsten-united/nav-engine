@@ -1,0 +1,43 @@
+{
+ "about": "Whisper large-v3-turbo's language probabilities (detect_language, top three) for every voice note of three real walks, all spoken in English: Itnig 20261009T202101Z_7f42 and 20261010T110802Z_601a, Glories Basement 20261010T180004Z_4d83 (2026-10-10). Short notes alone are misdetected: 7f42 clip 5 (1.8 s) as Spanish, 601a clip 7 (1.5 s) as Icelandic, 601a clip 11 as Spanish; transcribed in those languages they came out as nonsense ('Aquí en el Corrido Rópez', 'y si tienen transafirado').",
+ "walks": {
+  "20261009T202101Z_7f42": [
+   {"clip":0,"seconds":2.7,"languages":{"en":0.9741,"es":0.0145,"de":0.0017}},
+   {"clip":1,"seconds":6.21,"languages":{"en":0.9831,"es":0.0063,"de":0.0019}},
+   {"clip":2,"seconds":4.71,"languages":{"en":0.9849,"es":0.0056,"de":0.0022}},
+   {"clip":3,"seconds":7.7,"languages":{"en":0.7475,"es":0.1426,"ca":0.0268}},
+   {"clip":4,"seconds":2.83,"languages":{"en":0.8924,"es":0.0776,"pt":0.0049}},
+   {"clip":5,"seconds":1.81,"languages":{"es":0.6633,"en":0.2948,"pt":0.0153}},
+   {"clip":6,"seconds":11.06,"languages":{"en":0.971,"es":0.0166,"fr":0.0023}},
+   {"clip":7,"seconds":8.8,"languages":{"en":0.878,"es":0.0963,"de":0.0044}},
+   {"clip":8,"seconds":4.32,"languages":{"en":0.9504,"es":0.0291,"de":0.0045}},
+   {"clip":9,"seconds":4.31,"languages":{"en":0.9651,"es":0.0136,"de":0.0047}}
+  ],
+  "20261010T110802Z_601a": [
+   {"clip":0,"seconds":18.5,"languages":{"en":0.9836,"es":0.0055,"de":0.0023}},
+   {"clip":1,"seconds":3.49,"languages":{"en":0.8655,"es":0.1008,"pt":0.0058}},
+   {"clip":2,"seconds":7.26,"languages":{"en":0.9968,"es":0.0013,"de":0.0003}},
+   {"clip":3,"seconds":9.22,"languages":{"en":0.9937,"es":0.0028,"de":0.0006}},
+   {"clip":4,"seconds":9.23,"languages":{"en":0.9519,"es":0.034,"de":0.0024}},
+   {"clip":5,"seconds":7.45,"languages":{"en":0.9639,"es":0.0175,"de":0.0032}},
+   {"clip":6,"seconds":7.34,"languages":{"en":0.9781,"es":0.0066,"it":0.0054}},
+   {"clip":7,"seconds":1.48,"languages":{"is":0.8756,"en":0.0975,"de":0.0038}},
+   {"clip":8,"seconds":2.02,"languages":{"en":0.969,"es":0.0192,"de":0.0021}},
+   {"clip":9,"seconds":4.55,"languages":{"en":0.9981,"es":0.0004,"de":0.0002}},
+   {"clip":10,"seconds":3.71,"languages":{"en":0.9801,"es":0.0055,"de":0.0027}},
+   {"clip":11,"seconds":2.27,"languages":{"es":0.3309,"en":0.2397,"it":0.0753}},
+   {"clip":12,"seconds":6.51,"languages":{"en":0.9928,"es":0.0023,"de":0.0008}}
+  ],
+  "20261010T180004Z_4d83": [
+   {"clip":0,"seconds":2.1,"languages":{"en":0.8363,"es":0.1286,"de":0.0057}},
+   {"clip":1,"seconds":2.74,"languages":{"en":0.9776,"es":0.0132,"de":0.0022}},
+   {"clip":2,"seconds":1.95,"languages":{"en":0.9632,"it":0.0145,"es":0.0054}},
+   {"clip":3,"seconds":4.06,"languages":{"en":0.8925,"es":0.0204,"pt":0.0158}},
+   {"clip":4,"seconds":4.73,"languages":{"en":0.9546,"es":0.0222,"pt":0.0044}},
+   {"clip":5,"seconds":3.1,"languages":{"en":0.9334,"es":0.0461,"de":0.0037}},
+   {"clip":6,"seconds":5.33,"languages":{"en":0.9633,"es":0.0129,"de":0.0045}},
+   {"clip":7,"seconds":6.02,"languages":{"en":0.8766,"es":0.0751,"it":0.0065}},
+   {"clip":8,"seconds":5.21,"languages":{"en":0.9433,"es":0.0386,"de":0.0024}}
+  ]
+ }
+}

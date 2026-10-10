@@ -155,6 +155,11 @@ the live inference host out of it.
   2.9 -> 5.5 m). Folding is gone; localization measures over `links`. tests/test_clean.py checks both on 200 random
   maps and on tests/fixtures/itnig.
 
+- A problem found live becomes a test made from its real data, not only a fix: `tests/fixtures/itnig` (the map
+  that stalled guidance after cleaning), `tests/fixtures/glories-basement` (a place walked once: no way back over
+  `observed`), `tests/fixtures/voice-languages.json` (Whisper's guesses for short notes that alone came out Spanish
+  or Icelandic). Each says in its docstring or `about` where it came from.
+
 ## Product decisions
 - A recording is a **free walk through a place**, not a route. `place` (required, whitespace-normalised,
   case-insensitive grouping) is the map key: every walk of a place feeds that place's single map.
