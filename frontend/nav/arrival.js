@@ -15,7 +15,7 @@ const ArrivalNav = (() => {
     return s * y;
   }
 
-  // --- pdr.StepDetector: the phone's (Orient app tracker.ts, recorder app.js) -----------------------------------
+  // --- pdr.StepDetector: the phone's (Orient app tracker.ts, also its /map recorder) ----------------------------
   const STEP = { lpMs: 60, baseMs: 1500, varMs: 3000, frac: 0.4, floor: 0.1, minGapMs: 400 };
   class StepDetector {
     constructor(c = STEP) { this.c = c; this.last = null; this.lp = 0; this.base = 0; this.variance = 0.04; this.armed = true; this.lastStep = null; }

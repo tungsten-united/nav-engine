@@ -15,9 +15,12 @@ guides blind and visually impaired people indoors. Two sides:
 
 ## Recorder
 
-A phone page of the debugging frontend plus an HTTP API, both part of **map-api**, which runs on Cloud Run at
-**https://map-api-613464313064.europe-southwest1.run.app** on the team bucket, gated by an API token (see [Deployment](#deployment)). helium serves the same
-debugging pages at https://helium-nav.oscarmartinez.dev (behind Cloudflare Access); they call the Cloud Run services.
+A page of Orient's app, **https://orient.harshdeepsingh.dev/map** (project-description `apps/web/src/mapping/`), plus
+an HTTP API, **map-api**, which runs on Cloud Run at **https://map-api-613464313064.europe-southwest1.run.app** on the
+team bucket, gated by an API token (see [Deployment](#deployment)): the page asks for it once per phone, or takes it
+from the link on the debugging frontend's index. The debugging pages (`/dash/`, `/viz/`, `/loc/`, `/nav/`) stay
+here, served by map-api and by helium at https://helium-nav.oscarmartinez.dev (behind Cloudflare Access); they call
+the Cloud Run services.
 The live side, for Orient's orchestrator, is **nav-api** ([below](#nav-api-the-live-api)).
 
 While you walk, the phone records:
@@ -357,7 +360,7 @@ frames against the next checkpoint, and takes arrival as confirmed by hand.
 ## Deployment
 
 ```
-recorder, /dash, /viz (debugging) ──HTTPS + map-api token──▶ map-api (Cloud Run)  read-write ┐ /data = the team bucket
+Orient /map, /dash, /viz          ──HTTPS + map-api token──▶ map-api (Cloud Run)  read-write ┐ /data = the team bucket
 Orient's orchestrator, /loc, /nav ──HTTPS + nav-api token──▶ nav-api (Cloud Run)  read-only  ┘ (GCS FUSE): recordings/ maps/
               (the debugging pages are served by map-api, and by helium-nav)          │
                        both, with the Cloudflare Access service token                  ▼

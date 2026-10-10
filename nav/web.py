@@ -33,7 +33,7 @@ def setup(app: FastAPI, *, api_token: str | None, cors_origins: list[str], cors_
 
     @app.middleware("http")
     async def no_stale_assets(request: Request, call_next):
-        # Cloudflare caches .js/.css at the edge by default: a new page with an old app.js breaks the app.
+        # Cloudflare caches .js/.css at the edge by default: a new page with an old script breaks it.
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store" if request.url.path.startswith("/api/") else "no-cache"
         return response

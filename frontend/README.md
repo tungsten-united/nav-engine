@@ -1,26 +1,30 @@
 # Debugging frontend
 
-The team's pages for mapping and debugging: the phone recorder (`index.html`, `app.js`), the recordings dashboard
+The team's pages for mapping and debugging: an index (`index.html`, `index.js`), the recordings dashboard
 (`dash/`), the map viewer (`viz/`), and the debuggers of the live API: localization (`loc/`) and navigation (`nav/`).
-Vanilla JS, no build step. This is not Orient's phone app: that one
-([project-description](https://github.com/tungsten-united/project-description) `apps/web`) talks only to the
-orchestrator, which calls nav-api.
+Vanilla JS, no build step. This is not Orient's phone app
+([project-description](https://github.com/tungsten-united/project-description) `apps/web`): for guidance that one talks
+only to the orchestrator, which calls nav-api.
+
+Recording walks moved to Orient's app, at https://orient.harshdeepsingh.dev/map (`apps/web/src/mapping/`), in Orient's
+style. It uploads to map-api exactly as the old recorder did (`nav/schemas/recording.py`). The index here links to it
+with this browser's map-api token (`?token=`), so a teammate signed in here isn't asked for it there.
 
 ## Talking to the APIs
 Two services, two base URLs (both set in `config.js`; OpenAPI at `/docs` on each):
 
 | | base URL | what | used by |
 |---|---|---|---|
-| **map-api** | `https://map-api-613464313064.europe-southwest1.run.app` | recordings, map builds, review, map files | recorder, `dash/`, `viz/` (`NAV`) |
+| **map-api** | `https://map-api-613464313064.europe-southwest1.run.app` | recordings, map builds, review, map files | Orient's `/map` recorder, `dash/`, `viz/` (`NAV`) |
 | **nav-api** | `https://nav-api-613464313064.europe-southwest1.run.app` | the live API: published maps, routes, localization | Orient's orchestrator (server-side); `loc/`, `nav/` (`NAV.nav`) |
 
 - Formats: `nav/schemas/recording.py`, `nav/schemas/map.py`, `nav/schemas/navigation.py`.
 - Auth: each service has its own token. Send `Authorization: Bearer <token>` on every `/api/*` call except
   `/api/v1/health`. Elements that can't send headers (`<video>`, `<img>`, `<audio>`, download links) put it in the URL
   as `?token=<token>`. Ask the backend owner for the tokens. The orchestrator only needs nav-api's.
-- CORS: both allow `http://localhost:*`, `http://127.0.0.1:*` and helium-nav; nav-api also allows map-api's pages. Ask
-  for your origin to be added (`NAV_CORS_ORIGINS` in `deploy/*.env.yaml`). CORS is for browsers only: the
-  orchestrator calls from its server.
+- CORS: both allow `http://localhost:*`, `http://127.0.0.1:*` and helium-nav; map-api also allows Orient's app (its
+  `/map` recorder), nav-api also allows map-api's pages. Ask for your origin to be added (`NAV_CORS_ORIGINS` in
+  `deploy/*.env.yaml`). CORS is for browsers only: the orchestrator calls from its server.
 - Large files (videos) are served in ranges of at most 8 MiB. Players handle this; for a download, a plain GET
   streams the whole file.
 - Localizing a frame: `POST {nav-api}/api/v1/maps/{map_id}/localize` with multipart `images` (1–4 JPEGs, ~768 px),
@@ -41,7 +45,7 @@ Two services, two base URLs (both set in `config.js`; OpenAPI at `/docs` on each
   live steps).
 
 ## Running these pages
-- Hosted: map-api serves them at `/`, `/dash/`, `/viz/`, `/loc/` and `/nav/`, and so does helium-nav (behind
+- Hosted: map-api serves them at `/` (the index), `/dash/`, `/viz/`, `/loc/` and `/nav/`, and so does helium-nav (behind
   Cloudflare Access). Open one with `?token=<map-api token>&navtoken=<nav-api token>` once, or enter each token when
   asked; they're kept in `localStorage` (nav-api falls back to map-api's token when it has none of its own).
 - Against local servers: open any page with `?api=http://127.0.0.1:8450&navapi=http://127.0.0.1:8452` (`nav serve`
