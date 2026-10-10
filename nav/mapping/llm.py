@@ -32,7 +32,8 @@ people. The app will use it to tell people where they are and to give spoken, st
     the recording clock in ms), and `timeline`: the candidates in the order the walk passed them, with metres
     walked since the previous one (`from_prev_m`), heading change since the previous one (`turn_deg`), and the turn
     the walker made at that spot (`turn_at_deg`, heading over the 3 s after vs the 3 s before). For both, + = right,
-    - = left, in degrees.
+    - = left, in degrees. A walk with `motion` "video" had no phone sensors: its turns come from the video and its
+    metres are guesses from time, so take distances from the other walks where you can.
   - `candidates[]`: frames selected from the walks. `views` lists every sighting (recording, time, motion, the
     marks and voice notes around it); the first view is the photo. `reason` says why it was kept.
     `possibly_same_as` lists look-alike candidates that may be the same spot seen again (a revisit or another walk).
@@ -73,6 +74,17 @@ people. The app will use it to tell people where they are and to give spoken, st
   counting misses slow steps, so it is approximate). A turn on the spot or a step up has no distance.
 - `instruction` is the spoken form of the steps: same order, same turns, same distances, plus what helps on the way.
   `reverse_instruction` speaks the same route backwards (code derives the reverse steps from yours).
+
+## Relations
+- For each node, `relations` says where a few other things are as seen from there (up to about five, the most
+  useful): other nodes of the map, by their name, and fixed things someone may ask for or orient by (a counter, the
+  stage, an exit, a pillar). Code turns them into directions with the phone's heading, so the app can say "the
+  kitchen is on your right" once it knows which way the user faces.
+- Judge each from one of the node's own candidates (`candidate`). If that photo shows it, `side` is "in_photo" and
+  `x` is where it is across the photo (0 = left edge, 0.5 = centre, 1 = right edge). If it is out of the photo but
+  the node's other photos or the walk show where, `side` is "left", "right" or "behind", relative to the way that
+  photo faces, `x` is null and `evidence` is "inferred". Leave out what the photos don't support; an empty list is
+  fine.
 
 ## Wording
 - Everything the app will say (`summary`, `description`, `landmarks`, `instruction`, `reverse_instruction`) is for
@@ -160,6 +172,8 @@ def parse_claude_result(path: Path, model: str = "?") -> tuple[MapDraft, LlmRun]
     out = result["structured_output"]
     for item in out.get("nodes", []) + out.get("edges", []):  # answers saved before these fields existed
         item.setdefault("visual_cues", [])
+    for n in out.get("nodes", []):
+        n.setdefault("relations", [])
     for e in out.get("edges", []):
         e.pop("distance_m", None)
         e.setdefault("basis", "walked")

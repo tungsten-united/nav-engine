@@ -5,7 +5,10 @@
                                      (MegaLoc retrieval + LightGlue check, verify.py)
     LLM                              Claude Code job (nav/mapping/llm.py) -> MapDraft
     finish                           check ids, attach evidence (recording + time + image), dead-reckoned
-                                     positions aligned through shared nodes, measured walking distances
+                                     positions aligned through shared nodes, measured walking distances, headings,
+                                     status (observed / inferred), spatial relations as bearings
+    publish                          reference images + their embeddings for live localization (references.py),
+                                     quality check (quality.py), human review overlay (review.py)
 """
 
 import json
@@ -23,18 +26,23 @@ from nav.mapping.motion import angle_diff
 from nav.mapping.prepare import Prepared, prepare
 from nav.mapping.select import SelectParams, cap_groups, group_frames, mark_usable, select_in_recording
 from nav.mapping.verify import match_pairs
+from nav.mapping.calibrate import default_fov
 from nav.schemas.map import (
     BuildInfo,
     Candidate,
     CandidateSet,
+    Direction,
     Evidence,
+    InstructionKind,
     MapDraft,
+    MapFrame,
     Motion,
     PlaceEdge,
     PlaceMap,
     PlaceNode,
     Point,
     RecordingInfo,
+    SpatialRelation,
     TimelineStep,
     Track,
     View,
@@ -43,7 +51,7 @@ from nav.schemas.map import (
 from nav.schemas.recording import Manifest
 
 log = logging.getLogger(__name__)
-PIPELINE_VERSION = "mvp-1"
+PIPELINE_VERSION = "mvp-2"  # mvp-2: relations, references, status, headings, calibration
 USABLE_STATUS = ("complete", "incomplete")
 VISIT_S = 15  # views of a node within this long of each other are one visit
 
@@ -116,7 +124,9 @@ def select_candidates(place: str, preps: list[Prepared], p: SelectParams, embed_
             prev = (v.motion.walked_m, heading)
         recordings.append(RecordingInfo(
             rec_id=m.rec_id, created_at_utc=m.created_at_utc, duration_s=m.duration_ms and round(m.duration_ms / 1000, 1),
-            notes=m.notes, step_length_m=m.step_length_m, walked_m=round(float(prep.track.walked_m[-1]), 1),
+            notes=m.notes, step_length_m=m.step_length_m, motion="video" if prep.track.source == "video" else "imu",
+            heading=prep.track.heading_kind, fov_deg=prep.calibration.fov_deg,
+            video_offset_ms=prep.calibration.offset_ms, walked_m=round(float(prep.track.walked_m[-1]), 1),
             frames_sampled=len(prep.frames), frames_usable=sum(f.usable for f in prep.frames),
             marks=prep.marks, voice=[{k: v[k] for k in ("t_ms", "t_end_ms", "text")} for v in prep.voice],
             timeline=timeline))
@@ -174,7 +184,7 @@ def finish_map(draft: MapDraft, cset: CandidateSet, build: BuildInfo, build_rel:
         cids = known(f"node {n.id}", n.candidates)
         evidence = [Evidence(candidate=c, rec_id=v.rec_id, t_ms=v.t_ms, image=f"{build_rel}/{cands[c].image}")
                     for c in cids for v in cands[c].views]
-        nodes.append(PlaceNode(**{**n.model_dump(), "candidates": cids}, evidence=evidence))
+        nodes.append(PlaceNode(**{**n.model_dump(exclude={"relations"}), "candidates": cids}, evidence=evidence))
     node_ids = {n.id for n in nodes}
     if unused := [c for c in cands if not any(c in n.candidates for n in nodes)]:
         warnings.append(f"candidates not used by any node: {', '.join(unused)}")
@@ -189,13 +199,14 @@ def finish_map(draft: MapDraft, cset: CandidateSet, build: BuildInfo, build_rel:
             continue
         edges.append(PlaceEdge(**{**e.model_dump(), "candidates": known(f"edge {e.id}", e.candidates)}))
 
+    video_recs = {r.rec_id for r in cset.recordings if r.motion == "video"}
     offsets = _place_nodes(nodes, cands)
     warp = _loop_closure(nodes, cands, offsets, warnings)
     by_id = {n.id: n for n in nodes}
     tracks = tracks or {}
     used = {c for n in nodes for c in n.candidates}
     for e in edges:
-        e.measured_distance_m = _measured(by_id[e.source], by_id[e.target], cands)
+        e.measured_distance_m = _measured(by_id[e.source], by_id[e.target], cands, video_recs)
         _edge_path(e, by_id[e.source], by_id[e.target], cands, tracks, warp, used)
     for e in edges:
         if e.basis == "inferred" and e.walked:  # the LLM knows better that this wasn't walked
@@ -218,10 +229,125 @@ def finish_map(draft: MapDraft, cset: CandidateSet, build: BuildInfo, build_rel:
             e.reverse_steps = reverse_steps(e.steps, arrival=src.landmarks[0] if src.landmarks else None)
         if problem := first_step_problem(e):
             warnings.append(f"edge {e.id}: {problem}")
+            e.review_flags.append(problem)
+        _edge_status(e, by_id, cands, tracks)
+    for n in nodes:
+        n.review_flags = ([f"{n.confidence} confidence"] if n.confidence != "high" else []) + \
+                         ([] if n.landmarks else ["no arrival cue"])
+    fovs = {r.rec_id: r.fov_deg for r in cset.recordings if r.fov_deg}
+    drafted = {n.id: n for n in draft.nodes}
+    for n in nodes:
+        n.relations = _relations(n, drafted[n.id].relations, cands, tracks, fovs, build_rel, warnings)
     placed = [Track(rec_id=r, points=[(p[0], *warp[r](*p[:3])) for p in tracks[r]]) for r in warp if r in tracks]
     return PlaceMap(tracks=placed, **draft.model_dump(exclude={"nodes", "edges"}), map_id=cset.map_id,
                     recordings=[r.rec_id for r in cset.recordings], build=build, nodes=nodes, edges=edges,
-                    warnings=warnings)
+                    warnings=warnings, frame=map_frame(cset.recordings))
+
+
+def map_frame(recordings: list[RecordingInfo]) -> MapFrame | None:
+    if not recordings:
+        return None
+    kinds = {r.heading for r in recordings}
+    source = "compass" if kinds == {"compass"} else "unknown" if None in kinds else "relative"
+    return MapFrame(heading_source=source, heading_zero_abs_deg=0.0 if source == "compass" else None,
+                    step_length_m=round(float(np.mean([r.step_length_m for r in recordings])), 2))
+
+
+def _direction(rel_deg: float) -> Direction:
+    b = rel_deg % 360
+    return "ahead" if b < 45 or b >= 315 else "right" if b < 135 else "behind" if b < 225 else "left"
+
+
+_SIDE_BEARING = {"left": -90.0, "right": 90.0, "behind": 180.0}
+
+
+def _heading_before(pts: list, t_ms: float, span_ms: float = 3000) -> float | None:
+    """Mean walking heading over the `span_ms` before `t_ms` (tracks.json points with headings)."""
+    return _circular_mean([p[3] for p in pts if t_ms - span_ms <= p[0] < t_ms and len(p) > 3 and p[3] is not None])
+
+
+def _relations(n: PlaceNode, drafted: list, cands: dict[str, Candidate], tracks: dict[str, list],
+               fovs: dict[str, float], build_rel: str, warnings: list[str]) -> list[SpatialRelation]:
+    """The LLM's relations as bearings: across-the-photo position x field of view, plus the camera heading of that
+    photo, so the app can say left / right from the user's own heading."""
+    out: dict[str, SpatialRelation] = {}
+    for r in drafted:
+        if r.candidate not in n.candidates:
+            warnings.append(f"node {n.id}: relation to {r.subject!r} cites {r.candidate}, not one of its candidates: "
+                            f"dropped")
+            continue
+        view = cands[r.candidate].views[0]
+        fov = fovs.get(view.rec_id) or default_fov("handheld_portrait")
+        if r.side == "in_photo":
+            bearing = (min(max(r.x, -0.2), 1.2) - 0.5) * fov if r.x is not None else 0.0
+        else:
+            bearing = _SIDE_BEARING[r.side]
+        vh = view.motion.heading_deg
+        heading = None if vh is None else round((vh + bearing) % 360, 1)
+        visit = next((v for v in _visits([w for w in _node_views(n, cands) if w.rec_id == view.rec_id])
+                      if any(w.t_ms == view.t_ms for w in v)), [view])
+        arrival = _heading_before(tracks.get(view.rec_id, []), min(w.t_ms for w in visit))
+        ref = arrival if arrival is not None else vh
+        rel = bearing if heading is None or ref is None else angle_diff(ref, heading)
+        rid = f"{n.id}:{slugify(r.subject)}"
+        out.setdefault(rid, SpatialRelation(
+            id=rid, subject=r.subject, candidate=r.candidate, rec_id=view.rec_id, t_ms=view.t_ms,
+            viewpoint_image=f"{build_rel}/{cands[r.candidate].image}", viewpoint_heading_deg=vh,
+            bearing_deg=round(bearing, 1), heading_deg=heading,
+            arrival_heading_deg=None if arrival is None else round(arrival % 360, 1), direction=_direction(rel),
+            status=r.evidence))
+    return list(out.values())
+
+
+def instruction_kind(e: PlaceEdge) -> InstructionKind | None:
+    """Coarse turn when leaving the source: measured if known (within 30 degrees is straight), else the first step."""
+    if e.turn_deg is not None:
+        t = abs(e.turn_deg)
+        return "straight" if t <= 30 else "turn_around" if t >= 150 else "turn_right" if e.turn_deg > 0 else "turn_left"
+    if not e.steps:
+        return None
+    a = e.steps[0].action
+    return {"turn_left": "turn_left", "bear_left": "turn_left", "turn_right": "turn_right",
+            "bear_right": "turn_right", "turn_around": "turn_around"}.get(a, "straight")
+
+
+def _edge_status(e: PlaceEdge, by_id: dict[str, PlaceNode], cands: dict[str, Candidate],
+                 tracks: dict[str, list]) -> None:
+    """Which way the edge was walked (observed) and which is only deduced (inferred); headings when leaving the
+    source and reaching the target, from the phone's heading (or the walked path's shape without one)."""
+    e.instruction_kind = instruction_kind(e)
+    other = "inferred" if e.bidirectional else None
+    if not e.walked:
+        e.status, e.reverse_status = "inferred", other
+        e.review_flags.append("inferred: no walk went directly between these two")
+        return
+    visits = _closest_visits(by_id[e.source], by_id[e.target], cands)
+    src, tgt = visits if visits else ([], [])
+    forward = not src or not tgt or min(v.t_ms for v in src) < min(v.t_ms for v in tgt)
+    if forward:
+        e.status, e.reverse_status = "observed", other
+        if e.bidirectional:
+            e.review_flags.append("the way back was not walked")
+    else:
+        e.status, e.reverse_status = "inferred", "observed" if e.bidirectional else None
+        e.review_flags.append("only walked from the target to the source")
+    pts = tracks.get(e.walked_in or "", [])
+    if src and tgt and pts and len(pts[0]) >= 4:
+        if forward:
+            t_leave, t_reach = max(v.t_ms for v in src), min(v.t_ms for v in tgt)
+            dep = _circular_mean([p[3] for p in pts if t_leave < p[0] <= t_leave + TURN_WINDOW_MS and p[3] is not None])
+            arr = _heading_before(pts, t_reach)
+        else:  # walked target -> source: this direction is that walk turned around
+            t_leave, t_reach = max(v.t_ms for v in tgt), min(v.t_ms for v in src)
+            back_dep = _circular_mean([p[3] for p in pts if t_leave < p[0] <= t_leave + TURN_WINDOW_MS
+                                       and p[3] is not None])
+            back_arr = _heading_before(pts, t_reach)
+            dep = None if back_arr is None else back_arr + 180
+            arr = None if back_dep is None else back_dep + 180
+    else:
+        dep, arr = (_end_heading(e.path, False), _end_heading(e.path, True)) if len(e.path) >= 2 else (None, None)
+    e.departure_heading_deg = None if dep is None else round(dep % 360, 1)
+    e.arrival_heading_deg = None if arr is None else round(arr % 360, 1)
 
 
 def _node_views(node: PlaceNode, cands: dict[str, Candidate]) -> list[View]:
@@ -443,10 +569,12 @@ def _closest_visits(a: PlaceNode, b: PlaceNode, cands: dict[str, Candidate]) -> 
     return visit(va_all, x), visit(vb_all, y)
 
 
-def _measured(a: PlaceNode, b: PlaceNode, cands: dict[str, Candidate]) -> float | None:
-    """Walked distance between the centres of the two nodes' closest visits."""
+def _measured(a: PlaceNode, b: PlaceNode, cands: dict[str, Candidate], video_recs: set[str] = frozenset()
+              ) -> float | None:
+    """Walked distance between the centres of the two nodes' closest visits (not from walks without sensors: their
+    distances are guesses from time)."""
     visits = _closest_visits(a, b, cands)
-    if not visits:
+    if not visits or visits[0][0].rec_id in video_recs:
         return None
     wa, wb = (float(np.mean([v.motion.walked_m for v in vs])) for vs in visits)
     return round(abs(wa - wb), 1)
@@ -471,12 +599,24 @@ def build_map(place: str, *, recordings_root: Path, maps_root: Path, cache_root:
     (build_dir / "build.json").write_text(json.dumps({"transcribe_model": transcribe_model}))
     published = build_dir.parent.parent / "map.json"
     if published.is_file():  # what the LLM keeps stable, and what ids are matched against
-        prev = PlaceMap.model_validate_json(published.read_text())
+        # the build's own map, not the reviewed one: hidden items keep their ids, so the review keeps hiding them
+        try:
+            prev = build_map_of(published.parent)[1]
+        except FileNotFoundError:
+            prev = PlaceMap.model_validate_json(published.read_text())
         (build_dir / "previous.json").write_text(json.dumps(previous_context(prev, cset), ensure_ascii=False, indent=1))
     log.info("%s: %d recordings -> %d candidates in %s", place, len(preps), len(cset.candidates), build_dir)
     if not run_llm:
         return BuildResult(build_dir, cset, None)
     return run_llm_on_build(build_dir, llm_model=llm_model, language=language, budget_usd=budget_usd, effort=effort)
+
+
+def latest_llm_build(map_dir: Path) -> Path:
+    """The newest build of a place with a saved LLM answer (what `refinish` redoes)."""
+    found = sorted((map_dir / "builds").glob("*/job/claude.json"))
+    if not found:
+        raise FileNotFoundError(f"no build with an LLM answer in {map_dir}")
+    return found[-1].parent.parent
 
 
 def fork_build(build_dir: Path) -> Path:
@@ -506,7 +646,7 @@ def run_llm_on_build(build_dir: Path, *, llm_model: str, language: str, budget_u
     return publish(build_dir, cset, draft, run)
 
 
-def refinish_build(build_dir: Path) -> BuildResult:
+def refinish_build(build_dir: Path, recordings_root: Path | None = None, cache_root: Path | None = None) -> BuildResult:
     """Redo the finish step from the LLM answer saved in job/claude.json (no new LLM call), e.g. after changing
     post-processing. Rebuilds tracks.json from the per-recording cache if the build predates it."""
     from nav.mapping.llm import parse_claude_result
@@ -517,17 +657,41 @@ def refinish_build(build_dir: Path) -> BuildResult:
     if not old_tracks or any(len(pts[0]) < 4 for pts in old_tracks.values() if pts):  # missing, or no headings
         from nav.mapping.prepare import load_motion_only
 
-        tracks_file.write_text(json.dumps({r.rec_id: track_points(load_motion_only(r.rec_id))
+        tracks_file.write_text(json.dumps({r.rec_id: track_points(load_motion_only(r.rec_id, recordings_root,
+                                                                                   cache_root))
                                            for r in cset.recordings}))
+    _fill_recording_info(cset, recordings_root, cache_root)
     draft, run = parse_claude_result(build_dir / "job" / "claude.json")
     old = build_dir / "map.json"
     if old.is_file():  # keep the original duration (the saved result doesn't have wall-clock time)
         prev = PlaceMap.model_validate_json(old.read_text()).build.llm
         run.duration_s, run.effort = prev.duration_s, prev.effort
-    return publish(build_dir, cset, draft, run)
+    return publish(build_dir, cset, draft, run, recordings_root, cache_root)
 
 
-def publish(build_dir: Path, cset: CandidateSet, draft: MapDraft, run) -> BuildResult:
+def _fill_recording_info(cset: CandidateSet, recordings_root: Path | None, cache_root: Path | None) -> None:
+    """Builds from before the navigation fields don't say which heading each walk had or its field of view: take
+    them from the recording and the calibration cache (in memory; candidates.json, the build's input, stays)."""
+    from nav import config
+    from nav.mapping.prepare import load_walk
+    from nav.mapping.select import SelectParams
+
+    params = SelectParams(**{k: v for k, v in cset.params.items() if k in SelectParams.__dataclass_fields__})
+    for r in cset.recordings:
+        rec_dir = (recordings_root or config.RECORDINGS_DIR) / r.rec_id
+        if r.heading is not None or not (rec_dir / "manifest.json").is_file():
+            continue
+        try:
+            walk = load_walk(rec_dir, cache_root or config.CACHE_DIR, params)
+        except Exception as e:  # the map is still worth refinishing without it
+            log.warning("%s: no recording info for the refinish: %s", r.rec_id, e)
+            continue
+        r.heading, r.fov_deg = walk.track.heading_kind, walk.calibration.fov_deg
+        r.motion = "video" if walk.track.source == "video" else "imu"
+
+
+def publish(build_dir: Path, cset: CandidateSet, draft: MapDraft, run, recordings_root: Path | None = None,
+            cache_root: Path | None = None) -> BuildResult:
     tracks = json.loads((build_dir / "tracks.json").read_text()) if (build_dir / "tracks.json").is_file() else {}
     extra = json.loads((build_dir / "build.json").read_text()) if (build_dir / "build.json").is_file() else {}
     build_id = build_dir.name
@@ -544,17 +708,36 @@ def publish(build_dir: Path, cset: CandidateSet, draft: MapDraft, run) -> BuildR
     pmap.retired = retired
     from nav import config
     from nav.mapping.quality import check_map
+    from nav.mapping.references import add_references
 
+    pmap = add_references(pmap, cset.params, build_dir, recordings_root or config.RECORDINGS_DIR,
+                          cache_root or config.CACHE_DIR, cset.place_model or config.PLACE_MODEL)
     pmap = check_map(pmap, config.QUALITY_MODEL)
     write_map(build_dir, pmap)
     return BuildResult(build_dir, cset, pmap)
 
 
-def write_map(build_dir: Path, pmap: PlaceMap) -> None:
-    """Save a build's map and publish it as the place's map.json."""
-    text = pmap.model_dump_json(indent=1)
-    (build_dir / "map.json").write_text(text)
+def write_map(build_dir: Path, pmap: PlaceMap) -> PlaceMap:
+    """Save a build's map, and publish it with the place's review applied as the place's map.json."""
+    from nav.mapping.review import apply_review, load_review
+
+    (build_dir / "map.json").write_text(pmap.model_dump_json(indent=1))
     map_dir = build_dir.parent.parent
+    published = apply_review(pmap, load_review(map_dir))
     tmp = map_dir / ".map.json.tmp"
-    tmp.write_text(text)
+    tmp.write_text(published.model_dump_json(indent=1))
     tmp.replace(map_dir / "map.json")
+    return published
+
+
+def build_map_of(map_dir: Path) -> tuple[Path, PlaceMap]:
+    """The build the place's map.json was published from, and that build's own map (before the review)."""
+    build_id = PlaceMap.model_validate_json((map_dir / "map.json").read_text()).build.build_id
+    build_dir = map_dir / "builds" / build_id
+    return build_dir, PlaceMap.model_validate_json((build_dir / "map.json").read_text())
+
+
+def republish(map_dir: Path) -> PlaceMap:
+    """Apply the (changed) review to the published build again: no new LLM call, no recomputation."""
+    build_dir, pmap = build_map_of(map_dir)
+    return write_map(build_dir, pmap)

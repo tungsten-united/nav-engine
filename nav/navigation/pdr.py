@@ -1,0 +1,220 @@
+"""Pedestrian dead reckoning along a route: live steps + heading -> progress towards the next node.
+
+- `StepDetector`: causal peak detector on vertical acceleration (DeviceMotion accelerationIncludingGravity, ~60 Hz),
+  constant memory, so it ports 1:1 to the webapp. (The map pipeline counts steps offline with a band-pass filter,
+  nav/mapping/motion.py; this one can't look ahead.)
+- `GraphTracker`: follows a route of `Hop`s (route.py). Only the component of each step along the hop's bearing
+  counts as progress; it reports the remaining distance, an uncertainty that grows with the distance walked, and
+  the probability of being within `arrival_radius_m` of the next node. It only *predicts* arrival: the controller
+  still needs a visual or user confirmation (`confirm_node`), which also re-learns the user's step length.
+- `replay`: plays a mapping walk back as a user along the map, to see how early or late the tracker would announce
+  each node (`nav map pdr-replay`).
+
+Ported from tungsten-united/demo-repository@c5dc26f (navigation, mapping/src/mapper/pdr.py) by LPA.
+"""
+
+import math
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import numpy as np
+
+from nav.navigation.route import Hop, hops
+from nav.schemas.map import PlaceMap
+
+
+@dataclass
+class StepDetectorConfig:
+    gravity_tau_s: float = 1.0  # low-pass time constant for the gravity estimate
+    smooth_tau_s: float = 0.08  # low-pass on vertical acceleration (removes jitter)
+    # Tuned on 20261009T202101Z_7f42 (gentle handheld walk, ~1.2 steps/s): 102 steps vs 105 from a spectral cadence.
+    min_interval_s: float = 0.4  # refractory period (at most 2.5 steps/s)
+    threshold: float = 0.15  # m/s^2, minimum peak of vertical acceleration
+    adaptive: float = 0.3  # the threshold is also at least this x the recent peak level
+
+
+class StepDetector:
+    """Feed raw accelerometer samples including gravity (device axes); `update` is True on the sample where a step
+    is recognised."""
+
+    def __init__(self, config: StepDetectorConfig | None = None) -> None:
+        self.c = config or StepDetectorConfig()
+        self.gravity: np.ndarray | None = None
+        self.v = 0.0
+        self.prev = (0.0, 0.0)  # last two smoothed values, for local-max detection
+        self.last_t: float | None = None
+        self.last_step_t = -1e9
+        self.peak_level = 0.0
+
+    def update(self, t: float, acc: tuple[float, float, float]) -> bool:
+        a = np.asarray(acc, dtype=float)
+        dt = 0.0 if self.last_t is None else max(t - self.last_t, 1e-3)
+        self.last_t = t
+        if self.gravity is None:
+            self.gravity = a.copy()
+            return False
+        self.gravity += dt / (self.c.gravity_tau_s + dt) * (a - self.gravity)
+        g_norm = float(np.linalg.norm(self.gravity)) or 1.0
+        vertical = float(a @ self.gravity) / g_norm - g_norm  # dynamic acceleration along "up"
+        self.v += dt / (self.c.smooth_tau_s + dt) * (vertical - self.v)
+        p2, p1 = self.prev
+        self.prev = (p1, self.v)
+        is_peak = p1 > p2 and p1 >= self.v  # the previous sample was a local max
+        threshold = max(self.c.threshold, self.c.adaptive * self.peak_level)
+        if is_peak and p1 > threshold and t - self.last_step_t >= self.c.min_interval_s:
+            self.last_step_t = t
+            self.peak_level = 0.8 * self.peak_level + 0.2 * p1 if self.peak_level else p1
+            return True
+        return False
+
+
+def detect_steps(t_s: np.ndarray, acc: np.ndarray, config: StepDetectorConfig | None = None) -> np.ndarray:
+    """Step times (s) over a whole recording: `acc` is [N, 3] accelerationIncludingGravity."""
+    det = StepDetector(config)
+    ok = ~np.isnan(acc).any(axis=1)
+    return np.array([t for t, a in zip(t_s[ok], acc[ok]) if det.update(float(t), tuple(a))])
+
+
+@dataclass
+class TrackerState:
+    hop_index: int
+    progress_m: float  # walked along the current hop
+    remaining_m: float
+    sigma_m: float  # 1-sigma uncertainty of the remaining distance
+    off_course_deg: float  # walking heading minus the hop's bearing (smoothed)
+    arrival_probability: float  # P(within arrival_radius_m of the next node)
+    step_length_m: float
+
+
+def _wrap(a: float) -> float:
+    return (a + 180.0) % 360.0 - 180.0
+
+
+def _phi(z: float) -> float:
+    return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
+
+
+@dataclass
+class GraphTracker:
+    """Follows a user along a route. `on_step(heading_deg)` per detected step (heading in the map frame:
+    live heading - heading_offset_deg), `confirm_node(node_id)` when vision or the user confirms the next node.
+    Set `heading_offset_deg` from MapFrame.heading_zero_abs_deg for compass maps, or from a first visual fix."""
+
+    route: list[Hop]
+    step_length: float = 0.7
+    heading_offset_deg: float = 0.0
+    arrival_radius_m: float = 2.0
+    drift_ratio: float = 0.08  # PDR error grows ~8% of the distance walked ...
+    base_sigma_m: float = 0.7  # ... plus a fixed term
+    hop_index: int = 0
+    progress_m: float = 0.0
+    _steps_on_hop: int = 0
+    _off_course: float = 0.0
+    history: list[tuple[str, int, float]] = field(default_factory=list)
+
+    @property
+    def hop(self) -> Hop:
+        return self.route[self.hop_index]
+
+    def on_step(self, heading_deg: float) -> TrackerState:
+        bearing = self.hop.bearing_deg
+        delta = 0.0 if bearing is None else _wrap(heading_deg - self.heading_offset_deg - bearing)
+        # Only the component along the hop counts as progress; sideways steps don't.
+        self.progress_m += self.step_length * max(math.cos(math.radians(delta)), 0.0)
+        self._steps_on_hop += 1
+        self._off_course = 0.8 * self._off_course + 0.2 * delta
+        return self.state()
+
+    def state(self) -> TrackerState:
+        remaining = (self.hop.length_m or 0.0) - self.progress_m
+        sigma = self.base_sigma_m + self.drift_ratio * self.progress_m
+        p = _phi((self.arrival_radius_m - remaining) / sigma) - _phi((-self.arrival_radius_m - remaining) / sigma)
+        return TrackerState(self.hop_index, self.progress_m, remaining, sigma, self._off_course, p, self.step_length)
+
+    def confirm_node(self, node_id: str) -> None:
+        """The next node was confirmed: recalibrate the step length and move on to the next hop."""
+        if node_id != self.hop.target:
+            raise ValueError(f"expected {self.hop.target}, got {node_id}")
+        if self._steps_on_hop >= 5 and self.progress_m > 0 and self.hop.length_m:
+            implied = float(np.clip(self.step_length * self.hop.length_m / self.progress_m, 0.4, 1.0))
+            self.step_length = 0.7 * self.step_length + 0.3 * implied
+        self.history.append((node_id, self._steps_on_hop, self.progress_m))
+        self.hop_index = min(self.hop_index + 1, len(self.route) - 1)
+        self.progress_m, self._steps_on_hop, self._off_course = 0.0, 0, 0.0
+
+
+# --- replay a mapping walk as a user --------------------------------------------------------------------------
+@dataclass
+class ReplayRow:
+    edge: str
+    to: str  # name of the node reached
+    length_m: float | None
+    steps: int
+    predicted_remaining_m: float  # the tracker's remaining distance when the walk actually got there
+    sigma_m: float
+    arrival_probability: float
+    first_alert_s: float | None  # when P > 0.5 first, relative to the real arrival (- = early)
+    step_length_after: float
+
+
+def walk_route(pmap: PlaceMap, rec_id: str) -> list[tuple[Hop, float]]:
+    """The hops a recording walked on the map, with the time it reached each hop's target."""
+    visits = sorted((ev.t_ms, n.id) for n in pmap.nodes for ev in n.evidence if ev.rec_id == rec_id)
+    seq: list[tuple[float, str]] = []
+    for t, nid in visits:
+        if not seq or seq[-1][1] != nid:
+            seq.append((t, nid))
+    by_pair = {(h.source, h.target): h for e in pmap.edges for h in hops(e)}
+    return [(by_pair[(a, b)], t) for (_, a), (t, b) in zip(seq, seq[1:]) if (a, b) in by_pair]
+
+
+def replay(pmap: PlaceMap, rec_dir: Path, step_scale: float = 1.0, heading_bias_deg: float = 0.0,
+           step_length: float | None = None) -> list[ReplayRow]:
+    """Replay a recording as a user walking the route it walked. `step_scale` 0.85 = a user with 15% shorter steps;
+    `heading_bias_deg` a compass bias. Each node is confirmed when the walk really got there (standing in for the
+    visual confirmation)."""
+    import pyarrow.parquet as pq
+
+    from nav.mapping.prepare import load_motion_only
+
+    rec_id = rec_dir.name
+    route = walk_route(pmap, rec_id)
+    if not route:
+        return []
+    imu = pq.read_table(rec_dir / "imu.parquet").to_pydict()
+    t_s = np.asarray(imu["t_ms"], float) / 1000
+    acc = np.stack([np.asarray(imu[k], float) for k in ("ax", "ay", "az")], axis=1)
+    steps = detect_steps(t_s, acc)
+    track = load_motion_only(rec_id, rec_dir.parent)
+    events, carry = [], 0.0  # a user with shorter steps takes 1/step_scale steps where the mapper took one
+    for i, t in enumerate(steps):
+        carry += 1.0 / step_scale
+        n = int(carry)
+        carry -= n
+        nxt = steps[i + 1] if i + 1 < len(steps) else t + 0.8
+        events += [t + k * (nxt - t) / max(n, 1) for k in range(n)]
+    nodes = {n.id: n.name for n in pmap.nodes}
+    default_len = pmap.frame.step_length_m if pmap.frame and pmap.frame.step_length_m else 0.7
+    tracker = GraphTracker([h for h, _ in route], step_length=step_length or default_len)
+    rows = []
+    first = route[0][0]
+    left = [ev.t_ms for n in pmap.nodes if n.id == first.source for ev in n.evidence
+            if ev.rec_id == rec_id and ev.t_ms < route[0][1]]
+    ei = int(np.searchsorted(events, max(left, default=0.0) / 1000))  # steps count from leaving the first node
+    for k, (hop, arrival_ms) in enumerate(route):
+        first_alert, n_steps = None, 0
+        while ei < len(events) and events[ei] * 1000 <= arrival_ms:
+            t = events[ei]
+            heading = track.at(t * 1000)["heading_deg"]
+            state = tracker.on_step((heading or 0.0) + heading_bias_deg)
+            n_steps += 1
+            if first_alert is None and state.arrival_probability > 0.5:
+                first_alert = round(t - arrival_ms / 1000, 1)
+            ei += 1
+        state = tracker.state()
+        rows.append(ReplayRow(hop.edge, nodes.get(hop.target, hop.target), hop.length_m, n_steps,
+                              round(state.remaining_m, 2), round(state.sigma_m, 2),
+                              round(state.arrival_probability, 2), first_alert, round(tracker.step_length, 3)))
+        if k + 1 < len(route):
+            tracker.confirm_node(hop.target)
+    return rows

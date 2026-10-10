@@ -27,7 +27,17 @@ map.json at the top is a copy of the latest one, and its image paths point into 
         pairs.json                   same-place checks between keyframes (verify.py), for tuning
         tracks.json                  dead-reckoned path of every walk at 1 Hz: {rec_id: [[t_ms, x_m, y_m], ...]}
         frames/<cand_id>.jpg         one image per candidate
+        refs/<ref_id>.jpg            reference images for live localization (approach / at / outgoing, per node)
+        embeddings.npy               place embeddings of the reference images, row = ReferenceImage.embedding_row
         job/                         prompt.md, schema.json, claude.json (raw Claude Code result), claude.log
+      review.json                    human review overlay (nav/mapping/review.py), keyed by stable ids
+
+The top map.json is the latest build's map.json with review.json applied (verified status, edits, hidden items).
+
+For the navigation side (docs/navigation_stack.md): headings are degrees clockwise in the map frame (`PlaceMap.frame`;
+compass-referenced when every walk had a compass, so a live absolute heading H is H - frame.heading_zero_abs_deg).
+`status` says how far a fact can be trusted: observed (in a walk), inferred (deduced), verified (a person checked it).
+Routing for real users uses verified edges only (nav/navigation/route.py).
 """
 
 import re
@@ -54,6 +64,10 @@ NodeKind = Literal[
 ]
 EdgeKind = Literal["walk", "door", "stairs", "lift", "ramp", "other"]
 Confidence = Literal["high", "medium", "low"]
+Status = Literal["observed", "inferred", "verified"]
+Direction = Literal["ahead", "right", "behind", "left"]
+ImageRole = Literal["approach", "at", "outgoing"]
+InstructionKind = Literal["straight", "turn_left", "turn_right", "turn_around"]
 
 
 def slugify(place: str) -> str:
@@ -67,6 +81,18 @@ class _Closed(BaseModel):
 
 
 # --- what the LLM writes ------------------------------------------------------------------------------------
+class DraftRelation(_Closed):
+    subject: str = Field(description='A place or fixed object someone may ask for or orient by, as named in the map '
+                                     'where it is a node: "Kitchen", "Bar counter", "Stage".')
+    candidate: str = Field(description="Id of one of this node's candidates, the photo it is judged from.")
+    side: Literal["in_photo", "left", "right", "behind"] = Field(
+        description="Where it is from where that photo was taken, facing the way the camera faced: in_photo if the "
+                    "photo shows it, else left, right or behind (known from the node's other photos or the walk).")
+    x: float | None = Field(description="For in_photo: where it is across the photo, 0 = left edge, 0.5 = centre, "
+                                        "1 = right edge. Else null.")
+    evidence: Literal["observed", "inferred"] = Field(description="observed: the photo shows it. inferred: deduced.")
+
+
 class MapNode(_Closed):
     id: str = Field(description='Short unique id: "n1", "n2", ...')
     name: str = Field(description='Short spoken label, 1-4 words, unique in the map: "Main entrance", "Kitchen", '
@@ -82,6 +108,8 @@ class MapNode(_Closed):
                                                "signs, screens, murals, lights. Kept apart from what is spoken.")
     floor: str | None = Field(description='Floor or level if known ("ground", "1", "-1"), else null.')
     candidates: list[str] = Field(description="Ids of the candidate frames that show this node (at least one).")
+    relations: list[DraftRelation] = Field(description="Where other places and fixed objects are from here, seen "
+                                                       "from this node's photos (a few of the most useful, or none).")
     confidence: Confidence
 
 
@@ -200,6 +228,11 @@ class RecordingInfo(BaseModel):
     duration_s: float | None
     notes: str
     step_length_m: float
+    motion: str = "imu"  # imu: steps and heading from the phone; video: no sensors, heading from the video and
+    #                      walked metres guessed from time (~1 m/s): distances are rough
+    heading: str | None = None  # compass (north-referenced) | gyro (relative to the start) | video | none
+    fov_deg: float | None = None  # horizontal field of view of the video (calibrated, or the default)
+    video_offset_ms: float = 0  # subtracted from video times to put frames on the sensor clock (calibrated)
     walked_m: float
     frames_sampled: int
     frames_usable: int
@@ -251,12 +284,64 @@ class QualityReport(BaseModel):
     skipped: str | None = None  # why the check didn't run (no API key, error ...)
 
 
+class SpatialRelation(BaseModel):
+    """Where something is as seen from a recorded viewpoint at a node (docs/navigation_stack.md 2.3). With the
+    user's heading known at the node, the app turns `heading_deg` into ahead / left / right without asking again."""
+
+    id: str  # "<node id>:<subject slug>", stable while the node and the subject keep their names
+    subject: str
+    candidate: str
+    rec_id: str
+    t_ms: float
+    viewpoint_image: str  # map-relative path of the photo
+    viewpoint_heading_deg: float | None  # where the camera faced (map frame); None without a heading
+    bearing_deg: float  # from the camera's direction, + = right
+    heading_deg: float | None  # direction of the subject from the node, map frame
+    arrival_heading_deg: float | None  # how that walk faced when it arrived at the node
+    direction: Direction  # relative to the arrival heading (to the camera's direction without one)
+    status: Status
+
+
+class ReferenceImage(BaseModel):
+    """A frame kept for live localization: approaching the node, at it, or leaving it along an edge."""
+
+    id: str
+    node: str
+    edge: str | None = None  # outgoing images: the edge walked next
+    toward: str | None = None  # ... and the node it leads to
+    role: ImageRole
+    image: str  # map-relative path
+    rec_id: str
+    t_ms: float
+    heading_deg: float | None  # camera heading, map frame
+    embedding_row: int | None = None  # row in PlaceMap.embedding.file
+
+
+class EmbeddingInfo(BaseModel):
+    model: str  # live frames must be embedded with this same model
+    dim: int
+    file: str  # map-relative path of the .npy ([N, dim] float32 unit vectors)
+
+
+class MapFrame(BaseModel):
+    """The frame of positions and headings: x east, y north when compass-referenced, metres; headings clockwise."""
+
+    heading_source: str  # compass (every walk), or relative (some walk had no compass: only roughly aligned)
+    heading_zero_abs_deg: float | None  # absolute heading of +y; None when not compass-referenced
+    step_length_m: float | None  # mean of the walks'
+    note: str = "dead reckoning: ~5-10% distance error, drifting a few metres per minute; indoor compass is rough"
+
+
 class PlaceNode(MapNode):
     model_config = ConfigDict(extra="ignore")
     visual_cues: list[str] = []  # default: maps built before the field existed
+    relations: list[SpatialRelation] = []  # computed from the draft's DraftRelations
     quality: ItemQuality | None = None
     evidence: list[Evidence] = []
     position: Point | None = None  # dead-reckoned, recordings aligned through shared nodes; approximate
+    status: Status = "observed"
+    review_flags: list[str] = []  # what a reviewer should check
+    references: list[str] = []  # ReferenceImage ids
 
 
 class PlaceEdge(MapEdge):
@@ -274,6 +359,14 @@ class PlaceEdge(MapEdge):
     walked: bool = True  # False: no walk went directly between the two nodes (it passed other nodes in between)
     turn_deg: float | None = None  # heading change when leaving the source, vs arriving at it on the previous edge
     quality: ItemQuality | None = None
+    # source -> target was walked (observed) or not (inferred); target -> source likewise, None if not bidirectional
+    status: Status = "observed"
+    reverse_status: Status | None = None
+    review_flags: list[str] = []
+    instruction_kind: InstructionKind | None = None  # from the measured turn when leaving the source, else the steps
+    departure_heading_deg: float | None = None  # walking direction when leaving the source (map frame)
+    arrival_heading_deg: float | None = None  # walking direction when reaching the target
+    reference_views: list[str] = []  # outgoing ReferenceImage ids along this edge
 
 
 class LlmRun(BaseModel):
@@ -326,6 +419,11 @@ class PlaceMap(MapDraft):
     tracks: list[Track] = []  # walks that could be placed in the map frame (through shared nodes)
     warnings: list[str] = []  # problems found when checking the draft (dangling ids, unknown candidates ...)
     retired: list[Retired] = []  # ids of earlier builds that are gone, carried from build to build
+    frame: MapFrame | None = None
+    references: list[ReferenceImage] = []
+    embedding: EmbeddingInfo | None = None
+    reviewed_at_utc: datetime | None = None  # when review.json was last applied (None: never reviewed)
+    hidden: list[str] = []  # node / edge / relation ids hidden by the review (still in the build's map.json)
 
 
 class MapSummary(BaseModel):
@@ -335,3 +433,10 @@ class MapSummary(BaseModel):
     recordings: int
     nodes: int
     edges: int
+
+
+def place_map_json_schema() -> str:
+    """JSON Schema of the published map, for the navigation app (docs/map.schema.json)."""
+    import json
+
+    return json.dumps(PlaceMap.model_json_schema(mode="serialization"), indent=1, ensure_ascii=False) + "\n"

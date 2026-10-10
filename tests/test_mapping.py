@@ -182,7 +182,7 @@ def candidate_set() -> CandidateSet:
 
 def draft(**over) -> MapDraft:
     node = lambda i, c: {"id": i, "name": i, "kind": "room", "description": "", "landmarks": [], "hazards": [],
-                         "visual_cues": [], "floor": None, "candidates": c, "confidence": "high"}
+                         "visual_cues": [], "floor": None, "candidates": c, "relations": [], "confidence": "high"}
     edge = lambda i, a, b: {"id": i, "source": a, "target": b, "kind": "walk", "bidirectional": True,
                             "basis": "walked", "steps": [{"action": "straight", "distance_m": 8, "along": None,
                                                           "until": "until the wall"}],
@@ -229,7 +229,7 @@ def test_low_confidence_inferred_edges_are_dropped():
 def test_ids_stay_stable_across_builds():
     def node(i, name, c):
         return {"id": i, "name": name, "kind": "room", "description": "", "landmarks": [], "hazards": [],
-                "visual_cues": [], "floor": None, "candidates": c, "confidence": "high"}
+                "visual_cues": [], "floor": None, "candidates": c, "relations": [], "confidence": "high"}
 
     def edge(i, a, b):
         return {"id": i, "source": a, "target": b, "kind": "walk", "bidirectional": True, "basis": "walked",

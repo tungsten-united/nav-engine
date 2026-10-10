@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from nav import config
 from nav.mapping.store import MapStore
 from nav.recorder.store import Conflict, NotFound, RecordingStore
+from nav.mapping.review import Review, load_review, save_review
 from nav.schemas.map import MapSummary, PlaceMap
 from nav.schemas.recording import (
     SCHEMA_VERSION,
@@ -244,6 +245,27 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
     def get_map(map_id: str) -> PlaceMap:
         return maps.get(map_id)
 
+    @app.get(f"{api}/schema/map")
+    def map_schema() -> dict:
+        """JSON Schema of a published map (`GET /maps/{map_id}`), for the navigation app."""
+        return PlaceMap.model_json_schema(mode="serialization")
+
+    @app.get(f"{api}/maps/{{map_id}}/review")
+    def get_review(map_id: str) -> Review:
+        """The human review of a place's map (nav/mapping/review.py): approvals, corrections, hidden items."""
+        maps.get(map_id)
+        return load_review(maps.dir(map_id))
+
+    @app.put(f"{api}/maps/{{map_id}}/review")
+    def put_review(map_id: str, review: Review, request: Request) -> PlaceMap:
+        """Replace the review and republish the map with it (no LLM call). Only verified edges route real users.
+        Returns the published map."""
+        from nav.mapping.build import republish
+
+        maps.get(map_id)
+        save_review(maps.dir(map_id), review, by=identity(request))
+        return republish(maps.dir(map_id))
+
     @app.get(f"{api}/maps/{{map_id}}/builds")
     def map_builds(map_id: str) -> list[str]:
         return maps.builds(map_id)
@@ -257,11 +279,11 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
     building: dict = {}  # the build in progress: {map_id, build_id}
     build_lock = threading.Lock()
 
-    def write_status(build_dir: Path, **fields) -> None:
-        path = build_dir / "status.json"
+    def write_status(build_dir: Path, name: str = "status.json", **fields) -> None:
+        path = build_dir / name
         s = json.loads(path.read_text()) if path.is_file() else {}
         s.update(fields)
-        tmp = build_dir / ".status.json.tmp"
+        tmp = build_dir / f".{name}.tmp"
         tmp.write_text(json.dumps(s, indent=1))
         tmp.replace(path)
 
@@ -316,6 +338,49 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
         threading.Thread(target=run_build, args=(map_id, build_id, req), name=f"build-{map_id}", daemon=True).start()
         return {"map_id": map_id, "build_id": build_id, "status": "running",
                 "status_url": f"{api}/maps/{map_id}/builds/{build_id}/status"}
+
+    def run_refinish(map_id: str, build_dir: Path) -> None:
+        from nav.mapping.build import refinish_build
+
+        try:
+            res = refinish_build(build_dir, store.root, cache_dir)
+            result = {"status": "done", "references": len(res.map.references),
+                      "embedding": res.map.embedding.model if res.map.embedding else None}
+        except Exception as e:
+            log.exception("refinish %s/%s failed", map_id, build_dir.name)
+            result = {"status": "failed", "error": f"{type(e).__name__}: {e}"}
+        finally:
+            with build_lock:
+                building.clear()
+        write_status(build_dir, name="refinish.json", finished_at_utc=datetime.now(timezone.utc).isoformat(), **result)
+
+    @app.post(f"{api}/maps/{{map_id}}/refinish", status_code=202)
+    def refinish(map_id: str) -> dict:
+        """Redo the finish of the place's latest LLM build from its saved answer (no LLM cost): reference images and
+        their embeddings, headings, status, relations, quality check; then publish it with the review. In the
+        background; poll `GET /maps/{map_id}/builds/{build_id}/refinish`."""
+        from nav.mapping.build import latest_llm_build
+
+        maps.get(map_id)
+        try:
+            build_dir = latest_llm_build(maps.dir(map_id))
+        except FileNotFoundError as e:
+            raise HTTPException(404, str(e))
+        with build_lock:
+            if building:
+                raise HTTPException(409, f"a build is running: {building['map_id']}/{building['build_id']}")
+            building.update(map_id=map_id, build_id=build_dir.name)
+        write_status(build_dir, name="refinish.json", status="running",
+                     started_at_utc=datetime.now(timezone.utc).isoformat(), finished_at_utc=None, error=None)
+        threading.Thread(target=run_refinish, args=(map_id, build_dir), name=f"refinish-{map_id}", daemon=True).start()
+        return {"map_id": map_id, "build_id": build_dir.name, "status": "running",
+                "status_url": f"{api}/maps/{map_id}/builds/{build_dir.name}/refinish"}
+
+    @app.get(f"{api}/maps/{{map_id}}/builds/{{build_id}}/refinish")
+    def refinish_status(map_id: str, build_id: str) -> dict:
+        if not build_id.replace("T", "").replace("Z", "").isdigit():
+            raise NotFound(build_id)
+        return json.loads(maps.file(map_id, f"builds/{build_id}/refinish.json").read_text())
 
     @app.get(f"{api}/maps/{{map_id}}/builds/{{build_id}}/status")
     def build_status(map_id: str, build_id: str) -> dict:
