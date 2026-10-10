@@ -22,7 +22,7 @@ import numpy as np
 
 log = logging.getLogger(__name__)
 
-CALIB_VERSION = 1
+CALIB_VERSION = 2  # 2: gravity turned up for iOS (motion.py): the heading it calibrates against turns the right way
 YAW_FPS = 10.0  # frames per second compared for the video yaw
 YAW_WIDTH = 360  # px, width of the greyscale frames compared
 DEFAULT_FOV_DEG = {"handheld_portrait": 40.0}  # 16:9 sensor held in portrait
