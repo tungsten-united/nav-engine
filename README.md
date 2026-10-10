@@ -301,34 +301,12 @@ nav-api, to test it by hand.
 | POST | `/maps/{map_id}/route` | `{start, goal, trust}` → hops (verified edges by default; `observed` / `any` for testing) |
 | POST | `/maps/{map_id}/localize` | 1–4 JPEG frames (multipart `images`), `previous?`, `expected?`, `heading_deg?`, `top_k?`, `motion[]?`, `previous_step_count?` → `Localization` |
 
-**With the phone's motion (optional, proposed for the orchestrator).** Each `images` part may come with a `motion`
-part, in the same order: the phone's `Motion` JSON as the Orient app sends it with each frame (project-description
-`docs/contracts.md`, "Motion": `stepCount`, `headingDeg`, `headingSource`, `orientation` …; unknown fields ignored,
-`null` for a frame without one). With `previous`, `previous_step_count` is the phone's `stepCount` when the user's
-node *became* `previous` (re-confirming the same node doesn't reset it). Then `localize`:
-- leaves out frames pointed at the floor or ceiling (camera elevation from `orientation`, beyond ±55°; none left →
-  `lost`);
-- gates confirmations on the distance walked: (new steps) × the map's `frame.live_step_length_m` (metres per phone
-  step, measured against the floor odometry). A node `d` m from `previous` along the map's edges is plausible once
-  walked ≥ `d` − max(2 m, 0.35 `d`); a best node not yet plausible stays `uncertain` ("7 m from Main entrance, only
-  3 m walked"). This replaces "one edge from `previous`", so a missed node doesn't stall the route;
-- can penalise references facing away from the compass heading (`NAV_LOC_HEADING_WEIGHT`, off by default: it needs a
-  walk in the other direction to tune).
-
-Measured with `nav map orchestrator-replay` (the Itnig walk played the way the orchestrator calls nav-api: one frame
-at a time, the last 4, the user moves on the first `confirmed`; thresholds 0.45 / 0.35): without motion 8 of 9 nodes
-reached but 9 times the user would have been moved to the next node while still at the previous one (the camera
-sees ahead); with motion 8 of 9 and 2 such cases (3 for a user with 15% shorter steps and a 10° compass bias),
-median 1.6 s after getting there. The phone's step detector (`pdr.StepDetector`, the same as the Orient app's `tracker.ts` and the recorder's)
-also counts hand sway while standing, so standing still at a node adds some metres; the gate's slack covers it on
-Itnig.
-
 **Localization** ([`localize.py`](nav/navigation/localize.py)): the frames are embedded with the map's own model
 (MegaLoc) on the inference host, ahead of any queued map-build calls, and compared with the map's reference images. A
 node scores as its best reference (a burst scores each reference by the mean over its frames); the margin is the best
 node's score minus the second's. Status: `lost` under 0.35, `confirmed` at ≥ 0.45 with a margin ≥ 0.05 and, when
-`previous` is given, the node being it or one edge away; `uncertain` otherwise. The thresholds are placeholders until
-tuned on venue images (`NAV_LOC_CONFIRM_SCORE`, `NAV_LOC_CONFIRM_MARGIN`, `NAV_LOC_LOST_SCORE`). It is stateless: the
+`previous` is given, the node being it or one edge away (with motion: walked far enough, below); `uncertain`
+otherwise. The thresholds are placeholders until tuned on venue images (`NAV_LOC_CONFIRM_SCORE`, `NAV_LOC_CONFIRM_MARGIN`, `NAV_LOC_LOST_SCORE`). It is stateless: the
 caller (the orchestrator) keeps the last confirmed node, combines consecutive results and confirms arrival itself
 (docs/navigation_stack.md 4.2–4.3). Each result lists
 the matched references (role, heading, and the difference with the live compass heading when given), and
@@ -336,6 +314,17 @@ the matched references (role, heading, and the difference with the live compass 
 GPU (plus the network). Those frames are in the map, so that shows the plumbing and the speed, not accuracy: no
 held-out walk has been tested and the thresholds are untuned. The first frame after nav-infer restarts can get a 503 while MegaLoc loads (live calls give up after 8 s,
 `NAV_LIVE_INFER_DEADLINE_S`).
+
+**With the phone's motion** (optional, [contract](https://github.com/tungsten-united/project-description/blob/main/docs/contracts.md#post-mapsmap_idlocalize)):
+one `motion` part per image, in the same order, the Orient app's `Motion` JSON (`null` for a frame without one),
+and `previous_step_count`, the phone's `stepCount` when the user's node became `previous` (re-confirming it doesn't
+reset it). Frames with the camera more than 55° up or down are left out (none left → `lost`). With `previous`, the
+walked distance (new steps × the map's `frame.live_step_length_m`, metres per step of the phone's detector,
+`pdr.StepDetector`) replaces the one-edge rule: a node `d` m away along the map's edges can be confirmed once walked
+≥ `d` − max(2 m, 0.35 `d`), so a place recognised from afar doesn't move the user there and a missed node doesn't
+stall the route. A step count below `previous_step_count` (the phone restarted counting) leaves the gate out.
+`nav map orchestrator-replay` replays a walk the way the orchestrator calls nav-api, with and without motion
+(`NAV_LOC_MAX_ABS_PITCH_DEG`, `NAV_LOC_GATE_SLACK_M`, `NAV_LOC_GATE_SLACK_FRAC`).
 
 **Debugging pages**, for testing nav-api by hand; they are not part of Orient (served by map-api and helium-nav,
 calling nav-api): **`/loc/`** localizes frames from the

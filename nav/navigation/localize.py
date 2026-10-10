@@ -19,9 +19,9 @@ With the phone's motion (`motions`, one per frame, the Orient app's `Motion`; al
   (metres per phone step). A node d metres away along the map's edges is plausible once
   walked >= d - max(gate_slack_m, gate_slack_frac d); a best node not plausible stays uncertain. That is what keeps
   a place recognised from afar from moving the user there. It replaces the "one edge from previous" rule: a node
-  two edges away is fine once walked that far, so a missed checkpoint no longer stalls the rest of the route;
-- heading: with heading_weight > 0 and a compass heading (map compass-referenced), a reference facing more than
-  heading_free_deg away from the phone loses up to heading_weight of similarity.
+  two edges away is fine once walked that far, so a missed checkpoint no longer stalls the rest of the route. A step
+  count below `previous_step_count` (the phone restarted its count) leaves the gate out: the one-edge rule applies;
+- heading: the newest motion's compass replaces `heading_abs_deg` (reported against each reference, not scored).
 The default thresholds are placeholders until tuned on venue images (env NAV_LOC_*; nav/config.py).
 """
 
@@ -34,6 +34,7 @@ import numpy as np
 from nav.schemas.map import PlaceMap
 from nav.schemas.navigation import LiveMotion, Localization, NodeMatch, RefMatch, Thresholds
 
+HEADING_MAX_ACCURACY_DEG = 45.0  # a compass reporting a worse accuracy is not used
 
 def angle_diff(a: float, b: float) -> float:
     """a - b in (-180, 180]."""
@@ -104,10 +105,10 @@ def camera_pitch(o) -> float | None:
     return round(math.degrees(math.asin(max(-1.0, min(1.0, -math.cos(o.beta * r) * math.cos(o.gamma * r))))), 1)
 
 
-def _usable_heading(m: LiveMotion | None, th: Thresholds) -> float | None:
+def _usable_heading(m: LiveMotion | None) -> float | None:
     if m is None or m.heading_deg is None or m.heading_source is None:
         return None
-    if m.heading_accuracy_deg is not None and m.heading_accuracy_deg > th.heading_max_accuracy_deg:
+    if m.heading_accuracy_deg is not None and m.heading_accuracy_deg > HEADING_MAX_ACCURACY_DEG:
         return None
     return m.heading_deg
 
@@ -126,7 +127,7 @@ def localize(index: RefIndex, queries: np.ndarray, thresholds: Thresholds, *, to
     newest = next((m for m in reversed(motions) if m is not None), None)
 
     # heading: the newest motion's compass (when trustworthy), else the explicit heading_deg
-    live_heading = _usable_heading(newest, thresholds)
+    live_heading = _usable_heading(newest)
     if live_heading is None:
         live_heading = heading_abs_deg
     heading_map = None
@@ -140,16 +141,15 @@ def localize(index: RefIndex, queries: np.ndarray, thresholds: Thresholds, *, to
     # walked since the last confirmed node, from the phone's step count
     walked = None
     step_len = index.live_step_length()
-    if previous is not None and previous_step_count is not None and newest and newest.step_count is not None and step_len:
-        walked = round(max(newest.step_count - previous_step_count, 0) * step_len, 2)
-    moving = None
-    if newest is not None and (newest.cadence_hz is not None or newest.speed_mps is not None):
-        moving = bool((newest.cadence_hz or 0) > 0 or (newest.speed_mps or 0) > 0)
+    steps = newest.step_count if newest else None
+    if previous is not None and previous_step_count is not None and steps is not None and step_len \
+            and steps >= previous_step_count:  # a count below it: the phone restarted counting, no gate
+        walked = round((steps - previous_step_count) * step_len, 2)
 
     base = dict(map_id=pmap.map_id, model=model, frames=len(q), previous=previous, expected=expected,
                 heading_map_deg=heading_map, thresholds=thresholds, took_ms=took_ms or {},
                 frames_used=len(keep), pitch_deg=pitches if any(p is not None for p in pitches) else [],
-                walked_m=walked, moving=moving)
+                walked_m=walked)
     if not index.refs:
         return Localization(**base, status="lost", reason="the map has no reference images", candidates=[])
     if not keep:
@@ -157,16 +157,6 @@ def localize(index: RefIndex, queries: np.ndarray, thresholds: Thresholds, *, to
                             candidates=[])
 
     sims = (index.vectors @ q[keep].T).mean(axis=1)  # [N]
-    heading_used = False
-    if heading_map is not None and thresholds.heading_weight > 0:
-        span = max(180.0 - thresholds.heading_free_deg, 1.0)
-        for i, r in enumerate(index.refs):
-            if r.heading_deg is not None:
-                off = abs(angle_diff(heading_map, r.heading_deg)) - thresholds.heading_free_deg
-                if off > 0:
-                    sims[i] -= thresholds.heading_weight * off / span
-        heading_used = True
-    base["heading_used"] = heading_used
     by_node: dict[str, list[tuple[float, object]]] = {}
     for s, r in zip(sims.tolist(), index.refs):
         by_node.setdefault(r.node, []).append((s, r))
@@ -205,12 +195,16 @@ def localize(index: RefIndex, queries: np.ndarray, thresholds: Thresholds, *, to
     elif dist is None and previous and previous in names and best not in index.neighbours(previous):
         status, reason = "uncertain", f"not next to the last confirmed node ({names[previous]})"
     elif plausible(best) is False:
-        status, reason = "uncertain", (f"{names.get(best, best)} is {dist.get(best, float('nan')):.0f} m from "
+        status, reason = "uncertain", (f"{names.get(best, best)} is not connected to {names[previous]}"
+                                       if best not in dist else f"{names.get(best, best)} is {dist[best]:.0f} m from "
                                        f"{names[previous]}, only {walked:.0f} m walked")
     else:
+        if dist is not None:
+            where = f", {walked:.0f} m walked from the last confirmed node"
+        else:
+            where = ", next to the last confirmed node" if previous in names else ""
         status, reason = "confirmed", (f"clear: score >= {thresholds.confirm_score:.2f}, margin >= "
-                                       f"{thresholds.confirm_margin:.2f}" + (", next to the last confirmed node"
-                                                                             if previous in names else ""))
+                                       f"{thresholds.confirm_margin:.2f}" + where)
     rank = next((i + 1 for i, (_, n) in enumerate(ranked) if n == expected), None)
     return Localization(**base, status=status, reason=reason, best=best, margin=round(margin, 4),
                         candidates=[node_match(s, n) for s, n in ranked[:top_k]],

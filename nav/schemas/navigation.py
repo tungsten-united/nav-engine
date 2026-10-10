@@ -74,9 +74,6 @@ class Thresholds(BaseModel):
     max_abs_pitch_deg: float = 55.0  # frames looking more up/down than this are left out (the map has none)
     gate_slack_m: float = 2.0  # a node d metres from `previous` is plausible once walked >= d - max(slack_m, ...
     gate_slack_frac: float = 0.35  # ... slack_frac x d)
-    heading_weight: float = 0.0  # similarity penalty for a reference facing away from the phone (0 = off) ...
-    heading_free_deg: float = 60.0  # ... beyond this difference, growing to the full weight at 180
-    heading_max_accuracy_deg: float = 45.0  # a compass reporting a worse accuracy is not used
 
 
 class LiveOrientation(BaseModel):
@@ -117,10 +114,8 @@ class Localization(BaseModel):
     expected_score: float | None = None  # how the expected node scored (it may not be in candidates)
     expected_rank: int | None = None  # 1 = best
     heading_map_deg: float | None = None  # the live compass heading in the map frame, when the map is compass-referenced
-    heading_used: bool = False  # the heading penalised references facing away (thresholds.heading_weight > 0)
     frames_used: int | None = None  # frames scored, after leaving out those pointed at the floor or ceiling
     pitch_deg: list[float | None] = []  # camera elevation per frame (from the motion's orientation), 0 = level
     walked_m: float | None = None  # since `previous`: (stepCount - previous_step_count) x the map's live step length
-    moving: bool | None = None  # the newest motion: cadence or speed above 0
     thresholds: Thresholds
     took_ms: dict[str, float]  # embed (the inference host), match, total

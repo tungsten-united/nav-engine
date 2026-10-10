@@ -142,8 +142,8 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
             expected: str | None = Form(None, description="the next checkpoint: its score and rank are reported"),
             heading_deg: float | None = Form(None, description="absolute compass heading of the phone, if known"),
             top_k: int = Form(5, ge=1, le=20),
-            motion: list[str] | None = Form(None, description="the phone's Motion (JSON, the Orient app's contract) "
-                                            "for each image, in the same order; `null` for a frame without one"),
+            motion: list[str] | None = Form(None, description="the phone's Motion (JSON, the Orient app's contract): "
+                                            "one per image, in the same order; `null` for a frame without one"),
             previous_step_count: int | None = Form(None, description="the phone's stepCount when the user's node "
                                                    "became `previous` (not reset by re-confirming it): with "
                                                    "motion, the walked distance gates confirmations")
@@ -163,8 +163,8 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
                 motions.append(None if part.strip() in ("", "null") else LiveMotion.model_validate_json(part))
             except ValidationError as e:
                 raise HTTPException(422, f"motion: {e.errors()[0]['msg']}")
-        if len(motions) > len(images):
-            raise HTTPException(422, "more motion parts than images")
+        if motions and len(motions) != len(images):
+            raise HTTPException(422, f"send one motion part per image ({len(images)}), `null` for a frame without one")
         index = await run_in_threadpool(maps.index, map_id)
         model = index.pmap.embedding.model if index.pmap.embedding else ""
         took: dict[str, float] = {}

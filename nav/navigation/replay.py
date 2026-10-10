@@ -207,7 +207,7 @@ TRUTH_S = 3.0  # a node counts as "there" from this long before the walk reached
 
 
 def orchestrator_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, thresholds: Thresholds,
-                        use_motion: bool = True, step_scale: float = 1.0, heading_bias_deg: float = 0.0,
+                        use_motion: bool = True, step_scale: float = 1.0,
                         exclude_ms: float = 400.0) -> OrchestratorResult | None:
     """The walk replayed the way the Orient orchestrator calls nav-api (project-description docs/contracts.md §2):
     one frame at a time into a buffer of the last 4, `localize` on each with `previous` = the last confirmed node,
@@ -253,7 +253,7 @@ def orchestrator_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root
         a, b, g = ori["alpha"][i], ori["beta"][i], ori["gamma"][i]
         recent = int(((step_times > t_ms - 4000) & (step_times <= t_ms)).sum())
         return LiveMotion(step_count=int((step_times <= t_ms).sum()), cadence_hz=recent / 4 if recent >= 3 else 0.0,
-                          heading_deg=None if h is None else (h + heading_bias_deg) % 360,
+                          heading_deg=h,
                           heading_source=None if h is None else "orientation_absolute",
                           orientation=None if None in (a, b, g) else LiveOrientation(alpha=a, beta=b, gamma=g,
                                                                                       absolute=True))
