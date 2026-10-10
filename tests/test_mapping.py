@@ -564,3 +564,23 @@ def test_voice_notes_are_decoded_in_the_walks_language(monkeypatch, tmp_path):
     monkeypatch.setattr(prep, "detect_language_file", old_host)
     language, texts, complete = prep._transcribe_walk(rec, m, "w", None)
     assert language is None and texts["1"] == "001.webm:None" and not complete  # each clip detects; not cached
+
+
+def test_real_walks_are_transcribed_in_english_though_short_notes_alone_are_not():
+    """Whisper's real language guesses for three English walks (tests/fixtures/voice-languages.json): each walk votes
+    English, while the notes that alone were taken for Spanish or Icelandic, and transcribed as nonsense, stay on
+    record as what the vote is for."""
+    import json
+    from pathlib import Path
+
+    from nav.mapping.prepare import voice_language
+
+    walks = json.loads((Path(__file__).parent / "fixtures" / "voice-languages.json").read_text())["walks"]
+    alone = {}
+    for rec_id, clips in walks.items():
+        code, share = voice_language([(c["languages"], c["seconds"]) for c in clips])
+        assert code == "en" and share > 0.85, (rec_id, code, share)
+        for c in clips:
+            if max(c["languages"], key=c["languages"].get) != "en":
+                alone[f"{rec_id[-4:]} clip {c['clip']}"] = max(c["languages"], key=c["languages"].get)
+    assert alone == {"7f42 clip 5": "es", "601a clip 7": "is", "601a clip 11": "es"}

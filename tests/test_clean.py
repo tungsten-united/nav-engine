@@ -221,3 +221,23 @@ def test_instructions_orient_would_cut_are_flagged_until_the_review_shortens_the
     save_review(tmp_path, Review(edges={"e1": EdgeReview(instruction="Walk 5 metres ahead to the cooler.")}))
     fixed = published_map(tmp_path, m)
     assert fixed.edges[0].instruction == "Walk 5 metres ahead to the cooler." and not fixed.warnings
+
+
+def test_glories_basement_walked_once_routes_back_only_over_any(tmp_path):
+    """Glories Basement as published on 2026-10-10 (build 20261010T180958Z: one walk, entrance escalator to the food
+    court, no review). Walking back with the app the user was placed right five times, but nav-api found no route
+    over `observed`: 76 requests, none found. The orchestrator now routes over `any`, which on a published map means
+    walked, either way: the way back has an instruction for that direction on every hop, within what Orient speaks,
+    and the way in is the same route as before."""
+    from nav.schemas.map import MAX_INSTRUCTION_CHARS
+
+    build = PlaceMap.model_validate_json((Path(__file__).parent / "fixtures" / "glories-basement" / "map.json").read_text())
+    m = published_map(tmp_path, build, clean=True)
+    assert m.pruned == {} and len(m.nodes) == 16
+    assert plan_route(m, "n13", "n1", "observed") is None
+    back = plan_route(m, "n13", "n1", "any")
+    assert [h.target for h in back] == ["n12", "n11", "n10", "n9", "n8", "n7", "n6", "n5", "n4", "n3", "n2", "n1"]
+    assert all(not h.forward and h.status == "inferred" for h in back)
+    assert all(h.instruction and len(h.instruction) <= MAX_INSTRUCTION_CHARS for h in back)
+    way_in = [h.edge for h in plan_route(m, "n1", "n16", "observed")]
+    assert [h.edge for h in plan_route(m, "n1", "n16", "any")] == way_in and len(way_in) == 15
