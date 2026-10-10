@@ -122,6 +122,10 @@ an existing place, so a new walk joins its map; walks may start anywhere and go 
 start): nodes are spots worth naming (entrance,
 doors, junctions, rooms, areas, stairs, lifts, destinations, landmarks), and edges are walkable connections with
 spoken, egocentric instructions both ways. The format is in [`nav/schemas/map.py`](nav/schemas/map.py).
+On map-api a walk that finalizes rebuilds its place's map by itself (`NAV_AUTO_BUILD`, on by default; `0` turns it
+off): the same map, improved, since the build starts from the published one (ids, the review and what still holds
+carry over), and a failed build leaves the published map as it was. Walks that finalize during a build queue one more
+build of their place. Each build's `status.json` says what triggered it (`auto: <rec_id> finalized`, or `api`).
 
 ```sh
 uv run nav map setup                  # once: download + check the local models (GPU if available)
@@ -315,7 +319,8 @@ Jev quality check (TypeSafe API), review, map files, and the debugging frontend 
   (bucket read-write). Settings: [`deploy/map-api.env.yaml`](deploy/map-api.env.yaml).
 - Deleting recordings is off: the bucket is the team's shared data, and it keeps deleted objects for 7 days anyway.
 - Map builds: `POST /api/v1/maps/build {"place": "Itnig", "llm": false}` → poll the `status_url` it returns.
-  `llm: false` stops after the candidates (no LLM cost). One build at a time.
+  `llm: false` stops after the candidates (no LLM cost). One build at a time. A walk that finalizes starts one by
+  itself (or queues one, while another runs): see [Maps](#maps).
 
 **nav-api** (https://nav-api-613464313064.europe-southwest1.run.app): the live API ([above](#nav-api-the-live-api)).
 Runs as `nav-api` (bucket viewer), the bucket mounted read-only; 1 to 3 instances, at least one always on.
