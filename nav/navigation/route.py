@@ -41,31 +41,51 @@ def hops(e: PlaceEdge) -> list[Hop]:
     return out
 
 
+def edge_parts(e: PlaceEdge) -> tuple[str, str]:
+    """The spots an edge's ends were walked to: its nodes, or the parts of a merged area (review.py)."""
+    return e.source_part or e.source, e.target_part or e.target
+
+
 def plan_route(pmap: PlaceMap, start: str, goal: str, trust: str = "verified") -> list[Hop] | None:
     """The shortest route by distance (Dijkstra) from `start` to `goal`, or None if trusted edges don't connect
-    them. [] when start == goal."""
+    them. [] when start == goal. Through a node the review merged others into (an area), only in and out of the same
+    part: its edges lead to different parts of it, and the walk from one to another isn't in the map."""
     allowed = TRUSTED[trust]
+    areas = set(pmap.merged.values())
+    parts = {e.id: edge_parts(e) for e in pmap.edges}
+
+    def ends(h: Hop) -> tuple[str, str]:
+        sp, tp = parts[h.edge]
+        return (sp, tp) if h.forward else (tp, sp)
+
     graph: dict[str, list[Hop]] = {}
     for e in pmap.edges:
         for h in hops(e):
             if h.status in allowed:
                 graph.setdefault(h.source, []).append(h)
-    best = {start: 0.0}
-    came: dict[str, Hop] = {}
-    queue = [(0.0, start)]
+    # a state is (node, the part of it the route came in at, "" outside areas)
+    first = (start, "")
+    best = {first: 0.0}
+    came: dict[tuple, tuple[Hop, tuple]] = {}
+    queue = [(0.0, first)]
     while queue:
-        d, node = heapq.heappop(queue)
+        d, state = heapq.heappop(queue)
+        node, part = state
         if node == goal:
             route = []
-            while node != start:
-                route.append(came[node])
-                node = came[node].source
+            while state != first:
+                h, state = came[state]
+                route.append(h)
             return route[::-1]
-        if d > best.get(node, float("inf")):
+        if d > best.get(state, float("inf")):
             continue
         for h in graph.get(node, []):
+            leave, reach = ends(h)
+            if part and leave != part:
+                continue
+            nxt = (h.target, reach if h.target in areas else "")
             nd = d + (h.length_m if h.length_m is not None else UNKNOWN_LENGTH_M)
-            if nd < best.get(h.target, float("inf")):
-                best[h.target], came[h.target] = nd, h
-                heapq.heappush(queue, (nd, h.target))
+            if nd < best.get(nxt, float("inf")):
+                best[nxt], came[nxt] = nd, (h, state)
+                heapq.heappush(queue, (nd, nxt))
     return None

@@ -6,7 +6,13 @@ gives the published map.json:
 
 - approve: status -> verified. Routing for real users only uses verified edges (nav/navigation/route.py).
   Edges are approved per direction: `approve` for source -> target, `approve_reverse` for target -> source.
-- name / kind / instruction / reverse_instruction: corrections that win over what the LLM wrote.
+- name / kind / description / instruction / reverse_instruction: corrections that win over what the LLM wrote.
+- merge_into: the node is part of another one (one big area the LLM split, say). Its reference images, evidence,
+  relations and cues go to that node, its edges are joined to it (an edge between two parts is dropped), and
+  `merged` lists it. Each joined edge end remembers the part it was walked to (`source_part` / `target_part`): its
+  distance is to that part. Routes and the walked-distance gate pass through an area only in and out of the same
+  part (route.py, localize.py): the walk from one part to another isn't in the map. Parts that a walk of at most
+  JOIN_PARTS_M joined (the dropped edge between them) count as one part.
 - hide: leave the item out of the published map (it stays in the build's map.json; nothing is deleted).
   Hiding a node hides its edges, relations and reference images too.
 - distances: metres measured on site between two nodes (tape, pacing, a floor plan). The walked metres come from
@@ -33,6 +39,8 @@ class NodeReview(BaseModel):
     hide: bool = False
     name: str | None = None
     kind: NodeKind | None = None
+    description: str | None = None
+    merge_into: str | None = None  # node id this node is part of (see the module docstring)
     note: str | None = None
 
 
@@ -89,6 +97,9 @@ def apply_review(pmap: PlaceMap, review: Review) -> PlaceMap:
     if review == Review():
         return m
     hidden: set[str] = set()
+    merged = _merges(m, review)
+    if merged:
+        _merge(m, merged, hidden)
     for n in m.nodes:
         r = review.nodes.get(n.id)
         if r is None:
@@ -101,6 +112,8 @@ def apply_review(pmap: PlaceMap, review: Review) -> PlaceMap:
             n.review_flags = [f for f in n.review_flags if f != "name set in review"] + ["name set in review"]
         if r.kind:
             n.kind = r.kind
+        if r.description:
+            n.description = r.description
         if r.approve:
             n.status = "verified"
             n.review_flags = [f for f in n.review_flags if f == "name set in review"]
@@ -143,6 +156,88 @@ def apply_review(pmap: PlaceMap, review: Review) -> PlaceMap:
     if stale:
         m.warnings.append(f"review: entries for ids not in this build (kept for later): {', '.join(stale)}")
     return m
+
+
+JOIN_PARTS_M = 3.0  # parts of a merged area a walk this short joined count as one part for routes
+
+
+def _merges(m: PlaceMap, review: Review) -> dict[str, str]:
+    """Node id -> the node it is merged into, chains followed (a -> b -> c: a -> c). Merges into a node that is
+    missing or hidden, cycles and hidden nodes are left out, with a warning."""
+    ids = {n.id for n in m.nodes}
+    hidden = {i for i, r in review.nodes.items() if r.hide}
+    out: dict[str, str] = {}
+    for nid, r in review.nodes.items():
+        if not r.merge_into or nid not in ids or nid in hidden:
+            continue
+        seen, target = [nid], r.merge_into
+        while target not in seen and (nxt := review.nodes.get(target)) and nxt.merge_into:
+            seen.append(target)
+            target = nxt.merge_into
+        if target in seen:
+            m.warnings.append(f"review: node {nid}: merge cycle {' -> '.join(seen + [target])}, not merged")
+        elif target not in ids or target in hidden:
+            m.warnings.append(f"review: node {nid}: merge into {target}, which is not in this build or is hidden, "
+                              "not merged")
+        else:
+            out[nid] = target
+    return out
+
+
+def _merge(m: PlaceMap, merged: dict[str, str], hidden: set[str]) -> None:
+    """Fold each merged node into its node, in place (see the module docstring). Dropped edges go to `hidden`."""
+    nodes = {n.id: n for n in m.nodes}
+    for old, new in merged.items():
+        a, b = nodes[new], nodes[old]
+        for f in ("landmarks", "hazards", "visual_cues", "candidates", "references"):
+            setattr(a, f, list(dict.fromkeys([*getattr(a, f), *getattr(b, f)])))
+        a.evidence = [*a.evidence, *b.evidence]
+        a.relations = [*a.relations, *b.relations]
+    old_names = {nodes[x].name.casefold() for x in merged} | {nodes[x].name.casefold() for x in set(merged.values())}
+    for new in set(merged.values()):  # one relation per subject, none about the area itself
+        a, seen, keep = nodes[new], set(), []
+        for rel in a.relations:
+            key = rel.subject.casefold()
+            if key not in seen and key not in old_names:
+                seen.add(key)
+                keep.append(rel)
+        a.relations = keep
+    m.nodes = [n for n in m.nodes if n.id not in merged]
+
+    loops = {e.id: e for e in m.edges if merged.get(e.source, e.source) == merged.get(e.target, e.target)}
+    # Parts a short walk inside the area joined count as one part (the error is under JOIN_PARTS_M).
+    group = {x: x for x in [*merged, *merged.values()]}
+
+    def find(x: str) -> str:
+        while group[x] != x:
+            x = group[x]
+        return x
+
+    for e in loops.values():
+        if e.distance_m is not None and e.distance_m <= JOIN_PARTS_M:
+            a, b = sorted((find(e.source), find(e.target)), key=lambda x: (x not in merged.values(), x))
+            group[b] = a  # the area's own node, if in the group, stands for it
+    edges = []
+    for e in m.edges:
+        if e.id in loops:  # between two parts of one area: the walk inside it
+            continue
+        for end in ("source", "target"):
+            x = getattr(e, end)
+            node = merged.get(x, x)
+            if node != x or x in group:
+                part = find(x)
+                setattr(e, end, node)
+                setattr(e, f"{end}_part", None if part == node else part)
+        edges.append(e)
+    m.edges = edges
+    hidden |= set(loops)
+    for r in m.references:
+        r.node = merged.get(r.node, r.node)
+        if r.toward is not None:
+            r.toward = merged.get(r.toward, r.toward)
+        if r.edge in loops:  # a view leaving one part toward another: a view of the area
+            r.role, r.edge, r.toward = "at", None, None
+    m.merged = dict(merged)
 
 
 def _walk_m(pmap: PlaceMap, a: str, b: str) -> float | None:
@@ -207,7 +302,8 @@ def template(pmap: PlaceMap, review: Review) -> dict:
 
     return {
         "_how": "Walk the place with the map. Set approve (edges: approve for source -> target, approve_reverse for "
-                "the way back) on what you checked, fix name/kind/instruction, hide what is wrong. Then run "
+                "the way back) on what you checked, fix name/kind/description/instruction, hide what is wrong, "
+                "set merge_into (a node id) on a node that is part of another one. Then run "
                 "`nav map review <map_id> --apply <this file>` (or PUT it to /api/v1/maps/<map_id>/review). Only "
                 "verified edges are used to route real users.",
         "nodes": {n.id: {"_": f"{n.name} ({n.kind}, {n.status})", "_check": flags(n, "node"),

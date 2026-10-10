@@ -394,6 +394,9 @@ class PlaceEdge(MapEdge):
     reference_views: list[str] = []  # outgoing ReferenceImage ids along this edge
     walked_forward: int | None = None  # walks that went source -> target directly (None: built before this was counted)
     walked_back: int | None = None  # ... and target -> source
+    # The node an end was walked to, when the review merged it into `source` / `target` (None: that node itself).
+    source_part: str | None = None
+    target_part: str | None = None
 
 
 class LlmRun(BaseModel):
@@ -451,6 +454,7 @@ class PlaceMap(MapDraft):
     embedding: EmbeddingInfo | None = None
     reviewed_at_utc: datetime | None = None  # when review.json was last applied (None: never reviewed)
     hidden: list[str] = []  # node / edge / relation ids hidden by the review (still in the build's map.json)
+    merged: dict[str, str] = {}  # node id -> the node the review merged it into (edges keep the part: *_part)
 
 
 class MapSummary(BaseModel):

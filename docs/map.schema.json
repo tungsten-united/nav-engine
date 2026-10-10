@@ -674,6 +674,30 @@
      ],
      "default": null,
      "title": "Walked Back"
+    },
+    "source_part": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Source Part"
+    },
+    "target_part": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Target Part"
     }
    },
    "required": [
@@ -1412,6 +1436,14 @@
    },
    "title": "Hidden",
    "type": "array"
+  },
+  "merged": {
+   "additionalProperties": {
+    "type": "string"
+   },
+   "default": {},
+   "title": "Merged",
+   "type": "object"
   }
  },
  "required": [

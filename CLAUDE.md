@@ -30,11 +30,13 @@ phone app talks only to the orchestrator; `frontend/` here is a debugging fronte
   `build.py` (orchestration + finish), `quality.py` (TypeSafe Jev check), `store.py`, `calibrate.py` (video yaw,
   sensor-to-video offset, FOV), `odometry.py` (metres walked from the floor seen in the video, fused with steps),
   `references.py` (reference images + embeddings for live VPR), `review.py` (human review overlay
-  `maps/<id>/review.json`, incl. distances measured on site that set the scale; published map.json = latest build
-  + review).
+  `maps/<id>/review.json`, incl. distances measured on site that set the scale, and `merge_into` to fold nodes into
+  one area; published map.json = latest build + review).
 - `nav/navigation/` — the live side, small and causal: `route.py` (routes over verified edges by default) and
   `localize.py` (VPR against reference embeddings → ranked nodes, confirmed/uncertain/lost), both served by nav-api;
-  `pdr.py` (causal step detector + GraphTracker, `nav map pdr-replay`), reference code that nothing live runs.
+  `pdr.py` (causal step detector + GraphTracker, `nav map pdr-replay`) and `arrival.py` (node confirmer, ported 1:1
+  to `frontend/nav/arrival.js`: /nav's auto-confirm, where a rule is tried before the orchestrator copies it),
+  reference code that nothing live runs.
 - `docs/` — the navigation-side design (`main_idea.md`, `navigation_stack.md`, by LPA, from
   tungsten-united/demo-repository@navigation, aligned with Orient's architecture) and `map.schema.json` (regenerate: `nav map schema --out ...`; a test checks it).
 - `nav/mapping/inference.py` — every model call on files: local models, or the inference host when `NAV_INFER_URL` is set.
@@ -130,6 +132,13 @@ the live inference host out of it.
 - Live phone frames score lower than the mapping walks' replays (Itnig, 2026-10-10: 0.17-0.49 against a confirm score
   of 0.45), so a single absolute `confirmed` rarely fires after the first node. Hop following votes on which node
   leads (margin), over several frames, not on the absolute score.
+- /nav's confirmer does the same (2026-10-10 /nav test, nav-api logs: the right node scored 0.36-0.48, leading by
+  0.08-0.16): it votes on the leader and its lead with its own thresholds (0.30 / 0.04), gated by nav-api's
+  `plausible` (steps, no compass). The phone compass was 35-45° off the map's bearings, so headings don't gate
+  arrival, and neighbours of the hop seen from it are not "off route".
+- A merged node (review `merge_into`) is an area whose edges lead to different parts of it: routes and the walked-
+  distance gate cross it only in and out of one part (`*_part` on edges). Merging Itnig's three table nodes without
+  that left the stage and kitchen unreachable over observed edges from the entrance, or gave 13 m shortcuts.
 
 ## Product decisions
 - A recording is a **free walk through a place**, not a route. `place` (required, whitespace-normalised,
