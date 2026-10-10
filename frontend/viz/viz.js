@@ -43,9 +43,11 @@ const fmtDate = (iso) => new Date(iso).toLocaleString(undefined, { day: "numeric
 
 // --- state -------------------------------------------------------------------------------------------------
 const S = {
-  maps: [], map: null, nodes: new Map(), edges: new Map(), pos: new Map(),
-  view: { s: 1, tx: 0, ty: 0 }, walked: true, pin: null, route: null, turns: new Map(), order: [],
+  maps: [], map: null, nodes: new Map(), edges: new Map(), pos: new Map(), refs: new Map(),
+  view: { s: 1, tx: 0, ty: 0 }, walked: true, pin: null, route: null, turns: new Map(), order: [], trust: "any",
+  reviewMsg: null,
 };
+const TRUST = { any: ["verified", "observed", "inferred"], observed: ["verified", "observed"], verified: ["verified"] };
 
 // --- geometry ----------------------------------------------------------------------------------------------
 const bearing = (a, b) => (Math.atan2(b.x - a.x, b.y - a.y) * 180) / Math.PI;  // compass-like, world y = north
@@ -157,7 +159,8 @@ function draw() {
   for (const e of m.edges) {
     const pts = edgePoints(e).map(project);
     const mid = midpoint(pts), d = smoothPath(pts);
-    const cls = ["edge", e.confidence === "low" && "low", e.walked === false && "inferred", on.has(e.id) && "on"].filter(Boolean).join(" ");
+    const cls = ["edge", e.confidence === "low" && "low", e.walked === false && "inferred", e.status === "verified" && "verified",
+      on.has(e.id) && "on"].filter(Boolean).join(" ");
     const deg = (mid.ang * 180) / Math.PI;
     const nx = -Math.sin(mid.ang) * 11, ny = Math.cos(mid.ang) * 11;  // hazard badge beside the arrow
     world.append(s("g", { class: cls, "data-id": e.id, onmousemove: (ev) => tip(ev, "edge", e.id), onmouseleave: hideTip,
@@ -181,7 +184,7 @@ function draw() {
     const free = (b) => !boxes.some((o) => o.id !== n.id && b.x0 < o.x1 && o.x0 < b.x1 && b.y0 < o.y1 && o.y0 < b.y1);
     const [lx, ly, anchor] = spots.find(([x, y, a]) => free(box(x, y, a))) || spots[0];
     boxes.push(box(lx, ly, anchor));
-    world.append(s("g", { class: `node${on.has(n.id) ? " on" : ""}`, transform: `translate(${p.x},${p.y})`,
+    world.append(s("g", { class: `node${on.has(n.id) ? " on" : ""}${n.status === "verified" ? " verified" : ""}`, transform: `translate(${p.x},${p.y})`,
       onmousemove: (ev) => tip(ev, "node", n.id), onmouseleave: hideTip,
       onclick: (ev) => { ev.stopPropagation(); pin("node", n.id); } },
       s("circle", { r, fill: kindColor(n.kind) }),
@@ -252,32 +255,109 @@ function pinCard() {
     return h("div", { class: "pin" }, close, h("h2", {}, n.name),
       h("div", { class: "chips" }, h("span", { class: "chip", style: `color:${kindColor(n.kind)}` }, KINDS[n.kind] || n.kind),
         h("span", { class: `chip ${n.confidence}` }, `${n.confidence} confidence`), n.floor && h("span", { class: "chip" }, `floor ${n.floor}`),
-        h("span", { class: "chip" }, n.id)),
+        statusChip(n.status), h("span", { class: "chip" }, n.id)),
+      reviewBar([n.status === "verified" ? ["Unverify", { approve: false }] : ["Verify", { approve: true }],
+        ["Hide", { hide: true }]], "nodes", n.id),
       qualityBlock(n.quality, false),
+      ...items("Check", n.review_flags, "visual"),
       h("p", {}, n.description), ...items("Landmarks", n.landmarks), ...items("Hazards", n.hazards, "hazards"),
       ...items("Visual cues (sighted helpers, camera)", n.visual_cues, "visual"),
       h("h4", {}, `Seen in ${recs.length} walk${recs.length === 1 ? "" : "s"}`),
       h("dl", { class: "kv" }, recs.map((r) => [h("dt", {}, h("a", { href: `/dash/#${r}` }, r)),
         h("dd", {}, n.evidence.filter((e) => e.rec_id === r).map((e) => fmtT(e.t_ms)).join(", "))])),
-      frames(n.candidates));
+      frames(n.candidates),
+      relationList(n),
+      refGallery(n.references));
   }
   const e = S.edges.get(S.pin.id), a = S.nodes.get(e.source), b = S.nodes.get(e.target);
   return h("div", { class: "pin" }, close, h("h2", {}, `${a.name} → ${b.name}`),
     h("div", { class: "chips" }, h("span", { class: "chip" }, e.kind), h("span", { class: `chip ${e.confidence}` }, `${e.confidence} confidence`),
-      h("span", { class: "chip" }, e.bidirectional ? "both ways" : "one way"), h("span", { class: "chip" }, e.id)),
+      h("span", { class: "chip" }, e.bidirectional ? "both ways" : "one way"), statusChip(e.status, "→"),
+      e.bidirectional && statusChip(e.reverse_status, "←"), h("span", { class: "chip" }, e.id)),
+    reviewBar([e.status === "verified" ? ["Unverify →", { approve: false }] : ["Verify →", { approve: true }],
+      e.bidirectional && (e.reverse_status === "verified" ? ["Unverify ←", { approve_reverse: false }] : ["Verify ←", { approve_reverse: true }]),
+      ["Hide", { hide: true }]], "edges", e.id),
     qualityBlock(e.quality, true),
+    ...items("Check", e.review_flags, "visual"),
     e.walked === false && h("p", { class: "hint" }, "Not walked directly: the walk passed other spots in between, so this connection is inferred."),
     h("dl", { class: "kv" }, h("dt", {}, "Distance"), h("dd", {}, e.measured_distance_m != null ? `${fmtM(e.measured_distance_m)} (measured)` :
         e.distance_m != null ? `${fmtM(e.distance_m)} (from the steps, not measured)` : "unknown"),
       h("dt", {}, "Basis"), h("dd", {}, e.walked === false ? "inferred (not walked directly)" : "walked"),
-      S.turns.has(e.id) && [h("dt", {}, "Turn"), h("dd", {}, turnText(S.turns.get(e.id), true))]),
+      S.turns.has(e.id) && [h("dt", {}, "Turn"), h("dd", {}, turnText(S.turns.get(e.id), true))],
+      e.departure_heading_deg != null && [h("dt", {}, "Heading"), h("dd", {}, `leave ${headingText(e.departure_heading_deg)}` +
+        (e.arrival_heading_deg != null ? `, arrive ${headingText(e.arrival_heading_deg)}` : ""))]),
     h("div", { class: "instruction" }, e.instruction),
     stepList(e.steps),
     e.reverse_instruction && [h("h4", {}, `Back: ${b.name} → ${a.name}`), h("div", { class: "instruction" }, e.reverse_instruction),
       stepList(e.reverse_steps, "computed from the steps above")],
     ...items("Along the way", e.landmarks), ...items("Hazards", e.hazards, "hazards"),
     ...items("Visual cues (sighted helpers, camera)", e.visual_cues, "visual"),
-    e.candidates.length ? frames(e.candidates) : null);
+    e.candidates.length ? frames(e.candidates) : null,
+    refGallery(e.reference_views, "Reference views along this edge"));
+}
+
+// --- navigation data: status, review, reference images, relations ----------------------------------------
+const STATUS_TEXT = { verified: "✓ verified", observed: "observed", inferred: "inferred" };
+function statusChip(st, prefix = "") {
+  return st ? h("span", { class: `chip st-${st}`, title: "observed: walked while mapping · inferred: deduced · verified: checked by a person" },
+    `${prefix ? prefix + " " : ""}${STATUS_TEXT[st] || st}`) : null;
+}
+const COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+function headingText(deg) {
+  if (deg == null) return "?";
+  const frame = S.map.frame?.heading_source === "compass" ? ` ${COMPASS[Math.round(deg / 45) % 8]}` : "";
+  return `${Math.round(deg)}°${frame}`;
+}
+function reviewBar(actions, kind, id) {
+  return h("div", { class: "review" }, actions.filter(Boolean).map(([label, patch]) =>
+    h("button", { type: "button", onclick: () => saveReview(kind, id, patch) }, label)),
+    S.reviewMsg && h("span", { class: "hint" }, ` ${S.reviewMsg}`));
+}
+async function saveReview(kind, id, patch) {
+  const mapId = S.map.map_id;
+  S.reviewMsg = "saving…";
+  renderPanel();
+  try {
+    const review = await getJSON(`/maps/${encodeURIComponent(mapId)}/review`);
+    review[kind][id] = { ...(review[kind][id] || {}), ...patch };
+    const r = await NAV.fetch(`${API}/maps/${encodeURIComponent(mapId)}/review`, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(review) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
+    S.reviewMsg = null;
+    const pinned = S.pin && !patch.hide ? S.pin : null;
+    await openMap(mapId);
+    if (pinned && (S.nodes.has(pinned.id) || S.edges.has(pinned.id))) pin(pinned.type, pinned.id);
+  } catch (err) {
+    S.reviewMsg = `review not saved: ${err.message}`;
+    renderPanel();
+  }
+}
+function refGallery(ids, title = "Reference images (live localization)") {
+  const refs = (ids || []).map((i) => S.refs.get(i)).filter(Boolean);
+  if (!refs.length) return null;
+  const order = { approach: 0, at: 1, outgoing: 2 };
+  refs.sort((a, b) => order[a.role] - order[b.role]);
+  return [h("h4", {}, `${title} · ${refs.length}`), h("div", { class: "frames refs" }, refs.map((r) => {
+    const cap = `${r.role}${r.toward ? ` → ${S.nodes.get(r.toward)?.name || r.toward}` : ""} · ${headingText(r.heading_deg)}`;
+    return h("figure", { onclick: () => zoom(frameUrl(r.image), `${r.id} · ${cap} · ${r.rec_id} ${fmtT(r.t_ms)}`) },
+      h("img", { src: frameUrl(r.image), alt: cap, loading: "lazy" }),
+      h("figcaption", {}, r.heading_deg != null && h("span", { class: "arrowhead", style: `--h:${r.heading_deg}deg` }, "↑"), ` ${cap}`));
+  }))];
+}
+function relationList(n) {
+  if (!n.relations?.length) return null;
+  return [h("h4", {}, "Relations (from the walk's arrival direction)"), h("ul", { class: "relations" }, n.relations.map((r) =>
+    h("li", {}, h("b", {}, r.subject), ` ${r.direction}`, h("span", { class: "muted" },
+      ` · ${headingText(r.heading_deg)} · ${STATUS_TEXT[r.status] || r.status}`),
+      reviewBar([r.status === "verified" ? ["Unverify", { approve: false }] : ["Verify", { approve: true }], ["Hide", { hide: true }]],
+        "relations", r.id))))];
+}
+function hiddenList() {
+  const m = S.map;
+  if (!m.hidden?.length) return null;
+  const kindOf = (id) => (id.includes(":") ? "relations" : id.startsWith("e") ? "edges" : "nodes");
+  return [h("h3", {}, "Hidden by the review"), h("ul", { class: "list" }, m.hidden.map((id) =>
+    h("li", {}, `${id} `, h("button", { class: "link", type: "button", onclick: () => saveReview(kindOf(id), id, { hide: false }) }, "unhide"))))];
 }
 
 const ACTIONS = { straight: "↑ straight", bear_left: "↖ bear left", bear_right: "↗ bear right", turn_left: "← turn left",
@@ -306,11 +386,13 @@ function directions() {
   const opts = (sel) => S.map.nodes.map((n) => h("option", { value: n.id, selected: n.id === sel }, n.name));
   const from = h("select", { "aria-label": "From" }, opts(S.route?.[0]?.node ?? S.map.nodes[0]?.id));
   const to = h("select", { "aria-label": "To" }, opts(S.route?.at(-1)?.node ?? S.map.nodes.at(-1)?.id));
+  const trust = h("select", { "aria-label": "Edges to use", onchange: (ev) => { S.trust = ev.target.value; } },
+    Object.keys(TRUST).map((k) => h("option", { value: k, selected: k === S.trust }, k === "any" ? "any edge" : `${k} only`)));
   const form = h("form", { class: "route", onsubmit: (ev) => { ev.preventDefault(); S.route = findRoute(from.value, to.value); draw(); renderPanel(); } },
-    from, to, h("button", { type: "submit" }, "Go"));
+    from, to, h("button", { type: "submit" }, "Go"), trust);
   const out = [h("h3", {}, "Directions"), form];
   if (S.route) {
-    if (S.route.length < 2) out.push(h("p", { class: "hint" }, "No walked connection between these two."));
+    if (S.route.length < 2) out.push(h("p", { class: "hint" }, `No connection between these two over ${S.trust === "any" ? "the" : S.trust} edges.`));
     else {
       const total = S.route.slice(1).reduce((t, { edge }) => t + (edge.measured_distance_m ?? edge.distance_m ?? 0), 0);
       out.push(h("ol", { class: "steps" }, S.route.slice(1).map(({ node, edge, forward }) =>
@@ -333,6 +415,8 @@ function findRoute(src, dst) {
       const w = e.measured_distance_m ?? e.distance_m ?? 10;
       for (const [a, b, forward] of [[e.source, e.target, true], [e.target, e.source, false]]) {
         if (a !== u || (!forward && !e.bidirectional)) continue;
+        const st = forward ? e.status : e.reverse_status;  // maps built before statuses: treated as observed
+        if (!TRUST[S.trust].includes(st || "observed")) continue;
         if (!dist.has(b) || dist.get(u) + w < dist.get(b)) { dist.set(b, dist.get(u) + w); prev.set(b, { from: u, edge: e, forward }); }
       }
     }
@@ -359,6 +443,7 @@ function renderPanel() {
       h("span", { class: "dot", style: `--c:${kindColor(n.kind)}` }, n.name), " ", h("span", { class: "id" }, `· ${n.id}`), flagMark(n)))),
     h("h3", {}, "About this place"), h("p", {}, m.summary),
     m.notes.length && [h("h3", {}, "Notes"), h("ul", { class: "notes" }, m.notes.map((n) => h("li", {}, n)))],
+    hiddenList(),
     m.warnings.length && [h("h3", {}, "Pipeline warnings"), h("ul", { class: "notes warnings" }, m.warnings.map((n) => h("li", {}, n)))],
     h("h3", {}, "Build"),
     h("dl", { class: "kv" },
@@ -369,6 +454,10 @@ function renderPanel() {
       h("dt", {}, "Quality check"), h("dd", {}, !m.quality ? "not run" : m.quality.skipped ? `skipped: ${m.quality.skipped}` :
         `${m.quality.flagged} of ${m.nodes.length + m.edges.length} items flagged · ${m.quality.model} · ${m.quality.input_tokens} tokens`),
       h("dt", {}, "Embeddings"), h("dd", {}, `${b.embed_model}${b.embed_dim ? ` · ${b.embed_dim}-d` : ""}`),
+      h("dt", {}, "References"), h("dd", {}, `${m.references?.length || 0} images` + (m.embedding ? ` · ${m.embedding.model.split(":")[0]} ${m.embedding.dim}-d` : " · no embeddings")),
+      h("dt", {}, "Frame"), h("dd", {}, m.frame ? `${m.frame.heading_source}${m.frame.heading_zero_abs_deg != null ? " (0° = north)" : ""}` : "unknown"),
+      h("dt", {}, "Review"), h("dd", {}, m.reviewed_at_utc ? `${fmtDate(m.reviewed_at_utc)} · ${m.nodes.filter((n) => n.status === "verified").length}/${m.nodes.length} nodes, ` +
+        `${m.edges.filter((e) => e.status === "verified").length}/${m.edges.length} edges verified` : "not reviewed"),
       h("dt", {}, "Voice"), h("dd", {}, b.transcribe_model || "not transcribed"),
       h("dt", {}, "Files"), h("dd", {}, ["candidates.json", "job/prompt.md", "job/claude.json"].map((f) => [h("a", { href: frameUrl(`builds/${b.build_id}/${f}`) }, f), " "])))
   ].flat(Infinity).filter(Boolean));
@@ -376,14 +465,15 @@ function renderPanel() {
 
 function legend() {
   const kinds = [...new Set(S.map?.nodes.map((n) => n.kind) || [])];
-  $("#legend").replaceChildren(
+  $("#legend").replaceChildren(...[
     ...kinds.map((k) => h("span", { class: "dot", style: `--c:${kindColor(k)}` }, KINDS[k] || k)),
     h("span", { class: "ln", style: "--c:var(--edge)" }, "edge (arrow: walked direction)"),
     h("span", { class: "haz" }, "hazards on the way"),
     h("span", { class: "ln dash", style: "--c:var(--edge)" }, "low confidence"),
     h("span", { class: "ln dot2", style: "--c:var(--edge)" }, "inferred, not walked"),
+    h("span", { class: "ln", style: "--c:var(--ok)" }, "verified"),
     S.map?.quality && !S.map.quality.skipped && h("span", { class: "flag" }, "⚑ flagged by the quality check"),
-    S.walked && h("span", { class: "ln dash", style: "--c:var(--track)" }, "walked track"));
+    S.walked && h("span", { class: "ln dash", style: "--c:var(--track)" }, "walked track")].filter(Boolean));
 }
 
 function zoom(src, caption) {
@@ -402,6 +492,7 @@ async function openMap(id) {
     S.map = m;
     S.nodes = new Map(m.nodes.map((n) => [n.id, n]));
     S.edges = new Map(m.edges.map((e) => [e.id, e]));
+    S.refs = new Map((m.references || []).map((r) => [r.id, r]));
     layoutPositions(m);
     computeOrder(m);
     $("#title").textContent = `${m.place} — navigation graph`;
