@@ -112,7 +112,8 @@ curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret:
 - Indoor compass readings are disturbed by steel and wiring; heading is stored raw for offline fusion with the gyro.
 - Uploads waiting in the queue live in page memory: don't close or reload the tab until it says "Recording saved".
 - The recorder writes to local disk; sharing through the bucket is a manual `nav rec push`.
-- Maps: positions come from dead reckoning, so they drift over long walks; distances undercount very slow steps.
+- Maps: positions come from dead reckoning, so they drift over long walks. Distances come from the floor seen in the
+  video where possible; their scale rests on an assumed phone height until a distance measured on site is entered.
 
 ## Maps
 
@@ -130,6 +131,7 @@ uv run nav map llm itnig              # rerun only the LLM with the latest build
 uv run nav map refinish itnig         # redo post-processing from the saved LLM answer (no new LLM call)
 uv run nav map check itnig            # rerun the cheap quality check (TypeSafe Jev) on the published map
 uv run nav map review itnig           # write an editable review file; --apply <file> verifies / fixes / hides
+uv run nav map measure itnig "Main entrance" "Drinks area" 7 --sigma 0.3   # a distance measured on site: sets the scale
 uv run nav map route itnig "Main entrance" Stage [--trust verified|observed|any]
 uv run nav map pdr-replay itnig <rec_id> [--step-scale 0.85]  # replay a walk through the live dead-reckoning tracker
 uv run nav map schema [--out docs/map.schema.json]            # JSON Schema of the published map, for the app
@@ -145,6 +147,12 @@ uv run nav map pull [<map_id> …]
    - **motion** from the IMU: steps (adaptive peaks of vertical acceleration, in bouts), walked distance
      (steps × step length), heading (gyro yaw about gravity, anchored to the compass), camera pitch, and a
      dead-reckoned path;
+   - **floor odometry** ([`odometry.py`](nav/mapping/odometry.py)), after the calibration below: floor features in
+     the lower part of the frame tracked over 0.5 s and projected onto the floor (camera tilt from gravity, the
+     calibrated field of view, phone height 1.35 m) give the metres actually walked; turning on the spot reads
+     ~0 m. Where the floor can't be tracked, the steps fill in at a step length re-estimated from the video.
+     Itnig: 32 m walked (steps × 0.7 m said 107 m: hand sway while talking counted as steps, and a slow walk while
+     filming takes ~0.3 m steps), Main entrance → Drinks area 5.9 m against 7 m measured;
    - voice notes transcribed locally with **Whisper** (`openai/whisper-large-v3-turbo`);
    - **calibration** ([`calibrate.py`](nav/mapping/calibrate.py)): the video's own yaw (ORB shift between frames
      0.1 s apart) cross-correlated with the sensor heading gives the sensor-to-video offset (Itnig: +0.6 s, the
@@ -215,6 +223,11 @@ uv run nav map pull [<map_id> …]
    (`PUT /api/v1/maps/<map_id>/review`). The review is `review.json` next to the builds, keyed by stable ids, so it
    survives rebuilds; the published `map.json` is the latest build with it applied (the build's own copy keeps
    everything). **Real users are routed over verified edges only** ([`route.py`](nav/navigation/route.py)).
+   Distances measured on site (`distances` in the review, `nav map measure`) fit one scale factor, by least squares
+   over all of them, to every distance, position, path and track of the published map; `frame.measured_distances`
+   reports each one's residual. `nav map measure` edits a local map folder; for the team's maps, add the entry to
+   `distances` with map-api's `PUT /api/v1/maps/<map_id>/review`, and nav-api serves the rescaled map. On a build whose distances came from steps it can only rescale uniformly (step
+   errors aren't uniform), so rebuild first.
 
 ### Navigation reference code
 [`nav/navigation/`](nav/navigation/) has the pieces of the live side in Python, small and causal so they port to

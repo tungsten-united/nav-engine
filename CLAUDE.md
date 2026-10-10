@@ -25,8 +25,10 @@ live side (maps, routes, localization) to the navigation app.
   `motion.py`, `models.py` (DINOv2, MegaLoc, ALIKED+LightGlue, Whisper), `select.py` (candidates), `verify.py`
   (same-place pairs: MegaLoc retrieval + LightGlue check), `llm.py` (Claude Code job + prompt),
   `build.py` (orchestration + finish), `quality.py` (TypeSafe Jev check), `store.py`, `calibrate.py` (video yaw,
-  sensor-to-video offset, FOV), `references.py` (reference images + embeddings for live VPR), `review.py`
-  (human review overlay `maps/<id>/review.json`; published map.json = latest build + review).
+  sensor-to-video offset, FOV), `odometry.py` (metres walked from the floor seen in the video, fused with steps),
+  `references.py` (reference images + embeddings for live VPR), `review.py` (human review overlay
+  `maps/<id>/review.json`, incl. distances measured on site that set the scale; published map.json = latest build
+  + review).
 - `nav/navigation/` — the live side, small and causal so it ports to TS: `route.py` (routes over verified edges),
   `localize.py` (VPR against reference embeddings → ranked nodes, confirmed/uncertain/lost), `pdr.py` (causal step
   detector + GraphTracker, `nav map pdr-replay`).
@@ -37,7 +39,7 @@ live side (maps, routes, localization) to the navigation app.
   where nav-api's live frames go ahead of queued batch calls, bounded queues, 503 + Retry-After), `client.py`
   (chunking, retries, deadlines, Cloudflare service token).
 - `nav/cli.py` — `nav serve [--app nav-api]`, `nav infer serve`, `nav rec list|show|finalize|import|push|pull`,
-  `nav map setup|build|llm|refinish|check|review|route|pdr-replay|schema|list|show|push|pull`.
+  `nav map setup|build|llm|refinish|check|review|measure|route|pdr-replay|schema|list|show|push|pull`.
 - `Dockerfile` + `deploy/cloudrun.sh` + `deploy/{map-api,nav-api}.env.yaml` — the two Cloud Run services;
   `deploy/nav-infer.service`, `deploy/nav-recorder.service` (helium-nav: map-api serving the debugging pages) — helium units.
 - `data/recordings/<rec_id>/` — recordings (gitignored). Shared copy for the team: `gs://tungsten-united-nav-recordings/recordings/<rec_id>/`
@@ -105,6 +107,14 @@ the live inference host out of it.
   the first frame after nav-infer restarts gets a 503; the next ones take ~30 ms on the GPU.
 - Two step detectors disagree on Itnig (offline band-pass in motion.py ~153 steps, causal StepDetector in
   navigation/pdr.py ~97); the tracker re-learns step length at each node, but a walk with counted steps is needed.
+- Steps x the recorder's 0.7 m overstated Itnig 3x (107 m vs 32 m from floor odometry; Main entrance -> Drinks area
+  measured 7 m on site, odometry 5.9 m): the bout gate passes hand sway while standing and talking (moving 94% of
+  the walk), and filming makes slow ~0.3 m steps. Distances now come from odometry.py; a measured distance fixes
+  the scale (assumed phone height). Rescaling a step-based build is uniform and can't fix per-edge errors: rebuild.
+- Floor odometry measures each half second as soon as its frames are decoded: holding the whole walk's frames took
+  ~5 MB per second of video (Itnig 854 MB peak, now 373 MB) on map-api, one 4 GiB instance that also serves the API.
+- On macOS, opencv-python-headless and av each bundle libavdevice ("Class AVFFrameReceiver is implemented in
+  both"): harmless warning; the Linux builds don't have it.
 - Status is per direction: an edge walked target -> source has `status` inferred and `reverse_status` observed.
 - Walks in the opposite direction don't fold with the first walk's frames (the other side of a spot looks
   different), so each walk's dead-reckoned x/y is in its own frame: compare across walks only via map_x_m/map_y_m

@@ -8,9 +8,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from nav.infer.errors import InferenceError, InferenceUnavailable
+from nav.map_api.app import create_app
 from nav.mapping.build import finish_map
+from nav.mapping.store import MapStore
 from nav.nav_api.app import create_nav_app
 from nav.nav_api.maps import MapCache
+from nav.recorder.store import RecordingStore
 from nav.schemas.map import EmbeddingInfo, ReferenceImage
 from nav.schemas.navigation import Thresholds
 from test_navigation import BUILD, lshape
@@ -214,6 +217,31 @@ def test_a_newly_published_map_is_picked_up(tmp_path):
     now[0] = 31
     assert cache.get(map_id).nodes[1].name == "Hall" and len(cache.index(map_id).refs) == len(REFS)
 
+
+def test_a_distance_measured_on_site_reaches_the_live_api(tmp_path):
+    """The measurement goes into the review on map-api, which republishes; nav-api serves the rescaled map."""
+    map_id = publish(tmp_path / "maps")
+
+    def live() -> TestClient:  # a fresh cache: reloading on a newer map.json is tested above
+        return TestClient(create_nav_app(MapCache(tmp_path / "maps"), place_fn=Places(), api_token=None,
+                                         cors_origins=[], cors_origin_regex=None, frontend_url=None,
+                                         thresholds=THRESHOLDS))
+
+    route = {"start": "n1", "goal": "n3", "trust": "observed"}
+    with live() as c:
+        before = c.post(f"{API}/maps/{map_id}/route", json=route).json()["length_m"]
+    maps = create_app(RecordingStore(tmp_path / "recordings"), MapStore(tmp_path / "maps"), api_token=None,
+                      cache_dir=tmp_path / "cache", web_dir=None)
+    with TestClient(maps) as c:
+        r = c.put(f"{API}/maps/{map_id}/review", json={"distances": [{"between": ["n1", "n2"], "meters": 7}]})
+        assert r.status_code == 200 and r.json()["frame"]["distance_scale"] == pytest.approx(0.7)  # e1 walked 10 m
+        assert c.get(f"{API}/maps/{map_id}/review").json()["distances"][0]["meters"] == 7
+    with live() as c:
+        m = c.get(f"{API}/maps/{map_id}").json()
+        assert next(e for e in m["edges"] if e["id"] == "e1")["distance_m"] == pytest.approx(7)
+        assert m["frame"]["measured_distances"][0]["residual_m"] == pytest.approx(0, abs=0.01)
+        after = c.post(f"{API}/maps/{map_id}/route", json=route).json()["length_m"]
+        assert after == pytest.approx(0.7 * before, abs=0.1)
 
 def test_token_cors_and_what_moved_to_map_api(tmp_path):
     publish(tmp_path / "maps")

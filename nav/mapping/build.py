@@ -135,7 +135,9 @@ def select_candidates(place: str, preps: list[Prepared], p: SelectParams, embed_
             prev = (v.motion.walked_m, heading)
         recordings.append(RecordingInfo(
             rec_id=m.rec_id, created_at_utc=m.created_at_utc, duration_s=m.duration_ms and round(m.duration_ms / 1000, 1),
-            notes=m.notes, step_length_m=m.step_length_m, motion="video" if prep.track.source == "video" else "imu",
+            notes=m.notes, step_length_m=prep.track.step_length_m or m.step_length_m,
+            distance=prep.track.distance_source, video_distance_share=prep.track.video_share,
+            motion="video" if prep.track.source == "video" else "imu",
             heading=prep.track.heading_kind, fov_deg=prep.calibration.fov_deg,
             video_offset_ms=prep.calibration.offset_ms, walked_m=round(float(prep.track.walked_m[-1]), 1),
             aligned=m.rec_id in offsets,

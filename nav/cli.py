@@ -257,6 +257,32 @@ def map_review(map_id: str,
     print(f"wrote {out}; edit it, then: nav map review {map_id} --apply {out}")
 
 
+@maps.command("measure")
+def map_measure(map_id: str, start: str, goal: str, meters: float,
+                sigma: float = typer.Option(0.5, help="How sure the measurement is, metres."),
+                note: str = typer.Option(None, help="How it was measured (tape, pacing, floor plan).")) -> None:
+    """Record a distance measured on site between two nodes (ids or names) in the review and republish: one scale
+    factor fitted to all measurements rescales every distance, position and path of the map."""
+    from nav.mapping.build import build_map_of, republish
+    from nav.mapping.review import MeasuredDistance, load_review, save_review
+
+    map_dir = _map_store().dir(map_id)
+    _, raw = build_map_of(map_dir)
+    ids = {n.name.casefold(): n.id for n in raw.nodes} | {n.id: n.id for n in raw.nodes}
+    a, b = ids.get(start.casefold(), start), ids.get(goal.casefold(), goal)
+    review = load_review(map_dir)
+    review.distances = [d for d in review.distances if set(d.between) != {a, b}]
+    review.distances.append(MeasuredDistance(between=(a, b), meters=meters, sigma_m=sigma, note=note))
+    save_review(map_dir, review, by="cli")
+    m = republish(map_dir)
+    names = {n.id: n.name for n in m.nodes}
+    print(f"published {map_id}: distance scale x{m.frame.distance_scale if m.frame else 1:.3f}")
+    for c in (m.frame.measured_distances if m.frame else []):
+        got = "not connected" if c.map_m is None else f"map {c.map_m:.2f} m, residual {c.residual_m:+.2f} m"
+        print(f"  {names.get(c.between[0], c.between[0])} - {names.get(c.between[1], c.between[1])}: "
+              f"measured {c.meters} m (±{c.sigma_m}), {got}")
+
+
 @maps.command("route")
 def map_route(map_id: str, start: str, goal: str,
               trust: str = typer.Option("verified", help="verified (real users), observed or any.")) -> None:
