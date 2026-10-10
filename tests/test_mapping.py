@@ -216,6 +216,16 @@ def test_finish_checks_ids_and_adds_evidence_positions_distances():
     assert m.tracks[0].rec_id == "r1"
 
 
+def test_low_confidence_inferred_edges_are_dropped():
+    d = draft()
+    e1 = d.edges[0]
+    guess = e1.model_copy(update={"id": "e5", "basis": "inferred", "confidence": "low"})
+    likely = e1.model_copy(update={"id": "e6", "source": "n2", "target": "n1", "basis": "inferred"})
+    m = finish_map(d.model_copy(update={"edges": [e1, guess, likely]}), candidate_set(), BUILD, "builds/b")
+    assert [(e.id, e.walked) for e in m.edges] == [("e1", True), ("e6", False)]  # medium confidence stays
+    assert any("e5" in w and "low confidence" in w for w in m.warnings)
+
+
 def test_ids_stay_stable_across_builds():
     def node(i, name, c):
         return {"id": i, "name": name, "kind": "room", "description": "", "landmarks": [], "hazards": [],

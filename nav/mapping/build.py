@@ -204,6 +204,10 @@ def finish_map(draft: MapDraft, cset: CandidateSet, build: BuildInfo, build_rel:
         elif e.basis == "walked" and not e.walked:
             warnings.append(f"edge {e.id} says walked, but the walk passed other spots between {e.source} and "
                             f"{e.target}: treated as inferred")
+    for e in [e for e in edges if not e.walked and e.confidence == "low"]:  # a guess the app would speak as fact
+        warnings.append(f"edge {e.id} ({by_id[e.source].name} -> {by_id[e.target].name}) dropped: inferred with low "
+                        f"confidence")
+        edges.remove(e)
     _edge_turns(edges, by_id, cands, tracks)
     for e in edges:
         steps_m = [st.distance_m for st in e.steps if st.distance_m is not None]

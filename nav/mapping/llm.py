@@ -59,7 +59,9 @@ people. The app will use it to tell people where they are and to give spoken, st
 - Connectivity comes from the timelines. `basis` is "walked" when a walk went from the source's frames to the
   target's frames with no other node's frames in between (consecutive on a timeline). Otherwise it is "inferred":
   use that sparingly (say, the two ends of one row), never for a connection no walk or photo supports, and explain
-  each inferred edge in `notes`. Revisits that the photos confirm close loops.
+  each inferred edge in `notes`. If you would rate an inferred edge low confidence, leave it out: code drops it
+  anyway. Mention the possible connection in `notes` as something to walk next time. Revisits that the photos
+  confirm close loops.
 - `candidates` of a walked edge: that walk's frames from the source's last frame to the target's first frame, in
   timeline order.
 - `steps` are the route in order. The first step's action is the turn when leaving the source: read it from the
