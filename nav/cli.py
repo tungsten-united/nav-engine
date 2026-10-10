@@ -329,7 +329,7 @@ def map_pdr_replay(map_id: str, rec_id: str,
 def map_nav_replay(map_id: str, rec_id: str,
                    step_scale: float = typer.Option(1.0, help="0.85 = a user with 15% shorter steps."),
                    heading_bias: float = typer.Option(0.0, help="Compass bias of the user's phone, degrees."),
-                   burst: int = typer.Option(2, help="Frames per /localize call, as the app sends them."),
+                   burst: int = typer.Option(1, help="Frames per /localize call, as the app sends them."),
                    every: float = typer.Option(1.0, help="... every this many seconds."),
                    k: int = typer.Option(None, help="Votes needed (ArrivalParams.k)."),
                    n: int = typer.Option(None, help="... among the last n localizations (ArrivalParams.n)."),
@@ -377,29 +377,39 @@ def map_nav_replay(map_id: str, rec_id: str,
 @maps.command("orchestrator-replay")
 def map_orchestrator_replay(map_id: str, rec_id: str,
                             motion: bool = typer.Option(True, help="Send the phone's motion with each frame."),
+                            burst: int = typer.Option(1, help="New frames per /localize call."),
+                            k: int = typer.Option(3, help="Votes needed ..."),
+                            n: int = typer.Option(4, help="... among the last n calls."),
+                            margin: float = typer.Option(0.04, help="A result votes when its best node leads by this."),
+                            lost_calls: int = typer.Option(10, help="`lost` results in a row that start over."),
+                            fps: float = typer.Option(1.5, help="Frames the phone sends per second."),
                             step_scale: float = typer.Option(1.0, help="0.85 = a user with 15% shorter steps.")) -> None:
-    """Replay a mapping walk the way the Orient orchestrator calls nav-api: frames one at a time, localize with the
-    last 4 and the last confirmed node, the user moves on the first `confirmed`. Reports which nodes got confirmed,
-    how late, and confirmations of a node the walk wasn't at."""
-    from nav.navigation.replay import orchestrator_replay
+    """Replay a mapping walk as a user the Orient orchestrator guides to the walk's last node: localize, one route,
+    then hop by hop, each /localize result a vote on reaching the hop's target; lost, start over. Reports what the
+    loop decided against where the walk was, and when each node of the walk was reached."""
+    from nav.navigation.replay import LoopParams, orchestrator_replay
 
     _logging()
     store = _map_store()
+    params = LoopParams(burst=burst, k=k, n=n, margin=margin, lost_calls=lost_calls)
     res = orchestrator_replay(store.get(map_id), store.dir(map_id), config.RECORDINGS_DIR / rec_id, config.CACHE_DIR,
-                              config.loc_thresholds(), use_motion=motion, step_scale=step_scale)
+                              config.loc_thresholds(), params=params, use_motion=motion, step_scale=step_scale, fps=fps)
     if res is None:
         print(f"{rec_id} doesn't walk any edge of {map_id}, or the map has no reference embeddings")
         raise typer.Exit(1)
-    print(f"motion {'on' if motion else 'off'} · {res.evaluations} localizations, "
-          f"{res.confirmations} confirmed")
-    for n in res.nodes:
-        how = "-" if n["delay_s"] is None else f"{n['delay_s']:+.1f} s"
-        print(f"  {n['node']:>4} {n['name'][:24]:<24} reached {n['arrival_s']:>6.1f}s  confirmed {how}")
-    for w in res.wrong:
-        print(f"  WRONG at {w['t_s']:.1f}s: {w['name']} ({w['node']}), the walk was at {', '.join(w['truth']) or '?'}")
-    delays = sorted(n["delay_s"] for n in res.nodes if n["delay_s"] is not None)
+    print(f"motion {'on' if motion else 'off'} · {params} · {res.evaluations} localizations, goal {res.goal}")
+    for e in res.events:
+        where = ', '.join(e['truth']) or '?'
+        mark = f"  WRONG: the walk was at {where}" if not e["ok"] else f"  (late: the walk was at {where})" \
+            if e["late"] else ""
+        print(f"  {e['t_s']:>6.1f}s {e['kind']:<8} {e['name'] or '-'}{mark}")
+    for x in res.nodes:
+        how = "-" if x["delay_s"] is None else f"{x['delay_s']:+.1f} s"
+        print(f"  {x['node']:>4} {x['name'][:24]:<24} walk there {x['arrival_s']:>6.1f}s  reached {how}")
+    delays = sorted(x["delay_s"] for x in res.nodes if x["delay_s"] is not None)
     median = f"{delays[len(delays) // 2]:+.1f} s" if delays else "-"
-    print(f"nodes confirmed: {res.found}/{len(res.nodes)} · wrong confirmations: {len(res.wrong)} · median delay {median}")
+    print(f"nodes reached: {res.found}/{len(res.nodes)} · wrong: {len(res.wrong)} · relocations: {res.relocations} "
+          f"· median delay {median}")
 
 
 @maps.command("schema")

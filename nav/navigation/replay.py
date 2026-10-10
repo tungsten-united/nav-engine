@@ -11,6 +11,7 @@ numbers.
 
 import hashlib
 import json
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,7 +21,7 @@ from nav.navigation.arrival import CONFIRM_KINDS, ArrivalParams, NodeConfirmer
 from nav.navigation.localize import RefIndex, localize
 from nav.navigation.pdr import GraphTracker, map_step_length, route_start_ms, user_steps, walk_route
 from nav.schemas.map import PlaceMap
-from nav.schemas.navigation import Thresholds
+from nav.schemas.navigation import Localization, Thresholds
 
 
 @dataclass
@@ -189,38 +190,157 @@ def nav_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, t
 
 
 # --- the orchestrator's loop -----------------------------------------------------------------------------------
+# Orient's orchestrator (project-description docs/contracts.md §2) keeps the navigation state; nav-api stays stateless.
+# It localizes the user, asks for one route, and follows it a hop at a time: each /localize result is a vote on the
+# hop, and the user moves only to the hop's target. Lost, it starts over. This is a model of that loop (the
+# orchestrator's src/pipeline.rs has the same rules), to tune its parameters on mapping walks.
+@dataclass
+class LoopParams:
+    """Defaults from replaying both Itnig walks (map build 20261010T111114Z): the only settings with no wrong move
+    (a node the walk wasn't at); 2 of 3, or a margin of 0.02, moved the user to the next node 10 s early."""
+
+    burst: int = 1  # new frames per /localize call: each frame is sent once, so the votes are over different frames
+    k: int = 3  # votes needed ...
+    n: int = 4  # ... among the last n calls
+    margin: float = 0.04  # a result votes only when its best node leads the second by this much
+    lost_calls: int = 10  # this many `lost` results in a row while following: start over
+
+
+def locate_vote(loc: Localization, margin: float) -> str | None:
+    """While locating: the node a result votes for, if any. Relocating (sent with the last node and its step count), a
+    node farther than the user walked since doesn't vote."""
+    if loc.status == "lost" or loc.best is None or (loc.margin or 0.0) < margin:
+        return None
+    top = loc.candidates[0] if loc.candidates else None
+    return None if top is not None and top.plausible is False else loc.best
+
+
+def follow_vote(loc: Localization, source: str, target: str, margin: float) -> str:
+    """On the hop source -> target: at_target (the target is recognised), elsewhere (a node off the hop is) or none."""
+    if loc.status == "lost" or loc.best is None or (loc.margin or 0.0) < margin:
+        return "none"
+    if loc.best == target:
+        top = loc.candidates[0] if loc.candidates else None
+        return "none" if top is not None and top.plausible is False else "at_target"
+    return "none" if loc.best == source else "elsewhere"
+
+
+@dataclass
+class LoopEvent:
+    kind: str  # located | reached | arrived | lost | no_route
+    node: str | None
+    t_s: float
+
+
+class OrchestratorLoop:
+    """One session's navigation: locating (no path yet) or following hop `hop` of `path` (route Hops). `path_fn(node,
+    t_s)` gives the route from a node to the goal, or None."""
+
+    def __init__(self, goal: str, path_fn, params: LoopParams | None = None):
+        self.goal, self.path_fn, self.p = goal, path_fn, params or LoopParams()
+        self.node: str | None = None  # the last node reached
+        self.node_steps: int | None = None  # the phone's stepCount then: previous_step_count
+        self.path: list | None = None
+        self.hop = 0
+        self.votes: deque = deque(maxlen=self.p.n)
+        self.lost_run = 0
+        self.arrived = False
+
+    def request(self) -> dict:
+        """What the next /localize call sends besides the frames and their motion. Relocating after lost, the last
+        node and its step count go along, so nav-api marks the nodes the user can't have walked to yet."""
+        if self.path is None:
+            return {"previous": self.node, "expected": None, "previous_step_count": self.node_steps}
+        h = self.path[self.hop]
+        return {"previous": h.source, "expected": h.target, "previous_step_count": self.node_steps}
+
+    def on_localization(self, loc: Localization, step_count: int | None, t_s: float) -> LoopEvent | None:
+        if self.arrived:
+            return None
+        if self.path is None:
+            return self._locate(loc, step_count, t_s)
+        h = self.path[self.hop]
+        self.votes.append(follow_vote(loc, h.source, h.target, self.p.margin))
+        self.lost_run = self.lost_run + 1 if loc.status == "lost" else 0
+        if sum(v == "at_target" for v in self.votes) >= self.p.k:
+            return self._reach(h.target, step_count, t_s)
+        if sum(v == "elsewhere" for v in self.votes) >= self.p.k or self.lost_run >= self.p.lost_calls:
+            self.path, self.lost_run = None, 0
+            self.votes.clear()
+            return LoopEvent("lost", self.node, t_s)
+        return None
+
+    def _locate(self, loc: Localization, step_count: int | None, t_s: float) -> LoopEvent | None:
+        vote = loc.best if loc.status == "confirmed" else locate_vote(loc, self.p.margin)
+        self.votes.append(vote)
+        if vote is None or (loc.status != "confirmed" and sum(v == vote for v in self.votes) < self.p.k):
+            return None
+        self.node, self.node_steps = vote, step_count
+        self.votes.clear()
+        if vote == self.goal:
+            self.arrived = True
+            return LoopEvent("arrived", vote, t_s)
+        path = self.path_fn(vote, t_s)
+        if not path:
+            return LoopEvent("no_route", vote, t_s)
+        self.path, self.hop, self.lost_run = path, 0, 0
+        return LoopEvent("located", vote, t_s)
+
+    def _reach(self, node: str, step_count: int | None, t_s: float) -> LoopEvent:
+        self.node, self.node_steps = node, step_count
+        self.votes.clear()
+        self.lost_run = 0
+        if node == self.goal:
+            self.arrived = True
+            return LoopEvent("arrived", node, t_s)
+        self.hop += 1
+        return LoopEvent("reached", node, t_s)
+
+
 @dataclass
 class OrchestratorResult:
-    nodes: list[dict]  # per route node after the start: {node, name, arrival_s, confirmed_s, delay_s}
-    wrong: list[dict]  # confirmations of a node the walk was not at: {t_s, node, truth}
+    events: list[dict]  # {t_s, kind, node, name, truth, ok}: what the loop decided, and where the walk was
+    nodes: list[dict]  # per node of the walk's route after the start: {node, name, arrival_s, reached_s, delay_s}
     evaluations: int
-    confirmations: int
+    goal: str
+
+    @property
+    def wrong(self) -> list[dict]:  # the loop put the user at a node the walk was not at, nor had just left
+        return [e for e in self.events if e["kind"] in MOVES and not e["ok"]]
+
+    @property
+    def relocations(self) -> int:
+        return sum(e["kind"] == "lost" for e in self.events)
 
     @property
     def found(self) -> int:
-        return sum(n["delay_s"] is not None for n in self.nodes)
+        return sum(n["reached_s"] is not None for n in self.nodes)
 
 
-ORCH_FPS = 2.0  # the phone uploads the next frame after the previous 202: about 2 a second
-ORCH_BUFFER = 4  # the orchestrator localizes with the session's last 4 frames
+MOVES = ("located", "reached", "arrived")
+ORCH_FPS = 1.5  # the phone uploads a frame, waits for the 202, then 500 ms: about 1.5 a second (Itnig logs)
 TRUTH_S = 3.0  # a node counts as "there" from this long before the walk reached it until the next node
+LATE_S = 10.0  # a node the walk left less than this long ago is a late move, not a wrong one
+LEAD_S = 5.0  # navigation starts this long before the walk leaves its first node
 
 
 def orchestrator_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, thresholds: Thresholds,
-                        use_motion: bool = True, step_scale: float = 1.0,
-                        exclude_ms: float = 400.0) -> OrchestratorResult | None:
-    """The walk replayed the way the Orient orchestrator calls nav-api (project-description docs/contracts.md §2):
-    one frame at a time into a buffer of the last 4, `localize` on each with `previous` = the last confirmed node,
-    and the user's node moves on the first `confirmed`. With `use_motion` each frame carries the phone's motion
-    (its step detector's stepCount, compass heading, orientation angles, from the recording) and `previous_step_count`
-    is the stepCount when `previous` was confirmed."""
+                        params: LoopParams | None = None, use_motion: bool = True, step_scale: float = 1.0,
+                        exclude_ms: float = 400.0, fps: float = ORCH_FPS) -> OrchestratorResult | None:
+    """The walk replayed as a user guided by the orchestrator (OrchestratorLoop) to the last node it walked to, who
+    follows the instructions: the route from a node is the rest of the walk's own route from there (or, where the
+    walk isn't, the shortest observed route). Frames are the walk's video at `fps`, each sent once in bursts; with
+    `use_motion` each carries the phone's motion (its step detector's stepCount, compass, orientation angles, from the
+    recording)."""
     import pyarrow.parquet as pq
 
     from nav.mapping.prepare import load_walk
     from nav.mapping.select import SelectParams
     from nav.navigation.pdr import StepDetector
+    from nav.navigation.route import plan_route
     from nav.schemas.navigation import LiveMotion, LiveOrientation
 
+    p = params or LoopParams()
     rec_id = rec_dir.name
     route = walk_route(pmap, rec_id)
     if not route or pmap.embedding is None:
@@ -229,9 +349,14 @@ def orchestrator_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root
     model = pmap.embedding.model
     walk = load_walk(rec_dir, cache_root, SelectParams())
     own_refs = [r.t_ms for r in pmap.references if r.rec_id == rec_id]
-    live = [r for r in _live_frames(rec_dir, walk, cache_root / rec_id)]
-    step = max(1, round(LIVE_FPS / ORCH_FPS))
-    rows = [r for r in live[::step] if all(abs(r["t_ms"] - t) > exclude_ms for t in own_refs)]
+    start = route_start_ms(pmap, rec_id, route) - LEAD_S * 1000
+    live = [r for r in _live_frames(rec_dir, walk, cache_root / rec_id) if r["t_ms"] >= start]
+    rows, next_t = [], start  # the frame the phone grabs every 1/fps s
+    for r in live:
+        if r["t_ms"] >= next_t:
+            next_t += 1000 / fps
+            if all(abs(r["t_ms"] - t) > exclude_ms for t in own_refs):
+                rows.append(r)
     emb = _live_embeddings([Path(r["file"]) for r in rows], model, cache_root / rec_id)
 
     # the phone's sensors along the walk
@@ -259,39 +384,46 @@ def orchestrator_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root
                                                                                       absolute=True))
 
     names = {n.id: n.name for n in pmap.nodes}
-    truth = [(route[0][0].source, route_start_ms(pmap, rec_id, route) - 60_000)] + [(h.target, t) for h, t in route]
+    goal = route[-1][0].target
+    route = route[:next(k for k, (h, _) in enumerate(route) if h.target == goal) + 1]  # the user stops there
+    truth = [(route[0][0].source, start - 60_000)] + [(h.target, t) for h, t in route]
 
     def truth_at(t_ms: float) -> set[str]:
-        here = {n for k, (n, t0) in enumerate(truth)
+        return {n for k, (n, t0) in enumerate(truth)
                 if t0 - TRUTH_S * 1000 <= t_ms < (truth[k + 1][1] if k + 1 < len(truth) else float("inf"))}
-        return here
 
-    previous, prev_steps = None, None
-    first_seen: dict[str, float] = {}
-    wrong, evaluations, confirmations = [], 0, 0
-    for i, r in enumerate(rows):
-        lo = max(0, i - ORCH_BUFFER + 1)
-        motions = [motion_at(x["t_ms"]) for x in rows[lo:i + 1]] if use_motion else None
-        loc = localize(index, emb[lo:i + 1], thresholds, previous=previous, model=model, motions=motions,
-                       previous_step_count=prev_steps if use_motion else None)
+    def path_fn(node: str, t_s: float) -> list | None:
+        """The user follows the instructions: from where the walk is at `node`, the rest of its route."""
+        for k, (n, t0) in enumerate(truth[:-1]):
+            if n == node and node in truth_at(t_s * 1000) and t0 - TRUTH_S * 1000 <= t_s * 1000 < truth[k + 1][1]:
+                return [h for h, _ in route[k:]]
+        return plan_route(pmap, node, goal, "observed")
+
+    loop = OrchestratorLoop(goal, path_fn, p)
+    events, evaluations = [], 0
+    for lo in range(0, len(rows) - p.burst + 1, p.burst):
+        group = list(range(lo, lo + p.burst))
+        t_ms = rows[group[-1]]["t_ms"]
+        motions = [motion_at(rows[j]["t_ms"]) for j in group] if use_motion else None
+        req = loop.request()
+        loc = localize(index, emb[group], thresholds, previous=req["previous"], expected=req["expected"], model=model,
+                       motions=motions, previous_step_count=req["previous_step_count"] if use_motion else None)
         evaluations += 1
-        if loc.status != "confirmed" or loc.best is None:
-            continue
-        confirmations += 1
-        if loc.best not in truth_at(r["t_ms"]):
-            wrong.append({"t_s": round(r["t_ms"] / 1000, 1), "node": loc.best, "name": names.get(loc.best, loc.best),
-                          "truth": sorted(truth_at(r["t_ms"]))})
-        elif loc.best != previous:
-            first_seen.setdefault(loc.best, r["t_ms"])
-        if loc.best != previous:  # the step count is kept from when the user's node changed, not re-confirmations
-            prev_steps = motions[-1].step_count if motions else None
-        previous = loc.best
+        ev = loop.on_localization(loc, motions[-1].step_count if motions else None, t_ms / 1000)
+        if ev is not None:
+            here = truth_at(t_ms)
+            late = ev.node not in here and any(n == ev.node for n in truth_at(t_ms - LATE_S * 1000))
+            events.append({"t_s": round(ev.t_s, 1), "kind": ev.kind, "node": ev.node,
+                           "name": names.get(ev.node, ev.node), "truth": sorted(here), "late": late,
+                           "ok": ev.kind not in MOVES or ev.node in here or late})
+        if loop.arrived:
+            break
 
     nodes = []
-    for node, t in truth[1:]:
-        seen = first_seen.get(node)
+    for k, (node, t) in enumerate(truth[1:], start=1):
+        end = truth[k + 1][1] if k + 1 < len(truth) else float("inf")
+        seen = next((e["t_s"] for e in events if e["kind"] in MOVES and e["node"] == node
+                     and t - TRUTH_S * 1000 <= e["t_s"] * 1000 < end), None)
         nodes.append({"node": node, "name": names.get(node, node), "arrival_s": round(t / 1000, 1),
-                      "confirmed_s": None if seen is None else round(seen / 1000, 1),
-                      "delay_s": None if seen is None else round((seen - t) / 1000, 1)})
-    return OrchestratorResult(nodes, wrong, evaluations, confirmations)
-
+                      "reached_s": seen, "delay_s": None if seen is None else round(seen - t / 1000, 1)})
+    return OrchestratorResult(events, nodes, evaluations, goal)

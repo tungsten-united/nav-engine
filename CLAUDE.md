@@ -127,6 +127,9 @@ the live inference host out of it.
   (aligned through folded candidates) or after finish (aligned through nodes). The LLM joins walks by words, order
   and distances; continuity keeps edge orientation so per-direction review stays put.
 - `nvidia-smi` may report "Driver/library version mismatch" after a driver update without reboot; CUDA still works.
+- Live phone frames score lower than the mapping walks' replays (Itnig, 2026-10-10: 0.17-0.49 against a confirm score
+  of 0.45), so a single absolute `confirmed` rarely fires after the first node. Hop following votes on which node
+  leads (margin), over several frames, not on the absolute score.
 
 ## Product decisions
 - A recording is a **free walk through a place**, not a route. `place` (required, whitespace-normalised,
@@ -140,8 +143,11 @@ the live inference host out of it.
   holds) → code assigns stable ids by evidence overlap with the last map (continuity.py), checks ids and adds
   evidence, positions and distances. Voice is transcribed locally (Whisper turbo; no OpenAI key here). Later: Anthropic API with
   structured outputs instead of the Claude Code job; code proposing node/edge spans itself.
-- nav-api is for Orient's orchestrator, server to server: it calls `localize` then `route` for every frame it
-  evaluates and keeps the user's state (nav-api is stateless). The phone never calls nav-engine. map-api and
+- nav-api is for Orient's orchestrator, server to server; nav-api is stateless and the orchestrator keeps the user's
+  state. Its loop: `localize` (votes over results) until the user is located, `route` once, then hop by hop, each
+  `localize` (previous = hop source, expected = hop target, the phone's motion) a vote on reaching the target; lost
+  (other nodes win, or nothing recognised for a while), it starts over. `nav map orchestrator-replay` models that loop
+  (replay.py `OrchestratorLoop`) and picks its parameters. The phone never calls nav-engine. map-api and
   `frontend/` are the team's (mapping, review, debugging). The contract lives in project-description
   `docs/contracts.md` §2: change it there first, then here.
 - There is no navigation state machine: route state lives in the orchestrator's session, not here.
