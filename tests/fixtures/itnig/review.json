@@ -1,0 +1,49 @@
+{
+ "updated_at_utc": "2026-10-10T16:57:18.362957Z",
+ "updated_by": "token",
+ "nodes": {
+  "n9": {
+   "approve": false,
+   "hide": false,
+   "keep": false,
+   "name": null,
+   "kind": null,
+   "description": null,
+   "merge_into": "n10",
+   "note": "Part of the big table area on the left of the hall (on site, 2026-10-10)"
+  },
+  "n10": {
+   "approve": false,
+   "hide": false,
+   "keep": false,
+   "name": "Centre tables",
+   "kind": null,
+   "description": "Work tables in the far part of the hall: by the rough stone wall near the stage and in the middle, between the stage and the kitchen. Busy and noisy, with chairs, bags and power cables around the tables and narrow aisles between them.",
+   "merge_into": null,
+   "note": "n9 Stone wall tables merged in (one table area at the stage end); n3 Hackathon tables kept apart (2026-10-10 live test)"
+  },
+  "n4": {
+   "approve": false,
+   "hide": false,
+   "keep": false,
+   "name": null,
+   "kind": null,
+   "description": null,
+   "merge_into": "n2",
+   "note": "Merged into Drinks area: the two look alike to localization and sit ~2 m apart (2026-10-10 live test)"
+  }
+ },
+ "edges": {
+  "e8": {
+   "approve": false,
+   "approve_reverse": false,
+   "hide": false,
+   "keep": false,
+   "instruction": null,
+   "reverse_instruction": "From the centre tables by the stone wall, walk about 2 metres towards the stage, bearing right, until your cane finds the step edge of the platform. Careful, the gap past the judges' table is narrow.",
+   "note": null
+  }
+ },
+ "relations": {},
+ "distances": []
+}

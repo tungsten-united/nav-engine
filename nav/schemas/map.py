@@ -34,6 +34,10 @@ map.json at the top is a copy of the latest one, and its image paths point into 
 
 The top map.json is the latest build's map.json with review.json applied (verified status, edits, hidden items),
 then cleaned (nav/mapping/clean.py: only the nodes and edges the walks back up; `pruned` says what was left out).
+`links` keeps the connections from before cleaning: localization measures over them, routes over `edges`.
+
+Orient speaks at most MAX_INSTRUCTION_CHARS of an `instruction` and cuts a longer one after the last whole sentence
+that fits (project-description docs/contracts.md), which sends the user only part of the way.
 
 For the navigation side (docs/navigation_stack.md): headings are degrees clockwise in the map frame (`PlaceMap.frame`;
 compass-referenced when every walk had a compass, so a live absolute heading H is H - frame.heading_zero_abs_deg).
@@ -47,6 +51,8 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+MAX_INSTRUCTION_CHARS = 240  # what Orient speaks of an instruction (see above)
 
 MAP_SCHEMA_VERSION = 1
 
@@ -398,8 +404,6 @@ class PlaceEdge(MapEdge):
     # The node an end was walked to, when the review merged it into `source` / `target` (None: that node itself).
     source_part: str | None = None
     target_part: str | None = None
-    # Spots the cleaner folded into this edge, in walking order (nav/mapping/clean.py): seen by too few walks.
-    via: list[str] = []
 
 
 class LlmRun(BaseModel):
@@ -451,6 +455,17 @@ class CleanInfo(BaseModel):
     edges: int
 
 
+class Link(BaseModel):
+    """A connection between two spots, as an edge of the reviewed map has it (same fields)."""
+    model_config = ConfigDict(extra="ignore")
+    source: str
+    target: str
+    source_part: str | None = None
+    target_part: str | None = None
+    bidirectional: bool = True
+    distance_m: float | None = None
+
+
 class PlaceMap(MapDraft):
     model_config = ConfigDict(extra="ignore")
     schema_version: int = MAP_SCHEMA_VERSION
@@ -471,6 +486,9 @@ class PlaceMap(MapDraft):
     merged: dict[str, str] = {}  # node id -> the node the review merged it into (edges keep the part: *_part)
     pruned: dict[str, str] = {}  # node / edge id -> why the cleaner left it out (still in the build's map.json)
     clean: CleanInfo | None = None  # None: published without cleaning
+    # Every connection before cleaning (the review applied): localization's walked distances and neighbours, so the
+    # cleaner changes routes, never where spots are. [] (maps published before): `edges`.
+    links: list[Link] = []
 
 
 class MapSummary(BaseModel):

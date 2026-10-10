@@ -79,7 +79,7 @@ const ArrivalNav = (() => {
   const r2 = (x) => Math.round(x * 100) / 100;
   const r3 = (x) => Math.round(x * 1000) / 1000;
 
-  // node -> the nodes an edge joins it to, either direction (arrival.neighbours)
+  // node -> the nodes a link joins it to, either direction (arrival.neighbours): map.links, or map.edges before links
   function neighbours(edges) {
     const out = {};
     const add = (a, b) => { (out[a] ||= new Set()).add(b); };

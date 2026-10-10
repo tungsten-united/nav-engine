@@ -213,6 +213,66 @@
    "title": "ItemQuality",
    "type": "object"
   },
+  "Link": {
+   "description": "A connection between two spots, as an edge of the reviewed map has it (same fields).",
+   "properties": {
+    "source": {
+     "title": "Source",
+     "type": "string"
+    },
+    "target": {
+     "title": "Target",
+     "type": "string"
+    },
+    "source_part": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Source Part"
+    },
+    "target_part": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Target Part"
+    },
+    "bidirectional": {
+     "default": true,
+     "title": "Bidirectional",
+     "type": "boolean"
+    },
+    "distance_m": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Distance M"
+    }
+   },
+   "required": [
+    "source",
+    "target"
+   ],
+   "title": "Link",
+   "type": "object"
+  },
   "LlmRun": {
    "properties": {
     "backend": {
@@ -741,14 +801,6 @@
      ],
      "default": null,
      "title": "Target Part"
-    },
-    "via": {
-     "default": [],
-     "items": {
-      "type": "string"
-     },
-     "title": "Via",
-     "type": "array"
     }
    },
    "required": [
@@ -1514,6 +1566,14 @@
     }
    ],
    "default": null
+  },
+  "links": {
+   "default": [],
+   "items": {
+    "$ref": "#/$defs/Link"
+   },
+   "title": "Links",
+   "type": "array"
   }
  },
  "required": [

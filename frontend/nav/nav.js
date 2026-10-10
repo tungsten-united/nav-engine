@@ -91,7 +91,7 @@ function startConfirmer() {
   const live = Frames.kind === "camera";
   const tracker = live && hops.length
     ? new ArrivalNav.GraphTracker(hops, { stepLength: N.map?.frame?.live_step_length_m || N.map?.frame?.step_length_m || 0.7 }) : null;
-  N.confirmer = new ArrivalNav.NodeConfirmer(hops, tracker, RULE, ArrivalNav.neighbours(N.map?.edges));
+  N.confirmer = new ArrivalNav.NodeConfirmer(hops, tracker, RULE, ArrivalNav.neighbours(N.map?.links?.length ? N.map.links : N.map?.edges));
   showPdr();
 }
 

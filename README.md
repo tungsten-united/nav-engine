@@ -251,17 +251,21 @@ uv run nav map pull [<map_id> …]
    errors aren't uniform), so rebuild first.
 8. **Clean** ([`clean.py`](nav/mapping/clean.py)): the published map keeps only what the walks back up. The LLM's
    `confidence` doesn't follow the evidence (Itnig: a "high" bathroom seen once by one walk), so code decides:
-   inferred edges go; one edge per pair of spots, the strongest; a spot seen by fewer than 2 walks on the way
-   between two others is folded into one edge (steps chained, distances added, `via` lists it); edges walked by
+   inferred edges go; one edge per pair of spots, the strongest; edges walked by
    at least 2 walks (either way) are the core, and weaker ones come back only where the map would otherwise fall
    apart or a spot could no longer be reached the way it was walked (flagged in `review_flags`); a core edge no
    shorter than the walked way around goes; spots left without edges go. Entrances, destinations, rooms, verified
    items and anything the review touched are never pruned; the review's `keep` rescues an item. `pruned` in
    map.json lists what was left out and why, `clean` the counts. The build's own map.json keeps everything, and the
-   next build starts from it, so a spot more walks back up comes back with its id. Itnig on 2026-10-10: 12 nodes /
-   19 edges → 10 / 13. `NAV_MAP_CLEAN=0` publishes the reviewed build as is; `GET /api/v1/maps/<map_id>?clean=false`
+   next build starts from it, so a spot more walks back up comes back with its id. Nodes and edges are kept or left
+   out whole, never rewritten (folding a weak spot into one edge joined two instructions past what Orient speaks).
+   Cleaning changes the routes, not localization: `links` keeps the connections from before it, and the walked-
+   distance gate and neighbours use those. Itnig (build 20261010T131002Z, reviewed): 11 nodes / 18 edges → 11 / 14,
+   `tests/fixtures/itnig`. `NAV_MAP_CLEAN=0` publishes the reviewed build as is; `GET /api/v1/maps/<map_id>?clean=false`
    (map-api) shows it without the cleaner, and `POST /api/v1/maps/<map_id>/republish` applies the cleaner to the
    published map without a new build.
+   Orient speaks at most 240 characters of an instruction, up to the last whole sentence that fits (project-description
+   docs/contracts.md). The LLM is told; publishing flags a longer one in `review_flags` and `warnings`.
 
 ### Navigation code
 [`nav/navigation/`](nav/navigation/) is the live side, small and causal. nav-api serves two of its pieces:

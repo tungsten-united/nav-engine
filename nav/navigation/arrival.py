@@ -71,9 +71,9 @@ class ArrivalEvent:
 
 
 def neighbours(pmap) -> dict[str, set[str]]:
-    """node -> the nodes an edge joins it to, either direction (NodeConfirmer's `neighbours`)."""
+    """node -> the nodes a link joins it to, either direction (NodeConfirmer's `neighbours`)."""
     out: dict[str, set[str]] = {}
-    for e in pmap.edges:
+    for e in pmap.links or pmap.edges:
         out.setdefault(e.source, set()).add(e.target)
         out.setdefault(e.target, set()).add(e.source)
     return out

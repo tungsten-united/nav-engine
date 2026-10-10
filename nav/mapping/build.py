@@ -31,12 +31,14 @@ from nav.mapping.select import SelectParams, cap_groups, group_frames, mark_usab
 from nav.mapping.verify import match_pairs
 from nav.mapping.calibrate import default_fov
 from nav.schemas.map import (
+    MAX_INSTRUCTION_CHARS,
     BuildInfo,
     Candidate,
     CandidateSet,
     Direction,
     Evidence,
     InstructionKind,
+    Link,
     MapDraft,
     MapFrame,
     Motion,
@@ -786,6 +788,13 @@ def published_map(map_dir: Path, pmap: PlaceMap, clean: bool | None = None) -> P
 
     review = load_review(map_dir)
     out = apply_review(pmap, review)
+    out.links = [Link.model_validate(e, from_attributes=True) for e in out.edges]
+    for e in out.edges:  # whoever wrote it, the LLM or the review
+        for field, text in (("instruction", e.instruction), ("reverse_instruction", e.reverse_instruction)):
+            if text and len(text) > MAX_INSTRUCTION_CHARS:
+                problem = f"{field} is {len(text)} characters: Orient speaks up to {MAX_INSTRUCTION_CHARS}, then stops"
+                e.review_flags.append(problem)
+                out.warnings.append(f"edge {e.id}: {problem}")
     return clean_map(out, review) if (config.MAP_CLEAN if clean is None else clean) else out
 
 

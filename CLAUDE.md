@@ -33,8 +33,8 @@ calls map-api directly. `frontend/` here is a debugging frontend, not Orient's a
   `references.py` (reference images + embeddings for live VPR), `review.py` (human review overlay
   `maps/<id>/review.json`, incl. distances measured on site that set the scale, and `merge_into` to fold nodes into
   one area), `clean.py` (only what the walks back up is published: ≥ 2 walks, weaker edges only to keep the map
-  walkable, weak spots on the way folded into edges; `pruned` says why; published map.json = latest build + review,
-  cleaned).
+  walkable; nodes and edges kept or left out whole; `pruned` says why; `links` keeps the connections from before it
+  for localization; published map.json = latest build + review, cleaned).
 - `nav/navigation/` — the live side, small and causal: `route.py` (routes over verified edges by default) and
   `localize.py` (VPR against reference embeddings → ranked nodes, confirmed/uncertain/lost), both served by nav-api;
   `pdr.py` (causal step detector + GraphTracker, `nav map pdr-replay`) and `arrival.py` (node confirmer, ported 1:1
@@ -148,6 +148,12 @@ the live inference host out of it.
   walked once, 2 never): the cleaner (clean.py) judges by walks instead. Connectivity has to be checked in the walked
   direction (route.py's `observed`): undirected, it kept Bathroom's edge walked only out of it, and dropped a
   "shortcut" whose way around was walkable only backwards.
+- Cleaning must not change localization or what is said (Itnig, 2026-10-10, live test after the cleaned map went
+  out): folding a one-walk spot into one edge joined two instructions into 263 characters; Orient speaks 240, up to
+  the last whole sentence, so the user stopped at the folded spot, 4 m short, and the hop never confirmed ("Please
+  hold still" in a loop). Pruned edges also moved spots apart for the walked-distance gate (kitchen -> centre tables
+  2.9 -> 5.5 m). Folding is gone; localization measures over `links`. tests/test_clean.py checks both on 200 random
+  maps and on tests/fixtures/itnig.
 
 ## Product decisions
 - A recording is a **free walk through a place**, not a route. `place` (required, whitespace-normalised,
