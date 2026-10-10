@@ -7,9 +7,10 @@ Every build of a place reruns the LLM over all its walks, so without help node i
    candidates) and only add, merge, split or drop with a reason.
 2. `stabilize`: code, not the LLM, decides ids. Each new node is matched to the previous node whose evidence
    frames it shares most (same recording, within MATCH_S), greedily one to one. Matched nodes keep the old id; the
-   others get the next unused number. An edge keeps its id if it joins the same two nodes. Old ids that are not
-   kept go to `retired` and are never handed out again. This works because a rebuild keeps all earlier walks, so
-   their frames come back.
+   others get the next unused number. An edge keeps its id if it joins the same two nodes, and its orientation:
+   a two-way edge the LLM wrote the other way round (say after a walk in the opposite direction) is turned back,
+   so per-direction status and review stay with the right direction. Old ids that are not kept go to `retired` and
+   are never handed out again. This works because a rebuild keeps all earlier walks, so their frames come back.
 """
 
 import logging
@@ -54,6 +55,15 @@ def _numbers(prefix: str, ids) -> count:
     return count(max(nums, default=0) + 1)
 
 
+def _turned(e):
+    """A two-way edge written the other way round: the same route from the other end."""
+    from nav.mapping.build import reverse_steps
+
+    return e.model_copy(update={"instruction": e.reverse_instruction or e.instruction,
+                                "reverse_instruction": e.instruction, "steps": reverse_steps(e.steps),
+                                "candidates": e.candidates[::-1]})
+
+
 def stabilize(draft: MapDraft, cset: CandidateSet, prev: dict, build_id: str) -> tuple[MapDraft, list[Retired]]:
     """The draft with ids carried over from the previous map, and the updated retired list."""
     cands = {c.id: c for c in cset.candidates}
@@ -76,13 +86,19 @@ def stabilize(draft: MapDraft, cset: CandidateSet, prev: dict, build_id: str) ->
         return node_map.get(i, f"unknown:{i}")
 
     old_edges = {frozenset((e["source"], e["target"])): e["id"] for e in prev["edges"]}
+    old_ends = {e["id"]: (e["source"], e["target"]) for e in prev["edges"]}
     fresh_e = _numbers("e", [e["id"] for e in prev["edges"]] + [r.id for r in retired if r.kind == "edge"])
     edges, kept_edges = [], set()
     for e in draft.edges:
         s, t = node(e.source), node(e.target)
         eid = old_edges.get(frozenset((s, t)))
+        if eid is not None and old_ends[eid] == (t, s) and not e.bidirectional:
+            eid = None  # one way, the other way: another edge
         if eid is None or eid in kept_edges:
             eid = f"e{next(fresh_e)}"
+        elif old_ends[eid] == (t, s):
+            e, (s, t) = _turned(e), (t, s)
+            log.info("edge %s: written %s -> %s, kept as before", eid, t, s)
         kept_edges.add(eid)
         edges.append(e.model_copy(update={"id": eid, "source": s, "target": t}))
     nodes = [n.model_copy(update={"id": node_map[n.id]}) for n in draft.nodes]
