@@ -1,7 +1,8 @@
 """Motion from the phone's IMU: steps, walked distance, heading, camera pitch and a dead-reckoned path.
 
 - Gravity is the low-passed accelerationIncludingGravity (it points up, in the device frame).
-- Steps are peaks of the band-passed |acceleration| while the phone is moving; distance = steps x step length.
+- Steps are peaks of the band-passed |acceleration| while the phone is moving; distance = steps x step length. When the
+  video shows the floor, odometry.py replaces that distance with a measured one (prepare.load_walk).
 - Heading: the gyro's rotation about gravity is integrated (smooth, no magnetic disturbance, but drifts) and its
   offset to the compass (the camera-axis heading the phone computed from deviceorientationabsolute) is taken as
   the circular mean over the whole walk. Indoors the compass is disturbed, so this is only roughly north-aligned.
@@ -38,6 +39,10 @@ class MotionTrack:
     has_compass: bool
     gyro_layout: str  # which rotationRate axis layout matched (see load_motion)
     source: str = "imu"  # imu | video (no sensors: heading from the video, distance from time) | none
+    up: np.ndarray | None = None  # [N, 3] unit up vector in device axes (from gravity); None without an IMU
+    distance_source: str = "steps"  # steps | video (floor odometry, odometry.py) | time (video_motion)
+    step_length_m: float | None = None  # the step length used (re-estimated from the video when it could be)
+    video_share: float = 0.0  # fraction of walked_m measured by the floor odometry
 
     @property
     def heading_kind(self) -> str:
@@ -162,7 +167,8 @@ def load_motion(rec_dir: Path, step_length_m: float, duration_ms: float | None =
     hr = np.radians(heading)
     x = np.cumsum(steps * step_length_m * np.sin(hr))
     y = np.cumsum(steps * step_length_m * np.cos(hr))
-    return MotionTrack(t, walked, heading, x, y, pitch, moving, t[peaks], has_compass, layout)
+    return MotionTrack(t, walked, heading, x, y, pitch, moving, t[peaks], has_compass, layout, up=up,
+                       step_length_m=step_length_m)
 
 
 def video_motion(t_video_ms: np.ndarray, yaw_units: np.ndarray, fov_deg: float, duration_ms: float | None = None,
@@ -181,4 +187,4 @@ def video_motion(t_video_ms: np.ndarray, yaw_units: np.ndarray, fov_deg: float, 
     hr = np.radians(heading)
     x, y = np.cumsum(step * np.sin(hr)), np.cumsum(step * np.cos(hr))
     return MotionTrack(t, walked, heading, x, y, np.full(n, np.nan), np.ones(n, bool), np.array([]), False, "none",
-                       "video")
+                       "video", distance_source="time")

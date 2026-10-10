@@ -273,6 +273,19 @@
      "default": "dead reckoning: ~5-10% distance error, drifting a few metres per minute; indoor compass is rough",
      "title": "Note",
      "type": "string"
+    },
+    "distance_scale": {
+     "default": 1.0,
+     "title": "Distance Scale",
+     "type": "number"
+    },
+    "measured_distances": {
+     "default": [],
+     "items": {
+      "$ref": "#/$defs/MeasuredDistanceCheck"
+     },
+     "title": "Measured Distances",
+     "type": "array"
     }
    },
    "required": [
@@ -281,6 +294,64 @@
     "step_length_m"
    ],
    "title": "MapFrame",
+   "type": "object"
+  },
+  "MeasuredDistanceCheck": {
+   "description": "A distance measured on site and how the published map matches it (along the shortest walk between them).",
+   "properties": {
+    "between": {
+     "maxItems": 2,
+     "minItems": 2,
+     "prefixItems": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "string"
+      }
+     ],
+     "title": "Between",
+     "type": "array"
+    },
+    "meters": {
+     "title": "Meters",
+     "type": "number"
+    },
+    "sigma_m": {
+     "title": "Sigma M",
+     "type": "number"
+    },
+    "map_m": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Map M"
+    },
+    "residual_m": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Residual M"
+    }
+   },
+   "required": [
+    "between",
+    "meters",
+    "sigma_m",
+    "map_m",
+    "residual_m"
+   ],
+   "title": "MeasuredDistanceCheck",
    "type": "object"
   },
   "PlaceEdge": {
