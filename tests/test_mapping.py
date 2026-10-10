@@ -280,3 +280,31 @@ def test_old_maps_and_answers_without_visual_cues_still_load(tmp_path):
     for x in stored["nodes"] + stored["edges"]:
         del x["visual_cues"]
     assert PlaceMap.model_validate(stored).nodes[0].visual_cues == []
+
+
+def test_revisits_are_loop_closed_without_jumps():
+    """A node passed twice, far apart by dead reckoning: placed at its first pass, the track bent onto it at the
+    second pass, the edge walked then drawn without a jump, and a warning about the gap."""
+    def view(t, x):
+        return View(rec_id="r1", t_ms=t * 1000, sharpness=1, motion=Motion(walked_m=x, heading_deg=90, x_m=x, y_m=0,
+                                                                            pitch_deg=0, moving=True))
+    cands = [Candidate(id="c01", image="frames/c01.jpg", reason=[], views=[view(0, 0), view(100, 80)]),
+             Candidate(id="c02", image="frames/c02.jpg", reason=[], views=[view(50, 40)]),
+             Candidate(id="c03", image="frames/c03.jpg", reason=[], views=[view(90, 70)])]
+    cset = CandidateSet(place="T", map_id="t", recordings=[], candidates=cands, params={}, embed_model="m")
+    d = draft()
+    d.nodes = d.nodes[:2]
+    d.nodes[0].candidates, d.nodes[1].candidates = ["c01"], ["c02", "c03"]
+    d.edges = [d.edges[0].model_copy(update={"id": "e1", "source": "n2", "target": "n1"})]
+    tracks = {"r1": [[t * 1000, t * 0.8, 0.0] for t in range(0, 101)]}
+    m = finish_map(d, cset, BUILD, "b", tracks)
+    n1, n2 = m.nodes
+    assert n1.position.x_m == 0 and n2.position.x_m == 40  # first passes
+    path = m.edges[0].path  # walked n2 (90 s) -> n1 (100 s): closest passes
+    assert m.edges[0].walked_at_ms == 90_000
+    gaps = [abs(b.x_m - a.x_m) for a, b in zip(path, path[1:])]
+    assert max(gaps) < 15, gaps  # no jump from the raw track at 80 m back to the node at 0 m
+    assert path[0].x_m == 40 and path[-1].x_m == 0
+    track = dict((t, x) for t, x, _ in m.tracks[0].points)
+    assert abs(track[100_000] - 0) < 1 and abs(track[50_000] - 40) < 1
+    assert any("node n1" in w and "80 m" in w for w in m.warnings)

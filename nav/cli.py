@@ -141,12 +141,13 @@ def map_llm(map_id: str, build_id: str = typer.Argument(None, help="Default: the
             model: str = typer.Option(config.MAP_LLM_MODEL), effort: str = typer.Option(config.MAP_LLM_EFFORT),
             language: str = typer.Option(config.MAP_LANGUAGE),
             budget: float = typer.Option(config.MAP_LLM_BUDGET_USD)) -> None:
-    """Rerun only the LLM step on an existing build (same candidates), e.g. after changing the prompt."""
-    from nav.mapping.build import run_llm_on_build
+    """Rerun only the LLM step with the candidates of an existing build, e.g. after changing the prompt. The result
+    is a new build (candidates copied), so earlier answers are kept."""
+    from nav.mapping.build import fork_build, run_llm_on_build
 
     _logging()
     builds = _map_store().dir(map_id) / "builds"
-    build_dir = builds / build_id if build_id else max(builds.glob("*/candidates.json")).parent
+    build_dir = fork_build(builds / build_id if build_id else max(builds.glob("*/candidates.json")).parent)
     _print_build(run_llm_on_build(build_dir, llm_model=model, language=language, budget_usd=budget, effort=effort))
 
 

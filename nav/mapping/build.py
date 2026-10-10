@@ -181,13 +181,13 @@ def finish_map(draft: MapDraft, cset: CandidateSet, build: BuildInfo, build_rel:
         edges.append(PlaceEdge(**{**e.model_dump(), "candidates": known(f"edge {e.id}", e.candidates)}))
 
     offsets = _place_nodes(nodes, cands)
+    warp = _loop_closure(nodes, cands, offsets, warnings)
     by_id = {n.id: n for n in nodes}
     tracks = tracks or {}
     for e in edges:
         e.measured_distance_m = _measured(by_id[e.source], by_id[e.target], cands)
-        _edge_path(e, by_id[e.source], by_id[e.target], cands, tracks, offsets)
-    placed = [Track(rec_id=r, points=[(t, round(x + offsets[r][0], 2), round(y + offsets[r][1], 2))
-                                      for t, x, y in tracks[r]]) for r in offsets if r in tracks]
+        _edge_path(e, by_id[e.source], by_id[e.target], cands, tracks, warp)
+    placed = [Track(rec_id=r, points=[(t, *warp[r](t, x, y)) for t, x, y in tracks[r]]) for r in warp if r in tracks]
     return PlaceMap(tracks=placed, **draft.model_dump(exclude={"nodes", "edges"}), map_id=cset.map_id,
                     recordings=[r.rec_id for r in cset.recordings], build=build, nodes=nodes, edges=edges,
                     warnings=warnings)
@@ -197,23 +197,30 @@ def _node_views(node: PlaceNode, cands: dict[str, Candidate]) -> list[View]:
     return [v for c in node.candidates for v in cands[c].views]
 
 
+def _visits(views: list[View]) -> list[list[View]]:
+    """Views of one node in one recording, split into visits (passes) by time."""
+    views = sorted(views, key=lambda v: v.t_ms)
+    out = [[views[0]]] if views else []
+    for v in views[1:]:
+        (out[-1].append(v) if v.t_ms - out[-1][-1].t_ms <= VISIT_S * 1000 else out.append([v]))
+    return out
+
+
+def _mean_xy(views: list[View]) -> np.ndarray:
+    return np.mean([(v.motion.x_m, v.motion.y_m) for v in views], axis=0)
+
+
 def _place_nodes(nodes: list[PlaceNode], cands: dict[str, Candidate]) -> dict[str, np.ndarray]:
-    """Dead-reckoned position per node: mean of its views per recording, recordings shifted onto each other
-    through the nodes they share (headings are compass-anchored, so only translation is fitted)."""
+    """Dead-reckoned position per node: its first visit in each recording, recordings shifted onto each other
+    through the nodes they share (headings are compass-anchored, so only translation is fitted). Returns the
+    per-recording shift."""
     local: dict[str, dict[str, np.ndarray]] = {}
     for n in nodes:
         per_rec: dict[str, list[View]] = {}
         for v in _node_views(n, cands):
             per_rec.setdefault(v.rec_id, []).append(v)
         for rec, views in per_rec.items():
-            # the main visit (most views, then earliest): revisits drift apart in dead reckoning, a mean would
-            # put the node between them
-            views.sort(key=lambda v: v.t_ms)
-            visits = [[views[0]]]
-            for v in views[1:]:
-                (visits[-1].append(v) if v.t_ms - visits[-1][-1].t_ms <= VISIT_S * 1000 else visits.append([v]))
-            main = max(visits, key=len)
-            local.setdefault(rec, {})[n.id] = np.mean([(v.motion.x_m, v.motion.y_m) for v in main], axis=0)
+            local.setdefault(rec, {})[n.id] = _mean_xy(_visits(views)[0])
     if not local:
         return {}
     order = sorted(local, key=lambda r: -len(local[r]))
@@ -242,17 +249,52 @@ def _place_nodes(nodes: list[PlaceNode], cands: dict[str, Candidate]) -> dict[st
     return offsets
 
 
+LOOP_WARN_M = 15  # a revisit this far from the node's position by dead reckoning is worth a look
+
+
+def _loop_closure(nodes: list[PlaceNode], cands: dict[str, Candidate], offsets: dict[str, np.ndarray],
+                  warnings: list[str]):
+    """Per recording, a function (t_ms, x, y) -> map-frame (x, y): the dead-reckoned walk, shifted into the map
+    frame and bent so that every visit of a node lands on that node's position. The correction is interpolated
+    in time between visits, which spreads the drift over the stretch walked in between (loop closure)."""
+    warp = {}
+    for rec, off in offsets.items():
+        anchors = []
+        for n in nodes:
+            if n.position is None:
+                continue
+            views = [v for v in _node_views(n, cands) if v.rec_id == rec]
+            for visit in _visits(views):
+                t = float(np.mean([v.t_ms for v in visit]))
+                d = np.array([n.position.x_m, n.position.y_m]) - (_mean_xy(visit) + off)
+                anchors.append((t, d))
+                if np.hypot(*d) > LOOP_WARN_M:
+                    warnings.append(f"node {n.id} ({n.name}): the pass at {t / 1000:.0f} s in {rec} is "
+                                    f"{np.hypot(*d):.0f} m from its position by dead reckoning (a large area, "
+                                    f"drift, or two places merged)")
+        anchors.sort(key=lambda a: a[0])
+        ts = np.array([a[0] for a in anchors]) if anchors else np.zeros(1)
+        dx = np.array([a[1][0] for a in anchors]) if anchors else np.zeros(1)
+        dy = np.array([a[1][1] for a in anchors]) if anchors else np.zeros(1)
+
+        def f(t, x, y, ts=ts, dx=dx, dy=dy, off=off):
+            return (round(float(x + off[0] + np.interp(t, ts, dx)), 2),
+                    round(float(y + off[1] + np.interp(t, ts, dy)), 2))
+        warp[rec] = f
+    return warp
+
+
 def _edge_path(e: PlaceEdge, a: PlaceNode, b: PlaceNode, cands: dict[str, Candidate], tracks: dict[str, list],
-               offsets: dict[str, np.ndarray]) -> None:
-    """Path of an edge: the stretch of a walk between the closest-in-time views of its two nodes."""
+               warp: dict) -> None:
+    """Path of an edge: the stretch of a walk between the closest-in-time views of its two nodes, loop-closed."""
     pairs = [(abs(x.t_ms - y.t_ms), x, y) for x in _node_views(a, cands) for y in _node_views(b, cands)
-             if x.rec_id == y.rec_id and x.rec_id in tracks and x.rec_id in offsets]
+             if x.rec_id == y.rec_id and x.rec_id in tracks and x.rec_id in warp]
     if not pairs or a.position is None or b.position is None:
         return
     _, va, vb = min(pairs, key=lambda p: p[0])
     lo, hi = sorted((va.t_ms, vb.t_ms))
-    ox, oy = offsets[va.rec_id]
-    inner = [Point(x_m=round(x + ox, 2), y_m=round(y + oy, 2)) for t, x, y in tracks[va.rec_id] if lo < t < hi]
+    f = warp[va.rec_id]
+    inner = [Point(x_m=px, y_m=py) for t, x, y in tracks[va.rec_id] if lo < t < hi for px, py in [f(t, x, y)]]
     if va.t_ms > vb.t_ms:
         inner.reverse()  # the walk went target -> source; keep the path oriented source -> target
     e.path = [a.position, *inner, b.position]
@@ -297,6 +339,15 @@ def build_map(place: str, *, recordings_root: Path, maps_root: Path, cache_root:
     if not run_llm:
         return BuildResult(build_dir, cset, None)
     return run_llm_on_build(build_dir, llm_model=llm_model, language=language, budget_usd=budget_usd, effort=effort)
+
+
+def fork_build(build_dir: Path) -> Path:
+    """A new build folder with the same candidates, frames and tracks (but no LLM answer), so rerunning the LLM
+    doesn't overwrite an earlier answer."""
+    new = build_dir.parent / f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}"
+    shutil.copytree(build_dir, new, ignore=lambda d, names: [n for n in names if Path(d) == build_dir
+                                                              and n in ("job", "map.json")])
+    return new
 
 
 def run_llm_on_build(build_dir: Path, *, llm_model: str, language: str, budget_usd: float,

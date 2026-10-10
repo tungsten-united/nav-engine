@@ -120,7 +120,7 @@ spoken, egocentric instructions both ways. The format is in [`nav/schemas/map.py
 uv run nav map setup                  # once: download + check the local models (GPU if available)
 uv run nav map build "Itnig"          # all finished walks of the place -> data/maps/itnig/
 uv run nav map build "Itnig" --no-llm # stop after selecting candidates (free; to tune the selection)
-uv run nav map llm itnig              # rerun only the LLM on the latest build (same candidates)
+uv run nav map llm itnig              # rerun only the LLM with the latest build's candidates, as a new build
 uv run nav map refinish itnig         # redo post-processing from the saved LLM answer (no new LLM call)
 uv run nav map list | show <map_id>
 uv run nav map push [<map_id> …]      # upload to gs://tungsten-united-nav-recordings/maps/<map_id>/ (--dry-run)
@@ -150,8 +150,10 @@ uv run nav map pull [<map_id> …]
    replace the job later.
 4. **Finish**: check node, edge and candidate ids and flag visual words left in spoken text (both go into
    `warnings`), attach evidence (recording, time,
-   frame) to every node, place nodes at their dead-reckoned position (walks aligned through shared nodes), measure
-   each edge's walked distance and keep its walked path for drawing.
+   frame) to every node, place nodes at their first pass by dead reckoning (walks aligned through shared nodes),
+   bend each walk so every later pass of a node lands on it (loop closure: the drift is spread over the stretch in
+   between; passes far off are flagged in `warnings`), measure each edge's walked distance and keep its walked path
+   for drawing.
 
 Defaults can be changed with `NAV_EMBED_MODEL`, `NAV_TRANSCRIBE_MODEL`, `NAV_MAP_LLM_MODEL` (default `opus`), `NAV_MAP_LLM_EFFORT` (default `medium`),
 `NAV_MAP_LANGUAGE` (default `en`), `NAV_MAP_LLM_BUDGET_USD` (default 5) and `NAV_GCS_MAPS_URL`. A build of a

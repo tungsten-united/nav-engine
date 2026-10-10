@@ -47,6 +47,11 @@ people. The app will use it to tell people where they are and to give spoken, st
 - The walker's voice notes and tags are ground truth about what is where: name things with their words, and make
   a tagged door, junction, stairs or lift a node unless the photos clearly contradict it. Transcripts can contain
   speech-recognition mistakes; read them with the photos.
+- A node is one spot you can stand at, not a whole row or zone. Each view has a dead-reckoned position
+  (`views[].motion.x_m`, `y_m`, in metres, drifting a few metres per minute of walking). Two passes more than
+  about 15 m apart are two nodes joined by an edge, even if they look alike or the walker says "the same tables
+  from another angle" (that means the far end of the same row). Merge passes into one node only when the photos show
+  the same spot and the positions roughly agree.
 - Connectivity comes from the timelines: consecutive candidates of a walk are joined by what was walked between them.
   Revisits (`possibly_same_as` that the photos confirm, or a voice note such as "the same ... from another angle")
   close loops. Do not invent connections that no walk supports.
