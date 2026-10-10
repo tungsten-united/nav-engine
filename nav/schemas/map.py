@@ -231,7 +231,9 @@ class RecordingInfo(BaseModel):
     created_at_utc: datetime
     duration_s: float | None
     notes: str
-    step_length_m: float
+    step_length_m: float  # used for this walk: re-estimated from the video when it could be, else the recorder's
+    distance: str = "steps"  # steps (x step length) | video (floor odometry, odometry.py) | time (no sensors)
+    video_distance_share: float | None = None  # fraction of walked_m measured from the floor in the video
     motion: str = "imu"  # imu: steps and heading from the phone; video: no sensors, heading from the video and
     #                      walked metres guessed from time (~1 m/s): distances are rough
     heading: str | None = None  # compass (north-referenced) | gyro (relative to the start) | video | none
@@ -335,6 +337,20 @@ class MapFrame(BaseModel):
     heading_zero_abs_deg: float | None  # absolute heading of +y; None when not compass-referenced
     step_length_m: float | None  # mean of the walks'
     note: str = "dead reckoning: ~5-10% distance error, drifting a few metres per minute; indoor compass is rough"
+    # Distances measured on site (review.json `distances`) rescale every metric quantity of the published map by one
+    # factor: edge and step distances, positions, paths, tracks and the step length.
+    distance_scale: float = 1.0
+    measured_distances: list["MeasuredDistanceCheck"] = []
+
+
+class MeasuredDistanceCheck(BaseModel):
+    """A distance measured on site and how the published map matches it (along the shortest walk between them)."""
+
+    between: tuple[str, str]  # node ids
+    meters: float  # measured
+    sigma_m: float
+    map_m: float | None  # the map's distance after scaling; None if the nodes aren't connected
+    residual_m: float | None  # map_m - meters
 
 
 class PlaceNode(MapNode):

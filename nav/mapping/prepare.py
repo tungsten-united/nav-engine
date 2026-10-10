@@ -4,6 +4,7 @@
       frames-<key>/NNNNNNN.jpg  sampled frames, named by t_ms
       frames-<key>.json         [{t_ms, sharpness, brightness, file}]  (t_ms: video clock, before calibration)
       calib-<key>.json          sensor-to-video offset, field of view, and the video yaw (calibrate.py)
+      odo-<key>.json            floor odometry: metres walked every half second (odometry.py)
       emb-<key>.npy             frame embeddings (DINOv2), same order
       place-<key>.npy           place embeddings (MegaLoc), same order
       voice-<key>.json          {clip: text}
@@ -25,6 +26,7 @@ from nav.infer.errors import InferenceUnavailable
 from nav.mapping.calibrate import CALIB_VERSION, Calibration, calibrate, default_fov, video_yaw
 from nav.mapping.inference import embed_files, place_files, transcribe_file
 from nav.mapping.motion import MotionTrack, load_motion, video_motion
+from nav.mapping.odometry import (CAMERA_HEIGHT_M, ODOMETRY_VERSION, FloorSegment, floor_odometry, fuse)
 from nav.mapping.select import Frame, SelectParams
 from nav.schemas.recording import Event, Manifest
 
@@ -90,6 +92,25 @@ def _calibration(rec_dir: Path, m: Manifest, cache: Path, video_start: float, fk
     return cal, data["yaw"]
 
 
+def _odometry(rec_dir: Path, m: Manifest, cache: Path, video_start: float, fkey: str, track: MotionTrack,
+              cal: Calibration, enabled: bool) -> MotionTrack:
+    """The track with walked metres from the floor odometry where it is valid (cached), else unchanged."""
+    video = _video(rec_dir, m)
+    if not enabled or track.source != "imu" or not video.is_file():
+        return track
+    path = cache / f"odo-{_key(ODOMETRY_VERSION, fkey, m.holding, cal.offset_ms, cal.fov_deg, CAMERA_HEIGHT_M)}.json"
+    if not path.is_file():
+        log.info("%s: floor odometry", m.rec_id)
+        segs = floor_odometry(video, video_start, cal.offset_ms, cal.fov_deg, track, m.holding)
+        path.write_text(json.dumps(None if segs is None else [s.as_dict() for s in segs]))
+    data = json.loads(path.read_text())
+    fused = fuse(track, None if data is None else [FloorSegment(**d) for d in data], m.step_length_m)
+    if data is not None:
+        log.info("%s: walked %.1f m (%.0f%% floor odometry; steps x %.2f m said %.1f m)", m.rec_id,
+                 fused.track.walked_m[-1], 100 * fused.video_share, m.step_length_m, track.walked_m[-1])
+    return fused.track
+
+
 def load_walk(rec_dir: Path, cache_root: Path, p: SelectParams) -> Walk:
     """Frames (sampled once, cached), motion, and calibration of one recording."""
     m = Manifest.model_validate_json((rec_dir / "manifest.json").read_text())
@@ -120,6 +141,7 @@ def load_walk(rec_dir: Path, cache_root: Path, p: SelectParams) -> Walk:
     cal, yaw = _calibration(rec_dir, m, cache, video_start, fkey, track, p.calibrate)
     if track.source == "none" and yaw and yaw["t_ms"]:  # no sensors: the video's own yaw is the heading
         track = video_motion(np.array(yaw["t_ms"]), np.array(yaw["units"]), cal.fov_deg, m.duration_ms)
+    track = _odometry(rec_dir, m, cache, video_start, fkey, track, cal, p.odometry)
     rows = [{**r, "t_ms": round(r["t_ms"] - cal.offset_ms, 1)} for r in rows]
     return Walk(m, events, track, fdir, rows, cal)
 
@@ -177,7 +199,6 @@ def load_motion_only(rec_id: str, recordings_root: Path | None = None, cache_roo
 
     rec_dir = (recordings_root or config.RECORDINGS_DIR) / rec_id
     m = Manifest.model_validate_json((rec_dir / "manifest.json").read_text())
-    track = load_motion(rec_dir, m.step_length_m, m.duration_ms, m.device.user_agent)
-    if track.source == "none" and _video(rec_dir, m).is_file():  # no sensors: needs the video yaw (cached)
-        track = load_walk(rec_dir, cache_root or config.CACHE_DIR, SelectParams()).track
-    return track
+    if _video(rec_dir, m).is_file():  # the same track a build uses: calibration, video yaw, floor odometry (cached)
+        return load_walk(rec_dir, cache_root or config.CACHE_DIR, SelectParams()).track
+    return load_motion(rec_dir, m.step_length_m, m.duration_ms, m.device.user_agent)
