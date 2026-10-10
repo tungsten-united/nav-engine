@@ -47,6 +47,9 @@ Browser end-to-end check: headless `/usr/bin/chromium` via `uvx --from playwrigh
 - Handheld walking can be very smooth (|a| std 0.1–0.4 m/s²): fixed step thresholds find nothing; use adaptive ones.
 - Jev Noul wording decides its calibration: "relies on sight anywhere" fired on glass doors and tables (0.5-0.8);
   naming what only sight can notice, and listing materials/furniture as fine, separated 0.9 from <0.45.
+- Measure an edge's turn from the heading at the end of the source pass vs the next seconds of walking, not from
+  the path geometry around the node centre: that booked the turn made while arriving at a spot onto leaving it,
+  and made a correct "bear right" look like a contradiction (and fooled the Jev check that compared against it).
 - `nav map refinish` reuses the saved Claude answer: use it to iterate on post-processing without paying again.
 - `nvidia-smi` may report "Driver/library version mismatch" after a driver update without reboot; CUDA still works.
 

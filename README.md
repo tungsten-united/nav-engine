@@ -144,6 +144,9 @@ uv run nav map pull [<map_id> …]
    [`nav/mapping/select.py`](nav/mapping/select.py).
 3. **LLM**: a headless **Claude Code** job (Opus, medium effort) runs in the build folder with read-only tools (`Read`, `Glob`), opens
    `candidates.json` and every frame, and must answer in the `MapDraft` JSON Schema (`claude -p --json-schema`).
+   Each edge comes as `steps` (an action enum: straight, bear/turn left/right, turn around, go through, step/stairs
+   up/down, lift; with distance, what to keep beside you and the cue that ends the step) plus their spoken form, and
+   says whether it was `walked` or `inferred`. Distances are code's: measured, or the steps' sum if not walked.
    Everything the app will say (summary, descriptions, landmarks, instructions) is written without visual detail,
    for someone who cannot see; colours, signs, screens and the like go into `visual_cues`, for sighted helpers and
    camera-based localization. The prompt is in [`nav/mapping/llm.py`](nav/mapping/llm.py). The schema is written to also be valid for the
@@ -154,10 +157,13 @@ uv run nav map pull [<map_id> …]
    frame) to every node, place nodes at their first pass by dead reckoning (walks aligned through shared nodes),
    bend each walk so every later pass of a node lands on it (loop closure: the drift is spread over the stretch in
    between; passes far off are flagged in `warnings`), measure each edge's walked distance and keep its walked path
-   for drawing. Edges no walk went along directly (it passed other nodes in between) are marked inferred.
+   for drawing. Edges no walk went along directly (it passed other nodes in between) are marked inferred. Code
+   derives each edge's reverse steps and checks its first step against the turn the walk made leaving the source
+   (heading at the end of the source pass vs the next 6 s of walking).
 5. **Quality check** (cheap, optional): TypeSafe's **Jev** asks a few narrow questions about every node and edge, in
    parallel: does the spoken text point to something only visible, can a blind person tell they arrived / follow
-   the instruction, and does the instruction turn the way the walk did. Raw answers are stored per item
+   the instruction, and does the spoken instruction turn the same way as its first step. Benchmark and the
+   justification for it: [`bench/quality/REPORT.md`](bench/quality/REPORT.md). Raw answers are stored per item
    (`quality`), flagged items go into `warnings` and are marked in the viewer. A map costs ~13k input tokens
    (well under a cent) and a second. Needs `TYPESAFE_API_KEY` (in `.env`; also a repo secret); otherwise skipped.
    Questions and thresholds: [`nav/mapping/quality.py`](nav/mapping/quality.py).

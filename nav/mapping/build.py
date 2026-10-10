@@ -62,6 +62,13 @@ def recordings_for(recordings_root: Path, place: str) -> list[Path]:
     return out
 
 
+def track_points(tr) -> list[list]:
+    """A motion track at 1 Hz for tracks.json: [t_ms, x_m, y_m, heading_deg or null]."""
+    idx = np.unique([tr.index(t) for t in np.arange(0, tr.t_ms[-1] + 1, 1000)])
+    return [[round(float(tr.t_ms[i])), round(float(tr.x_m[i]), 2), round(float(tr.y_m[i]), 2),
+             None if np.isnan(tr.heading_deg[i]) else round(float(tr.heading_deg[i]), 1)] for i in idx]
+
+
 def select_candidates(place: str, preps: list[Prepared], p: SelectParams, embed_model: str,
                       build_dir: Path) -> CandidateSet:
     """Run selection and write candidates.json + frames/ into build_dir."""
@@ -112,12 +119,7 @@ def select_candidates(place: str, preps: list[Prepared], p: SelectParams, embed_
                         params=p.as_dict(), embed_model=embed_model,
                         embed_dim=int(kept[0].emb.shape[0]) if kept else None)
     (build_dir / "candidates.json").write_text(cset.model_dump_json(indent=1))
-    tracks = {}
-    for prep in preps:
-        tr = prep.track
-        idx = np.unique([tr.index(t) for t in np.arange(0, tr.t_ms[-1] + 1, 1000)])
-        tracks[prep.manifest.rec_id] = [[round(float(tr.t_ms[i])), round(float(tr.x_m[i]), 2),
-                                         round(float(tr.y_m[i]), 2)] for i in idx]
+    tracks = {prep.manifest.rec_id: track_points(prep.track) for prep in preps}
     (build_dir / "tracks.json").write_text(json.dumps(tracks))
     return cset
 
@@ -197,7 +199,7 @@ def finish_map(draft: MapDraft, cset: CandidateSet, build: BuildInfo, build_rel:
         elif e.basis == "walked" and not e.walked:
             warnings.append(f"edge {e.id} says walked, but the walk passed other spots between {e.source} and "
                             f"{e.target}: treated as inferred")
-    _edge_turns(edges)
+    _edge_turns(edges, by_id, cands, tracks)
     for e in edges:
         steps_m = [st.distance_m for st in e.steps if st.distance_m is not None]
         e.distance_m = e.measured_distance_m if e.measured_distance_m is not None else (
@@ -207,7 +209,7 @@ def finish_map(draft: MapDraft, cset: CandidateSet, build: BuildInfo, build_rel:
             e.reverse_steps = reverse_steps(e.steps, arrival=src.landmarks[0] if src.landmarks else None)
         if problem := first_step_problem(e):
             warnings.append(f"edge {e.id}: {problem}")
-    placed = [Track(rec_id=r, points=[(t, *warp[r](t, x, y)) for t, x, y in tracks[r]]) for r in warp if r in tracks]
+    placed = [Track(rec_id=r, points=[(p[0], *warp[r](*p[:3])) for p in tracks[r]]) for r in warp if r in tracks]
     return PlaceMap(tracks=placed, **draft.model_dump(exclude={"nodes", "edges"}), map_id=cset.map_id,
                     recordings=[r.rec_id for r in cset.recordings], build=build, nodes=nodes, edges=edges,
                     warnings=warnings)
@@ -321,13 +323,14 @@ def _edge_path(e: PlaceEdge, a: PlaceNode, b: PlaceNode, cands: dict[str, Candid
         e.walked, e.path, e.measured_distance_m = False, [a.position, b.position], None
         return
     f = warp[va.rec_id]
-    inner = [Point(x_m=px, y_m=py) for t, x, y in tracks[va.rec_id] if lo < t < hi for px, py in [f(t, x, y)]]
+    inner = [Point(x_m=px, y_m=py) for p in tracks[va.rec_id] if lo < p[0] < hi for px, py in [f(*p[:3])]]
     if va.t_ms > vb.t_ms:
         inner.reverse()  # the walk went target -> source; keep the path oriented source -> target
     e.path = [a.position, *inner, b.position]
 
 
 TURN_CHECK_DEG = 45  # measured turns at least this clear are checked against the first step
+TURN_WINDOW_MS = 6000  # walking direction after leaving a spot: mean heading over this long
 _SIDE = {"bear_left": "left", "turn_left": "left", "bear_right": "right", "turn_right": "right"}
 _INVERSE = {"bear_left": "bear_right", "bear_right": "bear_left", "turn_left": "turn_right", "turn_right": "turn_left",
             "step_up": "step_down", "step_down": "step_up", "stairs_up": "stairs_down", "stairs_down": "stairs_up"}
@@ -382,8 +385,35 @@ def _end_heading(path: list[Point], at_end: bool, span_m: float = 4.0) -> float 
     return None
 
 
-def _edge_turns(edges: list[PlaceEdge]) -> None:
-    """Turn when leaving each edge's source, relative to how the walk arrived there (the previous walked edge)."""
+def _circular_mean(degs: list[float]) -> float | None:
+    return float(np.degrees(np.angle(np.exp(1j * np.radians(degs)).mean()))) if degs else None
+
+
+def _edge_turns(edges: list[PlaceEdge], by_id: dict[str, PlaceNode], cands: dict[str, Candidate],
+                tracks: dict[str, list]) -> None:
+    """Turn when leaving each walked edge's source, from the phone's heading: the heading at the end of the source
+    pass (how the previous instruction leaves you standing there) vs the heading over the next seconds of walking
+    toward the target. Measuring around the node's centre instead books the turn you make while arriving at a spot
+    onto leaving it. Builds without headings in tracks.json fall back to the walked paths' geometry."""
+    for e in edges:
+        if not e.walked:
+            continue
+        visits = _closest_visits(by_id[e.source], by_id[e.target], cands)
+        pts = tracks.get(e.walked_in or "", [])
+        if visits and pts and len(pts[0]) >= 4:
+            src, tgt = visits
+            t_end, t_next = max(v.t_ms for v in src), min(v.t_ms for v in tgt)
+            if t_next <= t_end:  # walked the other way: leaving the source in this direction wasn't observed
+                continue
+            at_end = [p for p in pts if p[0] <= t_end and p[3] is not None]
+            h_end = at_end[-1][3] if at_end else None  # how you stand at the end of the pass
+            # not capped at the target: on short edges the turn is made while already approaching it
+            h_out = _circular_mean([p[3] for p in pts if t_end < p[0] <= t_end + TURN_WINDOW_MS and p[3] is not None])
+            if h_end is not None and h_out is not None:
+                e.turn_deg = round(angle_diff(h_end, h_out))
+            continue
+    if all(len(p) >= 4 for pts in tracks.values() for p in pts[:1]) and tracks:
+        return
     order = sorted((e for e in edges if e.walked and e.walked_at_ms is not None and len(e.path) >= 2),
                    key=lambda e: (e.walked_in, e.walked_at_ms))
     for prev, e in zip(order, order[1:]):
@@ -458,16 +488,13 @@ def refinish_build(build_dir: Path) -> BuildResult:
     from nav.mapping.llm import parse_claude_result
 
     cset = CandidateSet.model_validate_json((build_dir / "candidates.json").read_text())
-    if not (build_dir / "tracks.json").is_file():
+    tracks_file = build_dir / "tracks.json"
+    old_tracks = json.loads(tracks_file.read_text()) if tracks_file.is_file() else {}
+    if not old_tracks or any(len(pts[0]) < 4 for pts in old_tracks.values() if pts):  # missing, or no headings
         from nav.mapping.prepare import load_motion_only
 
-        tracks = {}
-        for r in cset.recordings:
-            tr = load_motion_only(r.rec_id)
-            idx = np.unique([tr.index(t) for t in np.arange(0, tr.t_ms[-1] + 1, 1000)])
-            tracks[r.rec_id] = [[round(float(tr.t_ms[i])), round(float(tr.x_m[i]), 2), round(float(tr.y_m[i]), 2)]
-                                for i in idx]
-        (build_dir / "tracks.json").write_text(json.dumps(tracks))
+        tracks_file.write_text(json.dumps({r.rec_id: track_points(load_motion_only(r.rec_id))
+                                           for r in cset.recordings}))
     draft, run = parse_claude_result(build_dir / "job" / "claude.json")
     old = build_dir / "map.json"
     if old.is_file():  # keep the original duration (the saved result doesn't have wall-clock time)

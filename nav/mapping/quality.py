@@ -6,7 +6,8 @@ asking again:
 
 - visual_p (Noul, nodes and edges): does the spoken text rely on sight?
 - usable (Score 0-3): nodes, can a blind person tell they arrived? edges, can they follow the instruction?
-- turn_agrees_p (Noul, walked edges with a clear measured turn): does the instruction turn the way the walk did?
+- turn_agrees_p (Noul, edges whose first step turns): does the spoken instruction turn the same way as its first
+  step? Code checks the steps against the walk; this checks that the words say what the steps say.
 
 One request per item (its spoken text is the whole state, so answers don't bleed between items), all in parallel.
 A map of ~20 items is ~10k input tokens: fractions of a cent. Needs TYPESAFE_API_KEY; without it the check is
@@ -22,7 +23,7 @@ from nav.schemas.map import ItemQuality, PlaceEdge, PlaceMap, PlaceNode, Quality
 
 log = logging.getLogger(__name__)
 
-VISUAL_FLAG = 0.6  # visual_p at or above: flagged
+VISUAL_FLAG = 0.7  # visual_p at or above: flagged (best F1 over real + synthetic, bench/quality)
 USABLE_FLAG = 1.5  # usable below: flagged
 TURN_FLAG = 0.3  # turn_agrees_p below: flagged
 TURN_MIN_DEG = 45  # only check turns at least this clear
@@ -59,6 +60,17 @@ FOLLOW = {
 }
 
 
+def expected_side(e: PlaceEdge) -> str | None:
+    """The side the spoken instruction should first turn to: its first step's (code checks the steps against the
+    walk), or, for maps without steps, the measured turn when it is clear."""
+    if e.steps:
+        a = e.steps[0].action
+        return "left" if a in ("bear_left", "turn_left") else "right" if a in ("bear_right", "turn_right") else None
+    if e.walked and e.turn_deg is not None and abs(e.turn_deg) >= TURN_MIN_DEG:
+        return "right" if e.turn_deg > 0 else "left"
+    return None
+
+
 def _node_state(m: PlaceMap, n: PlaceNode) -> dict:
     return {"place": m.place, "spot": n.name, "spoken": {"description": n.description, "landmarks": n.landmarks}}
 
@@ -83,8 +95,7 @@ async def _check(m: PlaceMap, model: str) -> int:
         jobs.append((n, _node_state(m, n), {"visual": visual, "usable": Score(**ARRIVAL)}))
     for e in m.edges:
         qs = {"visual": visual, "usable": Score(**FOLLOW)}
-        if e.walked and e.turn_deg is not None and abs(e.turn_deg) >= TURN_MIN_DEG:
-            side = "right" if e.turn_deg > 0 else "left"
+        if side := expected_side(e):
             qs["turn"] = Noul(instructions=f"Does `spoken.instruction` tell the walker to turn or bear to the {side} "
                                            f"when leaving `from`?")
         jobs.append((e, _edge_state(m, e, names), qs))
@@ -108,8 +119,9 @@ def flags(q: ItemQuality, is_edge: bool, item=None) -> list[str]:
         out.append("hard to follow: missing a distance or an arrival cue" if is_edge
                    else "no concrete cue to tell you have arrived")
     if q.turn_agrees_p is not None and q.turn_agrees_p < TURN_FLAG:
-        side = "right" if item is not None and (item.turn_deg or 0) > 0 else "left"
-        out.append(f"the walk turned {side} here but the instruction doesn't say so (one of them is wrong)")
+        side = expected_side(item) if item is not None else None
+        out.append(f"the spoken instruction doesn't turn {side} like its first step" if item is not None and item.steps
+                   else f"the walk turned {side} here but the instruction doesn't say so (one of them is wrong)")
     return out
 
 

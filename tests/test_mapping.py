@@ -374,7 +374,8 @@ def test_quality_check_flags_items(monkeypatch):
     d, cset, tracks = lshape_set()
     d.nodes[0].description = "Under the big yellow letters."
     d.nodes[1].description = "Somewhere in the hall."
-    d.edges[1].instruction = "Turn left and walk 10 m until the wall."  # the walk turned right
+    d.edges[1].instruction = "Turn left and walk 10 m until the wall."  # its first step says right
+    d.edges[1].steps = [d.edges[1].steps[0].model_copy(update={"action": "turn_right"})]
     m = finish_map(d, cset, BUILD, "b", tracks)
 
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
@@ -388,9 +389,8 @@ def test_quality_check_flags_items(monkeypatch):
     assert m.nodes[0].quality.flags == ["relies on sight"]
     assert m.nodes[1].quality.flags == ["no concrete cue to tell you have arrived"]
     assert m.edges[1].quality.turn_agrees_p == 0.1
-    assert m.edges[1].quality.flags == ["the walk turned right here but the instruction doesn't say so "
-                                        "(one of them is wrong)"]
-    assert m.edges[0].quality.turn_agrees_p is None  # no measured turn to compare with
+    assert m.edges[1].quality.flags == ["the spoken instruction doesn't turn right like its first step"]
+    assert m.edges[0].quality.turn_agrees_p is None  # its first step goes straight: no side to compare
     assert "jev: node n1: relies on sight" in m.warnings
     assert sum(w.startswith("jev: ") for w in check_map(m).warnings) == 3  # rerunning replaces, not appends
 
@@ -425,3 +425,31 @@ def test_steps_reverse_turn_check_and_basis():
     d.edges[2].basis = "inferred"
     m = finish_map(d, cset, BUILD, "b", tracks)
     assert not any("first step" in w or "says walked" in w for w in m.warnings)
+
+
+def test_turn_is_measured_from_how_you_stand_after_arriving():
+    """Itnig e3: the walker turns left while arriving at the tables (heading 160 -> 62), then bears right leaving
+    them (62 -> ~95). The departure turn is the right bear, not the arrival's left turn."""
+    def view(t, x, y):
+        return View(rec_id="r1", t_ms=t * 1000, sharpness=1, motion=Motion(walked_m=t, heading_deg=0, x_m=x, y_m=y,
+                                                                            pitch_deg=0, moving=True))
+    heading = {**{t: 160.0 for t in range(0, 25)}, 25: 140.0, 26: 110.0, 27: 96.0, 28: 80.0, 29: 63.0, 30: 62.0,
+               **{t: 95.0 for t in range(31, 41)}}
+    pts, x, y = [], 0.0, 0.0
+    for t in range(0, 41):
+        h = np.radians(heading[t])
+        x, y = x + 0.8 * np.sin(h), y + 0.8 * np.cos(h)
+        pts.append([t * 1000, round(x, 2), round(y, 2), heading[t]])
+    at = {p[0] // 1000: (p[1], p[2]) for p in pts}
+    cands = [Candidate(id="c01", image="f", reason=[], views=[view(20, *at[20])]),
+             Candidate(id="c02", image="f", reason=[], views=[view(27, *at[27]), view(30, *at[30])]),
+             Candidate(id="c03", image="f", reason=[], views=[view(39, *at[39])])]
+    cset = CandidateSet(place="T", map_id="t", recordings=[], candidates=cands, params={}, embed_model="m")
+    d = draft()
+    n = d.nodes[0]
+    d.nodes = [n.model_copy(update={"id": f"n{i}", "candidates": [f"c0{i}"]}) for i in (1, 2, 3)]
+    e = d.edges[0]
+    d.edges = [e.model_copy(update={"id": "e1", "source": "n1", "target": "n2"}),
+               e.model_copy(update={"id": "e2", "source": "n2", "target": "n3"})]
+    m = finish_map(d, cset, BUILD, "b", {"r1": pts})
+    assert 25 <= m.edges[1].turn_deg <= 40  # bear right, not the -70 the node-centre geometry gave

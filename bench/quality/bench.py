@@ -238,8 +238,16 @@ def run() -> None:
                      "text": it["spoken"]["instruction"]}
                     for it in syn_turn if (jt[it["id"]] >= quality.TURN_FLAG) != it["truth"]]},
     }
+    out["visual thresholds"] = {}
+    for name, data in (("real", real_vis), ("synthetic", syn_vis)):
+        truth = [it["truth"] for it in data]
+        out["visual thresholds"][name] = {str(th): prf(truth, [jv[it["id"]] >= th for it in data])["f1"]
+                                          for th in (0.5, 0.6, 0.7, 0.8)}
+    out["probabilities"] = {"visual": {k: round(v, 3) for k, v in jv.items()},
+                            "turn": {k: round(v, 3) for k, v in jt.items()}}
     RESULTS.write_text(json.dumps(out, indent=1, ensure_ascii=False))
     summary(out)
+    print("\nJev visual F1 by threshold:", out["visual thresholds"])
 
 
 def _txt(it: dict) -> str:
