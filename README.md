@@ -225,7 +225,8 @@ uv run nav map pull [<map_id> …]
    everything). **Real users are routed over verified edges only** ([`route.py`](nav/navigation/route.py)).
    Distances measured on site (`distances` in the review, `nav map measure`) fit one scale factor, by least squares
    over all of them, to every distance, position, path and track of the published map; `frame.measured_distances`
-   reports each one's residual. On a build whose distances came from steps it can only rescale uniformly (step
+   reports each one's residual. `nav map measure` edits a local map folder; for the team's maps, add the entry to
+   `distances` with map-api's `PUT /api/v1/maps/<map_id>/review`, and nav-api serves the rescaled map. On a build whose distances came from steps it can only rescale uniformly (step
    errors aren't uniform), so rebuild first.
 
 ### Navigation reference code

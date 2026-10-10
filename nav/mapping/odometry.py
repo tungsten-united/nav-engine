@@ -126,8 +126,12 @@ def floor_odometry(video: Path, video_start_ms: float, offset_ms: float, fov_deg
         u = axes @ track.up[track.index(t_ms)]
         return u / np.linalg.norm(u)
 
-    frames: list[tuple[float, np.ndarray]] = []
-    next_t = 0.0
+    # Each segment is measured as soon as its frames are decoded, keeping only the frames of one segment: the whole
+    # walk at ODO_FPS would be ~5 MB per second of video, on the worker that also serves the API.
+    stride = max(1, round(INTERVAL_S * ODO_FPS))
+    chunk: list[tuple[float, np.ndarray]] = []  # the segment being filled; its first frame ends the previous one
+    k, n_frames, next_t = None, 0, 0.0
+    out = []
     with av.open(str(video)) as container:
         stream = container.streams.video[0]
         stream.thread_type = "AUTO"
@@ -136,18 +140,18 @@ def floor_odometry(video: Path, video_start_ms: float, offset_ms: float, fov_deg
                 continue
             next_t = frame.time + 1 / ODO_FPS
             h = max(2, round(frame.height * ODO_WIDTH / frame.width))
-            frames.append((video_start_ms + float(frame.time) * 1000 - offset_ms,
-                           frame.to_ndarray(format="gray", width=ODO_WIDTH, height=h)))
-    if len(frames) < 2:
+            grey = frame.to_ndarray(format="gray", width=ODO_WIDTH, height=h)
+            if k is None:
+                k = intrinsics(grey.shape[1], grey.shape[0], fov_deg)
+            n_frames += 1
+            chunk.append((video_start_ms + float(frame.time) * 1000 - offset_ms, grey))
+            if len(chunk) == stride + 1:
+                t0, t1 = chunk[0][0], chunk[-1][0]
+                d, s, n = floor_motion([g for _t, g in chunk], up_at(t0), up_at(t1), k, height_m)
+                out.append(FloorSegment(round(t0, 1), round(t1, 1), round(d, 4), round(s, 4), n))
+                chunk = chunk[-1:]
+    if n_frames < 2:
         return None
-    k = intrinsics(frames[0][1].shape[1], frames[0][1].shape[0], fov_deg)
-    stride = max(1, round(INTERVAL_S * ODO_FPS))
-    out = []
-    for i in range(0, len(frames) - stride, stride):
-        chunk = frames[i:i + stride + 1]
-        t0, t1 = chunk[0][0], chunk[-1][0]
-        d, s, n = floor_motion([g for _t, g in chunk], up_at(t0), up_at(t1), k, height_m)
-        out.append(FloorSegment(round(t0, 1), round(t1, 1), round(d, 4), round(s, 4), n))
     return out
 
 

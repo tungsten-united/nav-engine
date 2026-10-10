@@ -111,6 +111,8 @@ the live inference host out of it.
   measured 7 m on site, odometry 5.9 m): the bout gate passes hand sway while standing and talking (moving 94% of
   the walk), and filming makes slow ~0.3 m steps. Distances now come from odometry.py; a measured distance fixes
   the scale (assumed phone height). Rescaling a step-based build is uniform and can't fix per-edge errors: rebuild.
+- Floor odometry measures each half second as soon as its frames are decoded: holding the whole walk's frames took
+  ~5 MB per second of video (Itnig 854 MB peak, now 373 MB) on map-api, one 4 GiB instance that also serves the API.
 - On macOS, opencv-python-headless and av each bundle libavdevice ("Class AVFFrameReceiver is implemented in
   both"): harmless warning; the Linux builds don't have it.
 - Status is per direction: an edge walked target -> source has `status` inferred and `reverse_status` observed.
