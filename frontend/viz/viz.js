@@ -48,6 +48,7 @@ const S = {
   maps: [], map: null, nodes: new Map(), edges: new Map(), pos: new Map(), refs: new Map(),
   view: { s: 1, tx: 0, ty: 0 }, pin: null, route: null, turns: new Map(), order: [], trust: "any",
   reviewMsg: null, raw: null,  // raw: the same map without the cleaner (?clean=false), for "Pruned"
+  review: null, build: null, editOpen: false,  // the review as saved, the build's own map (names of merged spots)
   style: pref("style", "smooth"), tracks: pref("tracks", "off") === "on", pruned: pref("pruned", "off") === "on",
 };
 // Viewer preferences, per browser; storage may be unavailable (private windows): then the defaults hold.
@@ -304,6 +305,7 @@ function pinCard() {
         statusChip(n.status), h("span", { class: "chip" }, n.id)),
       reviewBar([n.status === "verified" ? ["Unverify", { approve: false }] : ["Verify", { approve: true }],
         ["Hide", { hide: true }]], "nodes", n.id),
+      nodeEditor(n),
       qualityBlock(n.quality, false),
       ...items("Check", n.review_flags, "visual"),
       h("p", {}, n.description), ...items("Landmarks", n.landmarks), ...items("Hazards", n.hazards, "hazards"),
@@ -323,6 +325,7 @@ function pinCard() {
     reviewBar([e.status === "verified" ? ["Unverify →", { approve: false }] : ["Verify →", { approve: true }],
       e.bidirectional && (e.reverse_status === "verified" ? ["Unverify ←", { approve_reverse: false }] : ["Verify ←", { approve_reverse: true }]),
       ["Hide", { hide: true }]], "edges", e.id),
+    edgeEditor(e),
     qualityBlock(e.quality, true),
     ...items("Check", e.review_flags, "visual"),
     e.walked === false && h("p", { class: "hint" }, "Not walked directly: the walk passed other spots in between, so this connection is inferred."),
@@ -377,7 +380,7 @@ async function updateReview(edit, keepPin = true) {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(review) });
     if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
     S.reviewMsg = null;
-    const pinned = keepPin ? S.pin : null;
+    const pinned = keepPin === true ? S.pin : keepPin || null;
     await openMap(mapId);
     if (pinned && (S.nodes.has(pinned.id) || S.edges.has(pinned.id))) pin(pinned.type, pinned.id);
   } catch (err) {
@@ -420,12 +423,68 @@ function prunedList() {
         h("div", { class: "hint" }, why, " ", h("button", { class: "link", type: "button", onclick: () => saveReview(kind, id, { keep: true }) }, "keep")));
     })) : h("p", { class: "hint" }, "Nothing: every node and edge is backed by enough walks.")];
 }
+// --- editing (the review, nav/mapping/review.py): what a person fixes wins over what the LLM wrote ----------
+const blank = (v) => { const t = (v ?? "").trim(); return t ? t : null; };
+const field = (label, input) => h("label", { class: "field" }, h("span", {}, label), input);
+function editor(title, body, onsave) {
+  const msg = h("span", { class: "hint" });
+  const form = h("form", { class: "edit", onsubmit: (ev) => { ev.preventDefault(); msg.textContent = onsave() || ""; } },
+    ...body, h("div", { class: "review" }, h("button", { type: "submit" }, "Save"), msg));
+  return h("details", { class: "editor", open: S.editOpen || null, ontoggle: (ev) => { S.editOpen = ev.target.open; } },
+    h("summary", {}, title), form);
+}
+function nodeEditor(n) {
+  const r = S.review?.nodes?.[n.id] || {};
+  const name = h("input", { type: "text", value: n.name, required: true });
+  const kind = h("select", {}, Object.keys(KINDS).map((k) => h("option", { value: k, selected: k === n.kind }, KINDS[k])));
+  const desc = h("textarea", { rows: 3 }, n.description);
+  const others = S.map.nodes.filter((x) => x.id !== n.id);
+  const into = h("select", {}, h("option", { value: "" }, "— its own spot —"),
+    others.map((x) => h("option", { value: x.id }, `${x.name} · ${x.id}`)));
+  into.title = "One area: its photos and edges join that spot (routes enter and leave at the part they were walked to)";
+  return editor("Edit", [field("Name", name), field("Kind", kind), field("Description (spoken)", desc),
+    field("Merge into", into)], () => {
+    const patch = { name: name.value.trim() !== n.name ? blank(name.value) : r.name ?? null,
+      kind: kind.value !== n.kind ? kind.value : r.kind ?? null,
+      description: desc.value.trim() !== n.description ? blank(desc.value) : r.description ?? null };
+    if (into.value) {
+      const target = S.nodes.get(into.value);
+      if (!confirm(`Merge ${n.name} into ${target.name}? It disappears as a spot of its own (undo under "Merged by the review").`)) return "";
+      patch.merge_into = into.value;
+      updateReview((review) => { review.nodes[n.id] = { ...(review.nodes[n.id] || {}), ...patch }; }, { type: "node", id: into.value });
+      return "";
+    }
+    saveReview("nodes", n.id, patch);
+    return "";
+  });
+}
+function edgeEditor(e) {
+  const r = S.review?.edges?.[e.id] || {};
+  const a = S.nodes.get(e.source).name, b = S.nodes.get(e.target).name;
+  const fwd = h("textarea", { rows: 4 }, e.instruction);
+  const back = e.bidirectional && h("textarea", { rows: 4 }, e.reverse_instruction || "");
+  return editor("Edit", [field(`${a} → ${b}`, fwd), back && field(`${b} → ${a}`, back)], () => {
+    saveReview("edges", e.id, {
+      instruction: fwd.value.trim() !== e.instruction ? blank(fwd.value) : r.instruction ?? null,
+      reverse_instruction: back && back.value.trim() !== (e.reverse_instruction || "") ? blank(back.value) : r.reverse_instruction ?? null });
+    return "";
+  });
+}
+function mergedList() {
+  const merged = Object.entries(S.map.merged || {});
+  if (!merged.length) return null;
+  const name = (id) => S.nodes.get(id)?.name || S.review?.nodes?.[id]?.name || S.build?.nodes.find((n) => n.id === id)?.name || id;
+  return [h("h3", {}, "Merged by the review"), h("ul", { class: "list" }, merged.map(([from, into]) =>
+    h("li", { onclick: () => pin("node", into) }, `${name(from)} → ${name(into)} `, h("span", { class: "id" }, `· ${from}`), " ",
+      h("button", { class: "link", type: "button", onclick: (ev) => { ev.stopPropagation(); saveReview("nodes", from, { merge_into: null }); } }, "unmerge"))))];
+}
 function hiddenList() {
   const m = S.map;
   if (!m.hidden?.length) return null;
   const kindOf = (id) => (id.includes(":") ? "relations" : id.startsWith("e") ? "edges" : "nodes");
+  const name = (id) => S.build?.nodes.find((n) => n.id === id)?.name;
   return [h("h3", {}, "Hidden by the review"), h("ul", { class: "list" }, m.hidden.map((id) =>
-    h("li", {}, `${id} `, h("button", { class: "link", type: "button", onclick: () => saveReview(kindOf(id), id, { hide: false }) }, "unhide"))))];
+    h("li", {}, name(id) ? `${name(id)} · ${id} ` : `${id} `, h("button", { class: "link", type: "button", onclick: () => saveReview(kindOf(id), id, { hide: false }) }, "unhide"))))];
 }
 
 const ACTIONS = { straight: "↑ straight", bear_left: "↖ bear left", bear_right: "↗ bear right", turn_left: "← turn left",
@@ -547,6 +606,7 @@ function renderPanel() {
       h("span", { class: "dot", style: `--c:${kindColor(n.kind)}` }, n.name), " ", h("span", { class: "id" }, `· ${n.id}`), flagMark(n)))),
     h("h3", {}, "About this place"), h("p", {}, m.summary),
     m.notes.length && [h("h3", {}, "Notes"), h("ul", { class: "notes" }, m.notes.map((n) => h("li", {}, n)))],
+    mergedList(),
     prunedList(),
     hiddenList(),
     m.warnings.length && [h("h3", {}, "Pipeline warnings"), h("ul", { class: "notes warnings" }, m.warnings.map((n) => h("li", {}, n)))],
@@ -597,6 +657,11 @@ async function openMap(id) {
     const m = await getJSON(`/maps/${encodeURIComponent(id)}`);
     S.map = m;
     S.raw = null;
+    S.review = null;
+    S.build = null;
+    getJSON(`/maps/${encodeURIComponent(id)}/review`).then((r) => { S.review = r; }).catch(() => {});
+    getJSON(`/maps/${encodeURIComponent(id)}/files/builds/${m.build.build_id}/map.json`)  // names of merged / hidden spots
+      .then((b) => { S.build = b; renderPanel(); }).catch(() => {});
     if (m.clean) {  // names and shapes of what the cleaner left out
       try { S.raw = await getJSON(`/maps/${encodeURIComponent(id)}?clean=false`); } catch { /* the published map is enough */ }
     }
