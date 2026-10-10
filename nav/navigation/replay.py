@@ -193,13 +193,15 @@ def nav_replay(pmap: PlaceMap, map_dir: Path, rec_dir: Path, cache_root: Path, t
 @dataclass
 class LoopParams:
     """Defaults from replaying both Itnig walks (map build 20261010T111114Z): the only settings with no wrong move
-    (a node the walk wasn't at); 2 of 3, or a margin of 0.02, moved the user to the next node 10 s early."""
+    (a node the walk wasn't at); 2 of 3, or a margin of 0.02, moved the user to the next node 10 s early. `elsewhere`
+    from confirmed results only and `lost_s` (2026-10-10, build 20261010T131002Z, its four walks at 1.5 and 3.5 fps,
+    with and without motion): never worse than an `elsewhere` from any lead and 10 `lost` calls in a row."""
 
     burst: int = 1  # new frames per /localize call: each frame is sent once, so the votes are over different frames
     k: int = 3  # votes needed ...
     n: int = 4  # ... among the last n calls
     margin: float = 0.04  # a result votes only when its best node leads the second by this much
-    lost_calls: int = 10  # this many `lost` results in a row while following: start over
+    lost_s: float = 6.0  # following, no result pointing at the hop (lost, or another node leading) this long: start over
 
 
 def locate_vote(loc: Localization, margin: float) -> str | None:
@@ -212,13 +214,15 @@ def locate_vote(loc: Localization, margin: float) -> str | None:
 
 
 def follow_vote(loc: Localization, source: str, target: str, margin: float) -> str:
-    """On the hop source -> target: at_target (the target is recognised), elsewhere (a node off the hop is) or none."""
+    """On the hop source -> target: at_target (the target leads), elsewhere (a node off the hop is confirmed) or none.
+    Only a confirmed result says elsewhere: an uncertain one led by another node is mostly noise, and live it dropped
+    the route in 15 of 20 restarts (Itnig, 2026-10-10). A long stretch of them still starts over (`LoopParams.lost_s`)."""
     if loc.status == "lost" or loc.best is None or (loc.margin or 0.0) < margin:
         return "none"
     if loc.best == target:
         top = loc.candidates[0] if loc.candidates else None
         return "none" if top is not None and top.plausible is False else "at_target"
-    return "none" if loc.best == source else "elsewhere"
+    return "elsewhere" if loc.best != source and loc.status == "confirmed" else "none"
 
 
 @dataclass
@@ -239,7 +243,7 @@ class OrchestratorLoop:
         self.path: list | None = None
         self.hop = 0
         self.votes: deque = deque(maxlen=self.p.n)
-        self.lost_run = 0
+        self.off_hop_since: float | None = None  # following: t_s of the first of the results in a row off the hop
         self.arrived = False
 
     def request(self) -> dict:
@@ -257,11 +261,13 @@ class OrchestratorLoop:
             return self._locate(loc, step_count, t_s)
         h = self.path[self.hop]
         self.votes.append(follow_vote(loc, h.source, h.target, self.p.margin))
-        self.lost_run = self.lost_run + 1 if loc.status == "lost" else 0
+        on_hop = loc.status != "lost" and loc.best in (h.source, h.target)
+        self.off_hop_since = None if on_hop else (t_s if self.off_hop_since is None else self.off_hop_since)
         if sum(v == "at_target" for v in self.votes) >= self.p.k:
             return self._reach(h.target, step_count, t_s)
-        if sum(v == "elsewhere" for v in self.votes) >= self.p.k or self.lost_run >= self.p.lost_calls:
-            self.path, self.lost_run = None, 0
+        off_hop_s = 0.0 if self.off_hop_since is None else t_s - self.off_hop_since
+        if sum(v == "elsewhere" for v in self.votes) >= self.p.k or off_hop_s >= self.p.lost_s:
+            self.path, self.off_hop_since = None, None
             self.votes.clear()
             return LoopEvent("lost", self.node, t_s)
         return None
@@ -279,13 +285,13 @@ class OrchestratorLoop:
         path = self.path_fn(vote, t_s)
         if not path:
             return LoopEvent("no_route", vote, t_s)
-        self.path, self.hop, self.lost_run = path, 0, 0
+        self.path, self.hop, self.off_hop_since = path, 0, None
         return LoopEvent("located", vote, t_s)
 
     def _reach(self, node: str, step_count: int | None, t_s: float) -> LoopEvent:
         self.node, self.node_steps = node, step_count
         self.votes.clear()
-        self.lost_run = 0
+        self.off_hop_since = None
         if node == self.goal:
             self.arrived = True
             return LoopEvent("arrived", node, t_s)

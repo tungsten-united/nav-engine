@@ -28,7 +28,8 @@ def test_votes():
     assert follow_vote(loc("n2"), "n1", "n2", 0.02) == "at_target"
     assert follow_vote(loc("n2", plausible=False), "n1", "n2", 0.02) == "none"  # not walked that far yet
     assert follow_vote(loc("n1"), "n1", "n2", 0.02) == "none"  # still at the source
-    assert follow_vote(loc("n4"), "n1", "n2", 0.02) == "elsewhere"
+    assert follow_vote(loc("n4", status="confirmed"), "n1", "n2", 0.02) == "elsewhere"
+    assert follow_vote(loc("n4"), "n1", "n2", 0.02) == "none"  # merely leading: noise, until it lasts (lost_s)
     assert follow_vote(loc("n4", status="lost"), "n1", "n2", 0.02) == "none"
 
 
@@ -52,8 +53,8 @@ def test_only_the_next_node_counts_and_lost_starts_over():
     lp = OrchestratorLoop("n4", path_from, LoopParams(k=2, n=3))
     lp.on_localization(loc("n1", status="confirmed", margin=0.1), 0, 1)  # a confirmed result locates at once
     assert lp.path is not None and lp.node == "n1"
-    assert lp.on_localization(loc("n4"), 3, 2) is None
-    ev = lp.on_localization(loc("n4"), 4, 3)
+    assert lp.on_localization(loc("n4", status="confirmed"), 3, 2) is None
+    ev = lp.on_localization(loc("n4", status="confirmed"), 4, 3)
     assert (ev.kind, ev.node) == ("lost", "n1") and lp.path is None and not lp.arrived
     # relocated at the goal itself: arrived
     lp.on_localization(loc("n4"), 5, 4)
@@ -61,12 +62,16 @@ def test_only_the_next_node_counts_and_lost_starts_over():
     assert ev.kind == "arrived" and lp.arrived
 
 
-def test_a_run_of_lost_results_starts_over():
-    lp = OrchestratorLoop("n4", path_from, LoopParams(k=2, n=3, lost_calls=3))
+def test_a_while_with_nothing_pointing_at_the_hop_starts_over():
+    """Lost results and other nodes merely leading run the clock; the hop's source or target stops it."""
+    lp = OrchestratorLoop("n4", path_from, LoopParams(k=2, n=3, lost_s=3.0))
     lp.on_localization(loc("n1", status="confirmed", margin=0.1), 0, 1)
     assert lp.on_localization(loc(None, status="lost"), 0, 2) is None
-    assert lp.on_localization(loc(None, status="lost"), 0, 3) is None
-    assert lp.on_localization(loc(None, status="lost"), 0, 4).kind == "lost"
+    assert lp.on_localization(loc("n9"), 0, 3) is None
+    assert lp.on_localization(loc("n1", margin=0.0), 0, 4.5) is None  # the source leads: the clock stops
+    assert lp.on_localization(loc("n9"), 0, 5) is None
+    assert lp.on_localization(loc(None, status="lost"), 0, 7.9) is None
+    assert lp.on_localization(loc("n9"), 0, 8).kind == "lost"
 
 
 def test_the_last_hop_arrives():

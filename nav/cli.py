@@ -383,7 +383,8 @@ def map_orchestrator_replay(map_id: str, rec_id: str,
                             k: int = typer.Option(3, help="Votes needed ..."),
                             n: int = typer.Option(4, help="... among the last n calls."),
                             margin: float = typer.Option(0.04, help="A result votes when its best node leads by this."),
-                            lost_calls: int = typer.Option(10, help="`lost` results in a row that start over."),
+                            lost_s: float = typer.Option(6.0, help="Seconds with no result pointing at the hop "
+                                                         "(lost, or another node leading) that start over."),
                             fps: float = typer.Option(1.5, help="Frames the phone sends per second."),
                             step_scale: float = typer.Option(1.0, help="0.85 = a user with 15% shorter steps.")) -> None:
     """Replay a mapping walk as a user the Orient orchestrator guides to the walk's last node: localize, one route,
@@ -393,7 +394,7 @@ def map_orchestrator_replay(map_id: str, rec_id: str,
 
     _logging()
     store = _map_store()
-    params = LoopParams(burst=burst, k=k, n=n, margin=margin, lost_calls=lost_calls)
+    params = LoopParams(burst=burst, k=k, n=n, margin=margin, lost_s=lost_s)
     res = orchestrator_replay(store.get(map_id), store.dir(map_id), config.RECORDINGS_DIR / rec_id, config.CACHE_DIR,
                               config.loc_thresholds(), params=params, use_motion=motion, step_scale=step_scale, fps=fps)
     if res is None:
