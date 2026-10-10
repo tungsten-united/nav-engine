@@ -1,0 +1,17 @@
+[Unit]
+Description=nav-engine inference host (models + Claude Code map job) on 127.0.0.1:8451
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/Projects/nav-engine
+# claude (map job) lives in ~/.local/bin; ffmpeg (voice decoding) in /usr/bin.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
+ExecStart=%h/.local/bin/uv run --frozen nav infer serve
+Restart=on-failure
+RestartSec=5
+# This computer is also a desktop: inference yields the CPU to interactive work.
+Nice=10
+CPUWeight=50
+
+[Install]
+WantedBy=default.target

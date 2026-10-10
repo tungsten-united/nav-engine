@@ -1,0 +1,64 @@
+[project]
+name = "nav-engine"
+version = "0.1.0"
+description = "Navigation engine for blind users: walkthrough recordings -> semantic topological maps"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.8",
+    "pyarrow>=17",
+    "typer>=0.12",
+]
+
+[project.scripts]
+nav = "nav.cli:app"
+
+[dependency-groups]
+dev = ["pytest>=8", "httpx>=0.27"]
+# Map pipeline (nav map build): video decoding, IMU signal processing, selection, the quality check, and the client
+# of the inference host. No torch: this is what the Cloud Run worker installs.
+map = [
+    "av>=14",
+    "numpy>=2",
+    "opencv-python-headless>=4.10",
+    "pillow>=11",
+    "scipy>=1.14",
+    "typesafe-sdk>=0.7.4",
+    "httpx>=0.27",
+]
+# Local models (frame and place embeddings, local features, voice) and the inference API that serves them
+# (nav infer serve). Imported lazily, so the recorder never loads torch.
+models = [
+    "torch>=2.8",
+    "torchvision>=0.23",
+    "transformers>=4.56",
+    "accelerate>=1.0",
+    "python-multipart>=0.0.9",
+    # Same-place check between frames (ALIKED + LightGlue). Not on PyPI; pinned commit.
+    "lightglue @ git+https://github.com/cvg/LightGlue@eb42fee2d71449efb0aa5c10549752b5d75384d8",
+]
+
+[tool.uv]
+default-groups = ["dev", "map", "models"]
+# LightGlue asks for opencv-python (clashes with the headless build we use) and matplotlib (plots only).
+override-dependencies = ["opencv-python; sys_platform == 'never'", "matplotlib; sys_platform == 'never'"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["nav"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

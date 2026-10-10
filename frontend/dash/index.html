@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nav Recordings</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.min.css">
+  <link rel="stylesheet" href="dash.css">
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="./">Nav Recordings</a>
+    <nav class="links"><a href="/">Recorder</a><a href="/viz/">Maps</a><a href="/docs">API</a></nav>
+  </header>
+  <div class="layout">
+    <aside class="side">
+      <input id="filter" type="search" placeholder="Filter places" autocomplete="off" aria-label="Filter places">
+      <div id="list" class="list"><p class="muted">Loading…</p></div>
+    </aside>
+    <main id="detail" class="detail"></main>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.iife.min.js"></script>
+  <script src="../config.js"></script>
+  <script src="dash.js"></script>
+</body>
+</html>

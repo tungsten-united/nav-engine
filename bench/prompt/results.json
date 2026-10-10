@@ -1,0 +1,34 @@
+{
+ "old rules": {
+  "nodes": 11,
+  "edges": 12,
+  "edges inferred (code)": 2,
+  "edges claimed walked but not": "n/a",
+  "edges with steps": 0,
+  "clear turns checked (>=45 deg)": 2,
+  "first step contradicts the walk": "n/a",
+  "instruction text contradicts the walk (Jev)": 0,
+  "spoken distance vs walked, mean abs gap (m)": 2.3,
+  "spoken distance vs walked, edges compared": 10,
+  "far-apart passes merged": 0,
+  "spoken text with visual words (keyword)": 5,
+  "flagged by Jev": 3,
+  "candidates unused": 4
+ },
+ "new rules": {
+  "nodes": 10,
+  "edges": 10,
+  "edges inferred (code)": 1,
+  "edges claimed walked but not": 0,
+  "edges with steps": 10,
+  "clear turns checked (>=45 deg)": 3,
+  "first step contradicts the walk": 0,
+  "instruction text contradicts the walk (Jev)": 0,
+  "spoken distance vs walked, mean abs gap (m)": 0.2,
+  "spoken distance vs walked, edges compared": 9,
+  "far-apart passes merged": 0,
+  "spoken text with visual words (keyword)": 0,
+  "flagged by Jev": 1,
+  "candidates unused": 2
+ }
+}

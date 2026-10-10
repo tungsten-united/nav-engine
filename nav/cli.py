@@ -1,0 +1,336 @@
+"""nav: command-line entry points."""
+
+from pathlib import Path
+
+import typer
+
+from nav import config
+
+app = typer.Typer(no_args_is_help=True, add_completion=False)
+rec = typer.Typer(no_args_is_help=True, help="Inspect and finalize recordings.")
+app.add_typer(rec, name="rec")
+maps = typer.Typer(no_args_is_help=True, help="Build, inspect and share the map of each place.")
+app.add_typer(maps, name="map")
+
+
+@app.command()
+def serve(host: str = config.HOST, port: int = config.PORT, reload: bool = False) -> None:
+    """Run the recorder (phone web app + /api/v1)."""
+    import uvicorn
+
+    uvicorn.run("nav.recorder.app:create_app", factory=True, host=host, port=port, reload=reload,
+                proxy_headers=True, forwarded_allow_ips="127.0.0.1")
+
+
+infer = typer.Typer(no_args_is_help=True, help="Inference host: the local models and the map job over HTTP.")
+app.add_typer(infer, name="infer")
+
+
+@infer.command("serve")
+def infer_serve(host: str = config.INFER_HOST, port: int = config.INFER_PORT) -> None:
+    """Serve the models and the Claude Code map job to workers (nav/infer/server.py). One process: one copy of the
+    models on the GPU."""
+    import uvicorn
+
+    _logging()
+    uvicorn.run("nav.infer.server:create_infer_app", factory=True, host=host, port=port, workers=1,
+                limit_concurrency=32, timeout_keep_alive=30, proxy_headers=True, forwarded_allow_ips="127.0.0.1")
+
+
+def _store():
+    from nav.recorder.store import RecordingStore
+
+    return RecordingStore(config.RECORDINGS_DIR)
+
+
+@rec.command("list")
+def rec_list() -> None:
+    for s in _store().summaries():
+        dur = f"{s.duration_ms / 1000:6.0f}s" if s.duration_ms else "      -"
+        print(f"{s.rec_id}  {s.status:<10} {dur}  marks={s.counts.marks:<3} {s.place}")
+
+
+@rec.command("show")
+def rec_show(rec_id: str) -> None:
+    print(_store().get(rec_id).model_dump_json(indent=2))
+
+
+@rec.command("finalize")
+def rec_finalize(rec_id: str) -> None:
+    m = _store().finalize(rec_id)
+    print(f"{m.rec_id}: {m.status}" + (f"  gaps: {', '.join(m.gaps)}" if m.gaps else "") + (f"  error: {m.error}" if m.error else ""))
+
+
+@rec.command("import")
+def rec_import(video: Path = typer.Argument(..., exists=True, dir_okay=False, help="A video file (mp4, webm, mov ...)."),
+               place: str = typer.Option(..., help="Place it shows (groups it with the place's other walks)."),
+               notes: str = "", step_length: float = typer.Option(0.7, help="Only used for the time-based guess."),
+               holding: str = "handheld_portrait") -> None:
+    """Make a recording from a video alone (no phone sensors): the map pipeline takes its heading from the video and
+    guesses distances from time. Lands in NAV_DATA_DIR/recordings; share it with `nav rec push`."""
+    m = _store().import_video(video, place, notes=notes, step_length_m=step_length, holding=holding)
+    print(f"{m.rec_id}: {m.status}  {m.video.duration_s if m.video else '?'} s  place={m.place!r}"
+          + (f"  error: {m.error}" if m.error else ""))
+
+
+def _gcloud_rsync(src: str, dst: str, *flags: str, dry_run: bool) -> None:
+    import subprocess
+
+    cmd = ["gcloud", "storage", "rsync", "--recursive", *flags, *(["--dry-run"] if dry_run else []), src, dst]
+    print("$", " ".join(cmd))
+    if subprocess.run(cmd).returncode:
+        raise typer.Exit(1)
+
+
+@rec.command("push")
+def rec_push(rec_ids: list[str] = typer.Argument(None, help="Default: every finished recording."),
+             raw: bool = typer.Option(False, help="Also upload raw/ (the uploads as received)."),
+             dry_run: bool = False) -> None:
+    """Upload recordings to the team bucket (NAV_GCS_URL). Only adds or updates objects, never deletes."""
+    store = _store()
+    ids = rec_ids or [s.rec_id for s in store.summaries() if s.status in ("complete", "incomplete", "failed")]
+    for rec_id in ids:
+        _gcloud_rsync(str(store.dir(rec_id)), f"{config.GCS_URL}/{rec_id}", *([] if raw else ["--exclude", "^raw/"]),
+                      dry_run=dry_run)
+
+
+@rec.command("pull")
+def rec_pull(rec_ids: list[str] = typer.Argument(None, help="Default: everything in the bucket."),
+             raw: bool = typer.Option(False, help="Also download raw/ (the cloud worker keeps the uploads there)."),
+             dry_run: bool = False) -> None:
+    """Download recordings from the team bucket into NAV_DATA_DIR/recordings. Never deletes local files."""
+    config.RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+    skip_raw = [] if raw else ["--exclude", "(^|/)raw/"]
+    if not rec_ids:
+        _gcloud_rsync(config.GCS_URL, str(config.RECORDINGS_DIR), *skip_raw, dry_run=dry_run)
+    for rec_id in rec_ids or []:
+        _gcloud_rsync(f"{config.GCS_URL}/{rec_id}", str(config.RECORDINGS_DIR / rec_id), *skip_raw, dry_run=dry_run)
+
+
+def _logging() -> None:
+    import logging
+
+    logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    logging.getLogger("nav").setLevel(logging.INFO)
+
+
+def _map_store():
+    from nav.mapping.store import MapStore
+
+    return MapStore(config.MAPS_DIR)
+
+
+def _print_build(result) -> None:
+    c = result.candidates
+    print(f"build: {result.build_dir}")
+    for r in c.recordings:
+        print(f"  {r.rec_id}  walked {r.walked_m:5.0f} m  frames {r.frames_usable}/{r.frames_sampled} usable  "
+              f"steps on timeline {len(r.timeline)}  voice {len(r.voice)}  marks {len(r.marks)}")
+    print(f"  {len(c.candidates)} candidates")
+    if m := result.map:
+        llm = m.build.llm
+        print(f"map: {len(m.nodes)} nodes, {len(m.edges)} edges  ({llm.model} {llm.effort or ''}, {llm.duration_s} s, "
+              f"${llm.cost_usd or 0:.2f} at API list price)")
+        for w in m.warnings:
+            print(f"  warning: {w}")
+        if m.quality and m.quality.skipped:
+            print(f"  quality check skipped: {m.quality.skipped}")
+        print(f"view: /viz/#{m.map_id}")
+
+
+@maps.command("setup")
+def map_setup(transcribe: bool = True) -> None:
+    """Download and check the local models: frame and place embeddings (NAV_EMBED_MODEL, NAV_PLACE_MODEL), local
+    feature matching (ALIKED + LightGlue) and voice (NAV_TRANSCRIBE_MODEL)."""
+    from nav.mapping.models import check
+
+    _logging()
+    for k, v in check(config.EMBED_MODEL, config.PLACE_MODEL, config.TRANSCRIBE_MODEL if transcribe else None).items():
+        print(f"{k:>16}: {v}")
+
+
+@maps.command("build")
+def map_build(place: str = typer.Argument(..., help="Place name as recorded (case-insensitive)."),
+              llm: bool = typer.Option(True, help="Run the LLM step; --no-llm stops after selecting candidates."),
+              model: str = typer.Option(config.MAP_LLM_MODEL, help="Claude Code model (alias or id)."),
+              effort: str = typer.Option(config.MAP_LLM_EFFORT, help="Claude Code effort: low, medium, high, xhigh, max."),
+              language: str = typer.Option(config.MAP_LANGUAGE, help="Language of the map's text."),
+              budget: float = typer.Option(config.MAP_LLM_BUDGET_USD, help="Max USD for the Claude Code job."),
+              max_candidates: int = typer.Option(60, help="Most frames shown to the LLM."),
+              transcribe: bool = typer.Option(True, help="Transcribe voice notes.")) -> None:
+    """Build (or rebuild) the map of a place from all its finished recordings."""
+    from nav.mapping.build import build_map
+    from nav.mapping.select import SelectParams
+
+    _logging()
+    result = build_map(place, recordings_root=config.RECORDINGS_DIR, maps_root=config.MAPS_DIR,
+                       cache_root=config.CACHE_DIR, params=SelectParams(max_candidates=max_candidates),
+                       embed_model=config.EMBED_MODEL, place_model=config.PLACE_MODEL,
+                       transcribe_model=config.TRANSCRIBE_MODEL if transcribe else None,
+                       llm_model=model, language=language, budget_usd=budget, run_llm=llm, effort=effort)
+    _print_build(result)
+
+
+@maps.command("llm")
+def map_llm(map_id: str, build_id: str = typer.Argument(None, help="Default: the latest build."),
+            model: str = typer.Option(config.MAP_LLM_MODEL), effort: str = typer.Option(config.MAP_LLM_EFFORT),
+            language: str = typer.Option(config.MAP_LANGUAGE),
+            budget: float = typer.Option(config.MAP_LLM_BUDGET_USD)) -> None:
+    """Rerun only the LLM step with the candidates of an existing build, e.g. after changing the prompt. The result
+    is a new build (candidates copied), so earlier answers are kept."""
+    from nav.mapping.build import fork_build, run_llm_on_build
+
+    _logging()
+    builds = _map_store().dir(map_id) / "builds"
+    build_dir = fork_build(builds / build_id if build_id else max(builds.glob("*/candidates.json")).parent)
+    _print_build(run_llm_on_build(build_dir, llm_model=model, language=language, budget_usd=budget, effort=effort))
+
+
+@maps.command("refinish")
+def map_refinish(map_id: str, build_id: str = typer.Argument(None, help="Default: the latest build with an LLM result.")) -> None:
+    """Redo post-processing from the saved LLM answer (no new LLM call) and publish that build's map."""
+    from nav.mapping.build import refinish_build
+
+    _logging()
+    builds = _map_store().dir(map_id) / "builds"
+    build_dir = builds / build_id if build_id else max(builds.glob("*/job/claude.json")).parent.parent
+    _print_build(refinish_build(build_dir))
+
+
+@maps.command("check")
+def map_check(map_id: str) -> None:
+    """Rerun the cheap quality check (TypeSafe Jev) on the published map and save the result."""
+    from nav.mapping.build import build_map_of, write_map
+    from nav.mapping.quality import check_map
+
+    _logging()
+    build_dir, m = build_map_of(_map_store().dir(map_id))
+    m = check_map(m, config.QUALITY_MODEL)
+    write_map(build_dir, m)
+    q = m.quality
+    if q.skipped:
+        print(f"skipped: {q.skipped}")
+    else:
+        print(f"{q.flagged} of {len(m.nodes) + len(m.edges)} items flagged ({q.model}, {q.input_tokens} input tokens)")
+    for w in m.warnings:
+        if w.startswith("jev: "):
+            print(f"  {w}")
+
+
+@maps.command("review")
+def map_review(map_id: str,
+               apply: Path = typer.Option(None, exists=True, dir_okay=False, help="An edited review file to apply."),
+               out: Path = typer.Option(None, help="Where to write the review file (default ./<map_id>-review.json).")
+               ) -> None:
+    """Human review: without --apply, write an editable review file (every node, edge and relation with what to
+    check); with --apply, save it as the place's review.json and republish the map (no LLM, no recomputation)."""
+    import json
+
+    from nav.mapping.build import build_map_of, republish
+    from nav.mapping.review import dumps, from_template, load_review, save_review, template
+
+    map_dir = _map_store().dir(map_id)
+    if apply:
+        save_review(map_dir, from_template(json.loads(apply.read_text())), by="cli")
+        m = republish(map_dir)
+        count = lambda items, attr="status": sum(getattr(i, attr) == "verified" for i in items)
+        print(f"published {map_id}: verified {count(m.nodes)}/{len(m.nodes)} nodes, {count(m.edges)}/{len(m.edges)} "
+              f"edges ({count(m.edges, 'reverse_status')} the way back), hidden {len(m.hidden)}")
+        for w in m.warnings:
+            if w.startswith("review: "):
+                print(f"  {w}")
+        return
+    _, raw = build_map_of(map_dir)
+    out = out or Path(f"{map_id}-review.json")
+    out.write_text(dumps(template(raw, load_review(map_dir))))
+    print(f"wrote {out}; edit it, then: nav map review {map_id} --apply {out}")
+
+
+@maps.command("route")
+def map_route(map_id: str, start: str, goal: str,
+              trust: str = typer.Option("verified", help="verified (real users), observed or any.")) -> None:
+    """Shortest route between two nodes (ids or names) over edges trusted enough."""
+    from nav.navigation.route import plan_route
+
+    m = _map_store().get(map_id)
+    ids = {n.name.casefold(): n.id for n in m.nodes} | {n.id: n.id for n in m.nodes}
+    names = {n.id: n.name for n in m.nodes}
+    a, b = ids.get(start.casefold(), start), ids.get(goal.casefold(), goal)
+    route = plan_route(m, a, b, trust)
+    if route is None:
+        print(f"no route from {start} to {goal} over {trust} edges")
+        raise typer.Exit(1)
+    for h in route:
+        dist = f"{h.length_m:.0f} m" if h.length_m is not None else "? m"
+        head = f"{h.bearing_deg:.0f}°" if h.bearing_deg is not None else "?"
+        print(f"{h.edge:>5} {'' if h.forward else '(back) '}{names[h.source]} -> {names[h.target]}  {dist}  heading "
+              f"{head}  [{h.status}]\n      {h.instruction}")
+
+
+@maps.command("pdr-replay")
+def map_pdr_replay(map_id: str, rec_id: str,
+                   step_scale: float = typer.Option(1.0, help="0.85 = a user with 15% shorter steps."),
+                   heading_bias: float = typer.Option(0.0, help="Compass bias of the user's phone, degrees."),
+                   step_length: float = typer.Option(None, help="The tracker's starting step length.")) -> None:
+    """Replay a mapping walk as a user along the map: how early or late the dead-reckoning tracker would announce
+    each node (nav/navigation/pdr.py)."""
+    from nav.navigation.pdr import replay
+
+    rows = replay(_map_store().get(map_id), config.RECORDINGS_DIR / rec_id, step_scale, heading_bias, step_length)
+    if not rows:
+        print(f"{rec_id} doesn't walk any edge of {map_id}")
+        raise typer.Exit(1)
+    print(f"{'edge':>5} {'to':<22} {'len':>6} {'steps':>5} {'left':>7} {'sigma':>6} {'P':>5} {'alert':>6} {'step':>6}")
+    for r in rows:
+        alert = f"{r.first_alert_s:+.1f}" if r.first_alert_s is not None else "-"
+        length = f"{r.length_m:.1f}" if r.length_m is not None else "-"
+        print(f"{r.edge:>5} {r.to[:22]:<22} {length:>6} {r.steps:>5} {r.predicted_remaining_m:>7.2f} "
+              f"{r.sigma_m:>6.2f} {r.arrival_probability:>5.2f} {alert:>6} {r.step_length_after:>6.3f}")
+
+
+@maps.command("schema")
+def map_schema(out: Path = typer.Option(None, help="Write here instead of printing.")) -> None:
+    """JSON Schema of the published map (PlaceMap), for the app (committed as docs/map.schema.json)."""
+    from nav.schemas.map import place_map_json_schema
+
+    text = place_map_json_schema()
+    if out:
+        out.write_text(text)
+    else:
+        print(text, end="")
+
+
+@maps.command("list")
+def map_list() -> None:
+    for s in _map_store().summaries():
+        print(f"{s.map_id:<24} {s.built_at_utc:%Y-%m-%d %H:%M}  recs={s.recordings:<3} nodes={s.nodes:<3} "
+              f"edges={s.edges:<3} {s.place}")
+
+
+@maps.command("show")
+def map_show(map_id: str) -> None:
+    print(_map_store().get(map_id).model_dump_json(indent=2))
+
+
+@maps.command("push")
+def map_push(map_ids: list[str] = typer.Argument(None, help="Default: every map."), dry_run: bool = False) -> None:
+    """Upload maps to the team bucket (NAV_GCS_MAPS_URL, next to recordings/). Never deletes."""
+    store = _map_store()
+    for map_id in map_ids or [s.map_id for s in store.summaries()]:
+        _gcloud_rsync(str(store.dir(map_id)), f"{config.GCS_MAPS_URL}/{map_id}", "--exclude", r"(^|/)\.",
+                      dry_run=dry_run)
+
+
+@maps.command("pull")
+def map_pull(map_ids: list[str] = typer.Argument(None, help="Default: everything in the bucket."),
+             dry_run: bool = False) -> None:
+    """Download maps from the team bucket into NAV_DATA_DIR/maps. Never deletes local files."""
+    config.MAPS_DIR.mkdir(parents=True, exist_ok=True)
+    if not map_ids:
+        _gcloud_rsync(config.GCS_MAPS_URL, str(config.MAPS_DIR), dry_run=dry_run)
+    for map_id in map_ids or []:
+        _gcloud_rsync(f"{config.GCS_MAPS_URL}/{map_id}", str(config.MAPS_DIR / map_id), dry_run=dry_run)
+
+
+if __name__ == "__main__":
+    app()

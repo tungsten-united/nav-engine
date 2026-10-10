@@ -1,0 +1,1323 @@
+{
+ "$defs": {
+  "BuildInfo": {
+   "properties": {
+    "build_id": {
+     "title": "Build Id",
+     "type": "string"
+    },
+    "built_at_utc": {
+     "format": "date-time",
+     "title": "Built At Utc",
+     "type": "string"
+    },
+    "pipeline_version": {
+     "title": "Pipeline Version",
+     "type": "string"
+    },
+    "params": {
+     "additionalProperties": true,
+     "title": "Params",
+     "type": "object"
+    },
+    "embed_model": {
+     "title": "Embed Model",
+     "type": "string"
+    },
+    "embed_dim": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Embed Dim"
+    },
+    "place_model": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Place Model"
+    },
+    "transcribe_model": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Transcribe Model"
+    },
+    "llm": {
+     "$ref": "#/$defs/LlmRun"
+    },
+    "candidates": {
+     "title": "Candidates",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "build_id",
+    "built_at_utc",
+    "pipeline_version",
+    "params",
+    "embed_model",
+    "transcribe_model",
+    "llm",
+    "candidates"
+   ],
+   "title": "BuildInfo",
+   "type": "object"
+  },
+  "EmbeddingInfo": {
+   "properties": {
+    "model": {
+     "title": "Model",
+     "type": "string"
+    },
+    "dim": {
+     "title": "Dim",
+     "type": "integer"
+    },
+    "file": {
+     "title": "File",
+     "type": "string"
+    }
+   },
+   "required": [
+    "model",
+    "dim",
+    "file"
+   ],
+   "title": "EmbeddingInfo",
+   "type": "object"
+  },
+  "Evidence": {
+   "properties": {
+    "candidate": {
+     "title": "Candidate",
+     "type": "string"
+    },
+    "rec_id": {
+     "title": "Rec Id",
+     "type": "string"
+    },
+    "t_ms": {
+     "title": "T Ms",
+     "type": "number"
+    },
+    "image": {
+     "title": "Image",
+     "type": "string"
+    }
+   },
+   "required": [
+    "candidate",
+    "rec_id",
+    "t_ms",
+    "image"
+   ],
+   "title": "Evidence",
+   "type": "object"
+  },
+  "ItemQuality": {
+   "description": "Cheap second opinion on one node or edge (TypeSafe Jev, nav/mapping/quality.py). Raw judgments are kept so\nthresholds can change without asking again; `flags` are what the current thresholds make of them.",
+   "properties": {
+    "visual_p": {
+     "title": "Visual P",
+     "type": "number"
+    },
+    "usable": {
+     "title": "Usable",
+     "type": "number"
+    },
+    "turn_agrees_p": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Turn Agrees P"
+    },
+    "flags": {
+     "default": [],
+     "items": {
+      "type": "string"
+     },
+     "title": "Flags",
+     "type": "array"
+    }
+   },
+   "required": [
+    "visual_p",
+    "usable"
+   ],
+   "title": "ItemQuality",
+   "type": "object"
+  },
+  "LlmRun": {
+   "properties": {
+    "backend": {
+     "enum": [
+      "claude_code",
+      "anthropic_api"
+     ],
+     "title": "Backend",
+     "type": "string"
+    },
+    "model": {
+     "title": "Model",
+     "type": "string"
+    },
+    "effort": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Effort"
+    },
+    "cost_usd": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Cost Usd"
+    },
+    "duration_s": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Duration S"
+    },
+    "session_id": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Session Id"
+    }
+   },
+   "required": [
+    "backend",
+    "model"
+   ],
+   "title": "LlmRun",
+   "type": "object"
+  },
+  "MapFrame": {
+   "description": "The frame of positions and headings: x east, y north when compass-referenced, metres; headings clockwise.",
+   "properties": {
+    "heading_source": {
+     "title": "Heading Source",
+     "type": "string"
+    },
+    "heading_zero_abs_deg": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Heading Zero Abs Deg"
+    },
+    "step_length_m": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Step Length M"
+    },
+    "note": {
+     "default": "dead reckoning: ~5-10% distance error, drifting a few metres per minute; indoor compass is rough",
+     "title": "Note",
+     "type": "string"
+    }
+   },
+   "required": [
+    "heading_source",
+    "heading_zero_abs_deg",
+    "step_length_m"
+   ],
+   "title": "MapFrame",
+   "type": "object"
+  },
+  "PlaceEdge": {
+   "properties": {
+    "id": {
+     "description": "Short unique id: \"e1\", \"e2\", ...",
+     "title": "Id",
+     "type": "string"
+    },
+    "source": {
+     "description": "Node id the instruction starts from.",
+     "title": "Source",
+     "type": "string"
+    },
+    "target": {
+     "description": "Node id the instruction leads to.",
+     "title": "Target",
+     "type": "string"
+    },
+    "kind": {
+     "enum": [
+      "walk",
+      "door",
+      "stairs",
+      "lift",
+      "ramp",
+      "other"
+     ],
+     "title": "Kind",
+     "type": "string"
+    },
+    "bidirectional": {
+     "description": "True if it can be walked both ways (almost always).",
+     "title": "Bidirectional",
+     "type": "boolean"
+    },
+    "basis": {
+     "default": "walked",
+     "enum": [
+      "walked",
+      "inferred"
+     ],
+     "title": "Basis",
+     "type": "string"
+    },
+    "steps": {
+     "default": [],
+     "items": {
+      "$ref": "#/$defs/Step"
+     },
+     "title": "Steps",
+     "type": "array"
+    },
+    "instruction": {
+     "description": "The steps as you would say them to a blind person, egocentric, without visual detail: direction, distance, what you pass and can touch or hear, how you know you have arrived.",
+     "title": "Instruction",
+     "type": "string"
+    },
+    "reverse_instruction": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "The same route spoken for target -> source, or null if not bidirectional.",
+     "title": "Reverse Instruction"
+    },
+    "landmarks": {
+     "description": "Non-visual things passed along the way that help to keep track.",
+     "items": {
+      "type": "string"
+     },
+     "title": "Landmarks",
+     "type": "array"
+    },
+    "hazards": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Hazards",
+     "type": "array"
+    },
+    "visual_cues": {
+     "default": [],
+     "items": {
+      "type": "string"
+     },
+     "title": "Visual Cues",
+     "type": "array"
+    },
+    "candidates": {
+     "description": "For a walked edge, the candidate frames of that walk from the source to the target, in walk order (as on the timeline). For an inferred edge, frames that support the connection, or empty.",
+     "items": {
+      "type": "string"
+     },
+     "title": "Candidates",
+     "type": "array"
+    },
+    "confidence": {
+     "enum": [
+      "high",
+      "medium",
+      "low"
+     ],
+     "title": "Confidence",
+     "type": "string"
+    },
+    "distance_m": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Distance M"
+    },
+    "measured_distance_m": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Measured Distance M"
+    },
+    "reverse_steps": {
+     "default": [],
+     "items": {
+      "$ref": "#/$defs/Step"
+     },
+     "title": "Reverse Steps",
+     "type": "array"
+    },
+    "path": {
+     "default": [],
+     "items": {
+      "$ref": "#/$defs/Point"
+     },
+     "title": "Path",
+     "type": "array"
+    },
+    "walked_at_ms": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Walked At Ms"
+    },
+    "walked_in": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Walked In"
+    },
+    "walked": {
+     "default": true,
+     "title": "Walked",
+     "type": "boolean"
+    },
+    "turn_deg": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Turn Deg"
+    },
+    "quality": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/ItemQuality"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
+    "status": {
+     "default": "observed",
+     "enum": [
+      "observed",
+      "inferred",
+      "verified"
+     ],
+     "title": "Status",
+     "type": "string"
+    },
+    "reverse_status": {
+     "anyOf": [
+      {
+       "enum": [
+        "observed",
+        "inferred",
+        "verified"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Reverse Status"
+    },
+    "review_flags": {
+     "default": [],
+     "items": {
+      "type": "string"
+     },
+     "title": "Review Flags",
+     "type": "array"
+    },
+    "instruction_kind": {
+     "anyOf": [
+      {
+       "enum": [
+        "straight",
+        "turn_left",
+        "turn_right",
+        "turn_around"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Instruction Kind"
+    },
+    "departure_heading_deg": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Departure Heading Deg"
+    },
+    "arrival_heading_deg": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Arrival Heading Deg"
+    },
+    "reference_views": {
+     "default": [],
+     "items": {
+      "type": "string"
+     },
+     "title": "Reference Views",
+     "type": "array"
+    }
+   },
+   "required": [
+    "id",
+    "source",
+    "target",
+    "kind",
+    "bidirectional",
+    "instruction",
+    "reverse_instruction",
+    "landmarks",
+    "hazards",
+    "candidates",
+    "confidence"
+   ],
+   "title": "PlaceEdge",
+   "type": "object"
+  },
+  "PlaceNode": {
+   "properties": {
+    "id": {
+     "description": "Short unique id: \"n1\", \"n2\", ...",
+     "title": "Id",
+     "type": "string"
+    },
+    "name": {
+     "description": "Short spoken label, 1-4 words, unique in the map: \"Main entrance\", \"Kitchen\", \"Stage\", \"Mural tables\".",
+     "title": "Name",
+     "type": "string"
+    },
+    "kind": {
+     "enum": [
+      "entrance",
+      "door",
+      "corridor",
+      "junction",
+      "room",
+      "open_area",
+      "stairs",
+      "lift",
+      "destination",
+      "landmark",
+      "other"
+     ],
+     "title": "Kind",
+     "type": "string"
+    },
+    "description": {
+     "description": "What is here, for a blind person, without visual detail: layout and size, what is on each side within reach, floor surface, sounds, smells, temperature. 1-3 sentences.",
+     "title": "Description",
+     "type": "string"
+    },
+    "landmarks": {
+     "description": "Non-visual cues that confirm you have arrived: things a cane, feet or hands can find, sounds, smells, floor changes.",
+     "items": {
+      "type": "string"
+     },
+     "title": "Landmarks",
+     "type": "array"
+    },
+    "hazards": {
+     "description": "Obstacles or dangers here: steps, glass doors, low furniture ...",
+     "items": {
+      "type": "string"
+     },
+     "title": "Hazards",
+     "type": "array"
+    },
+    "visual_cues": {
+     "default": [],
+     "items": {
+      "type": "string"
+     },
+     "title": "Visual Cues",
+     "type": "array"
+    },
+    "floor": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "Floor or level if known (\"ground\", \"1\", \"-1\"), else null.",
+     "title": "Floor"
+    },
+    "candidates": {
+     "description": "Ids of the candidate frames that show this node (at least one).",
+     "items": {
+      "type": "string"
+     },
+     "title": "Candidates",
+     "type": "array"
+    },
+    "relations": {
+     "default": [],
+     "items": {
+      "$ref": "#/$defs/SpatialRelation"
+     },
+     "title": "Relations",
+     "type": "array"
+    },
+    "confidence": {
+     "enum": [
+      "high",
+      "medium",
+      "low"
+     ],
+     "title": "Confidence",
+     "type": "string"
+    },
+    "quality": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/ItemQuality"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
+    "evidence": {
+     "default": [],
+     "items": {
+      "$ref": "#/$defs/Evidence"
+     },
+     "title": "Evidence",
+     "type": "array"
+    },
+    "position": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/Point"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
+    "status": {
+     "default": "observed",
+     "enum": [
+      "observed",
+      "inferred",
+      "verified"
+     ],
+     "title": "Status",
+     "type": "string"
+    },
+    "review_flags": {
+     "default": [],
+     "items": {
+      "type": "string"
+     },
+     "title": "Review Flags",
+     "type": "array"
+    },
+    "references": {
+     "default": [],
+     "items": {
+      "type": "string"
+     },
+     "title": "References",
+     "type": "array"
+    }
+   },
+   "required": [
+    "id",
+    "name",
+    "kind",
+    "description",
+    "landmarks",
+    "hazards",
+    "floor",
+    "candidates",
+    "confidence"
+   ],
+   "title": "PlaceNode",
+   "type": "object"
+  },
+  "Point": {
+   "properties": {
+    "x_m": {
+     "title": "X M",
+     "type": "number"
+    },
+    "y_m": {
+     "title": "Y M",
+     "type": "number"
+    }
+   },
+   "required": [
+    "x_m",
+    "y_m"
+   ],
+   "title": "Point",
+   "type": "object"
+  },
+  "QualityReport": {
+   "properties": {
+    "checker": {
+     "default": "typesafe",
+     "title": "Checker",
+     "type": "string"
+    },
+    "model": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Model"
+    },
+    "checked_at_utc": {
+     "anyOf": [
+      {
+       "format": "date-time",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Checked At Utc"
+    },
+    "input_tokens": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Input Tokens"
+    },
+    "flagged": {
+     "default": 0,
+     "title": "Flagged",
+     "type": "integer"
+    },
+    "skipped": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Skipped"
+    }
+   },
+   "title": "QualityReport",
+   "type": "object"
+  },
+  "ReferenceImage": {
+   "description": "A frame kept for live localization: approaching the node, at it, or leaving it along an edge.",
+   "properties": {
+    "id": {
+     "title": "Id",
+     "type": "string"
+    },
+    "node": {
+     "title": "Node",
+     "type": "string"
+    },
+    "edge": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Edge"
+    },
+    "toward": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Toward"
+    },
+    "role": {
+     "enum": [
+      "approach",
+      "at",
+      "outgoing"
+     ],
+     "title": "Role",
+     "type": "string"
+    },
+    "image": {
+     "title": "Image",
+     "type": "string"
+    },
+    "rec_id": {
+     "title": "Rec Id",
+     "type": "string"
+    },
+    "t_ms": {
+     "title": "T Ms",
+     "type": "number"
+    },
+    "heading_deg": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Heading Deg"
+    },
+    "embedding_row": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Embedding Row"
+    }
+   },
+   "required": [
+    "id",
+    "node",
+    "role",
+    "image",
+    "rec_id",
+    "t_ms",
+    "heading_deg"
+   ],
+   "title": "ReferenceImage",
+   "type": "object"
+  },
+  "Retired": {
+   "description": "A node or edge id that was in an earlier build of the place and is not any more. Never reused.",
+   "properties": {
+    "id": {
+     "title": "Id",
+     "type": "string"
+    },
+    "kind": {
+     "enum": [
+      "node",
+      "edge"
+     ],
+     "title": "Kind",
+     "type": "string"
+    },
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "build_id": {
+     "title": "Build Id",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "kind",
+    "name",
+    "build_id"
+   ],
+   "title": "Retired",
+   "type": "object"
+  },
+  "SpatialRelation": {
+   "description": "Where something is as seen from a recorded viewpoint at a node (docs/navigation_stack.md 2.3). With the\nuser's heading known at the node, the app turns `heading_deg` into ahead / left / right without asking again.",
+   "properties": {
+    "id": {
+     "title": "Id",
+     "type": "string"
+    },
+    "subject": {
+     "title": "Subject",
+     "type": "string"
+    },
+    "candidate": {
+     "title": "Candidate",
+     "type": "string"
+    },
+    "rec_id": {
+     "title": "Rec Id",
+     "type": "string"
+    },
+    "t_ms": {
+     "title": "T Ms",
+     "type": "number"
+    },
+    "viewpoint_image": {
+     "title": "Viewpoint Image",
+     "type": "string"
+    },
+    "viewpoint_heading_deg": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Viewpoint Heading Deg"
+    },
+    "bearing_deg": {
+     "title": "Bearing Deg",
+     "type": "number"
+    },
+    "heading_deg": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Heading Deg"
+    },
+    "arrival_heading_deg": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Arrival Heading Deg"
+    },
+    "direction": {
+     "enum": [
+      "ahead",
+      "right",
+      "behind",
+      "left"
+     ],
+     "title": "Direction",
+     "type": "string"
+    },
+    "status": {
+     "enum": [
+      "observed",
+      "inferred",
+      "verified"
+     ],
+     "title": "Status",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "subject",
+    "candidate",
+    "rec_id",
+    "t_ms",
+    "viewpoint_image",
+    "viewpoint_heading_deg",
+    "bearing_deg",
+    "heading_deg",
+    "arrival_heading_deg",
+    "direction",
+    "status"
+   ],
+   "title": "SpatialRelation",
+   "type": "object"
+  },
+  "Step": {
+   "additionalProperties": false,
+   "properties": {
+    "action": {
+     "description": "What to do at the start of this step. The first step's turn is the turn to make when leaving the source.",
+     "enum": [
+      "straight",
+      "bear_left",
+      "bear_right",
+      "turn_left",
+      "turn_right",
+      "turn_around",
+      "go_through",
+      "step_up",
+      "step_down",
+      "stairs_up",
+      "stairs_down",
+      "lift"
+     ],
+     "title": "Action",
+     "type": "string"
+    },
+    "distance_m": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "Metres walked in this step, from the motion data; null for actions without walking (a turn on the spot, a step up).",
+     "title": "Distance M"
+    },
+    "along": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "What to keep beside you while walking, with its side, non-visual: \"stone wall on your left\", \"trail the counter with your right hand\".",
+     "title": "Along"
+    },
+    "until": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "The non-visual cue that ends this step: \"until the floor turns to carpet\", \"until your cane finds the bins\". The last step's cue tells you that you have arrived.",
+     "title": "Until"
+    }
+   },
+   "required": [
+    "action",
+    "distance_m",
+    "along",
+    "until"
+   ],
+   "title": "Step",
+   "type": "object"
+  },
+  "Track": {
+   "description": "A recording's dead-reckoned path at 1 Hz, shifted into the map frame. Points are [t_ms, x_m, y_m].",
+   "properties": {
+    "rec_id": {
+     "title": "Rec Id",
+     "type": "string"
+    },
+    "points": {
+     "items": {
+      "maxItems": 3,
+      "minItems": 3,
+      "prefixItems": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "number"
+       },
+       {
+        "type": "number"
+       }
+      ],
+      "type": "array"
+     },
+     "title": "Points",
+     "type": "array"
+    }
+   },
+   "required": [
+    "rec_id",
+    "points"
+   ],
+   "title": "Track",
+   "type": "object"
+  }
+ },
+ "properties": {
+  "place": {
+   "title": "Place",
+   "type": "string"
+  },
+  "language": {
+   "description": "Language of all the text in the map, BCP 47 (\"en\", \"es\").",
+   "title": "Language",
+   "type": "string"
+  },
+  "summary": {
+   "description": "Overview of the place for a blind person, without visual detail: shape and size, main areas, how they connect, where the entrances are. 2-5 sentences.",
+   "title": "Summary",
+   "type": "string"
+  },
+  "nodes": {
+   "items": {
+    "$ref": "#/$defs/PlaceNode"
+   },
+   "title": "Nodes",
+   "type": "array"
+  },
+  "edges": {
+   "items": {
+    "$ref": "#/$defs/PlaceEdge"
+   },
+   "title": "Edges",
+   "type": "array"
+  },
+  "notes": {
+   "description": "Uncertainties, places that were merged or left apart and why, and what should be recorded again.",
+   "items": {
+    "type": "string"
+   },
+   "title": "Notes",
+   "type": "array"
+  },
+  "schema_version": {
+   "default": 1,
+   "title": "Schema Version",
+   "type": "integer"
+  },
+  "map_id": {
+   "title": "Map Id",
+   "type": "string"
+  },
+  "recordings": {
+   "items": {
+    "type": "string"
+   },
+   "title": "Recordings",
+   "type": "array"
+  },
+  "build": {
+   "$ref": "#/$defs/BuildInfo"
+  },
+  "quality": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/QualityReport"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "tracks": {
+   "default": [],
+   "items": {
+    "$ref": "#/$defs/Track"
+   },
+   "title": "Tracks",
+   "type": "array"
+  },
+  "warnings": {
+   "default": [],
+   "items": {
+    "type": "string"
+   },
+   "title": "Warnings",
+   "type": "array"
+  },
+  "retired": {
+   "default": [],
+   "items": {
+    "$ref": "#/$defs/Retired"
+   },
+   "title": "Retired",
+   "type": "array"
+  },
+  "frame": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/MapFrame"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "references": {
+   "default": [],
+   "items": {
+    "$ref": "#/$defs/ReferenceImage"
+   },
+   "title": "References",
+   "type": "array"
+  },
+  "embedding": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/EmbeddingInfo"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "reviewed_at_utc": {
+   "anyOf": [
+    {
+     "format": "date-time",
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null,
+   "title": "Reviewed At Utc"
+  },
+  "hidden": {
+   "default": [],
+   "items": {
+    "type": "string"
+   },
+   "title": "Hidden",
+   "type": "array"
+  }
+ },
+ "required": [
+  "place",
+  "language",
+  "summary",
+  "nodes",
+  "edges",
+  "notes",
+  "map_id",
+  "recordings",
+  "build"
+ ],
+ "title": "PlaceMap",
+ "type": "object"
+}
