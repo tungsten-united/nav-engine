@@ -1,6 +1,6 @@
 """Reference images for live localization (docs/navigation_stack.md 2.4 and 4): for every node, frames taken while
 approaching it, standing at it, and leaving it along each edge, with the camera heading of each, and their place
-embeddings (the same model as same-place retrieval, MegaLoc) so the app can match live camera frames against them.
+embeddings (the same model as same-place retrieval, MegaLoc) so nav-api can match live camera frames against them.
 
 Frames come from the per-recording cache (1 fps, the sharpest of each second), so they span every walk that passed
 the node, not just the candidate shown to the LLM. Picked per role: the sharpest usable frames, spread over

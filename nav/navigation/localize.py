@@ -1,5 +1,5 @@
 """Visual place recognition against a map's reference images (docs/navigation_stack.md 4.1 and 6): live frames ->
-ranked nodes and a confidence status. Stateless: agreement across consecutive results (4.2) is the controller's.
+ranked nodes and a confidence status. Stateless: agreement across consecutive results (4.2) is the caller's (Orient's orchestrator).
 
 Each live frame is a place embedding (the map's `embedding.model`, MegaLoc), compared by cosine with every reference
 image of the map (`embeddings.npy`, unit rows). A burst of frames scores each reference by their mean similarity. A

@@ -9,7 +9,7 @@ Two deployments, same code:
   (browser login for people, the "helium-clients" service token for workers), so no token of its own. Its pages call
   the Cloud Run services (frontend/config.js).
 
-The live side (maps for the app, routes, localization) is nav-api (nav/nav_api/app.py).
+The live side (maps, routes, localization, for Orient's orchestrator) is nav-api (nav/nav_api/app.py).
 """
 
 import json
@@ -193,7 +193,7 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
 
     @app.get(f"{api}/schema/map")
     def map_schema() -> dict:
-        """JSON Schema of a published map (`GET /maps/{map_id}`), for the navigation app."""
+        """JSON Schema of a published map (`GET /maps/{map_id}`), for nav-api's callers."""
         return PlaceMap.model_json_schema(mode="serialization")
 
     @app.get(f"{api}/maps/{{map_id}}/review")

@@ -1,8 +1,10 @@
 # nav-engine
 
-Navigation engine for a blind-navigation app. The **recorder** (phone web app + API) captures free walks through a
-place; the **map pipeline** turns all walks of a place into one semantic topological map; **nav-api** serves the
-live side (maps, routes, localization) to the navigation app.
+Navigation engine of Orient, a voice-first indoor guidance web app for blind users (tungsten-united/project-description).
+The **recorder** (a page of the debugging frontend + map-api) captures free walks through a place; the **map
+pipeline** turns all walks of a place into one semantic topological map; **nav-api** serves the live side (maps,
+routes, localization) to Orient's orchestrator (tungsten-united/orient-orchestrator), its only live caller. Orient's
+phone app talks only to the orchestrator; `frontend/` here is a debugging frontend, not Orient's app.
 
 ## Layout
 - `nav/schemas/recording.py` — the recording format (schema_version 1). Source of truth for what is stored.
@@ -10,13 +12,13 @@ live side (maps, routes, localization) to the navigation app.
   no-cache, files under Cloud Run's cap, cache-busted pages) in `nav/web.py`:
   - `nav/map_api/app.py` — **map-api**: recordings, map builds, review, map files + the debugging frontend; no-delete
     for the public deployment.
-  - `nav/nav_api/app.py` — **nav-api**: the lean, read-only live API for the app: published maps, routes, localization
-    (`maps.py`: published maps + reference embeddings cached, reloaded when map.json changes). Formats in
-    `nav/schemas/navigation.py`.
+  - `nav/nav_api/app.py` — **nav-api**: the lean, read-only live API for Orient's orchestrator: published maps,
+    routes, localization (`maps.py`: published maps + reference embeddings cached, reloaded when map.json changes).
+    Formats in `nav/schemas/navigation.py`.
 - `nav/recorder/store.py` — recording storage, idempotent uploads, `finalize` (chunks → `video.mp4`, batches →
   parquet/jsonl).
-- `frontend/` — the debugging frontend, kept here for reference and direct API testing (the frontend team copies it):
-  phone app at `/`, `dash/` (recordings, uPlot from jsdelivr), `viz/` (map viewer, SVG), `loc/` and `nav/` (nav-api
+- `frontend/` — the debugging frontend, for the team and for testing the APIs by hand (not Orient's app):
+  recorder at `/`, `dash/` (recordings, uPlot from jsdelivr), `viz/` (map viewer, SVG), `loc/` and `nav/` (nav-api
   debuggers; `loc/loc-core.js` is shared). Vanilla JS, no build step. `config.js`: `NAV` = map-api, `NAV.nav` =
   nav-api, each with its base (`?api=`, `?navapi=`) and token (`?token=`, `?navtoken=`).
 - `nav/schemas/map.py` — the map format: `MapDraft` (what the LLM writes; its JSON Schema must stay valid for
@@ -29,11 +31,11 @@ live side (maps, routes, localization) to the navigation app.
   `references.py` (reference images + embeddings for live VPR), `review.py` (human review overlay
   `maps/<id>/review.json`, incl. distances measured on site that set the scale; published map.json = latest build
   + review).
-- `nav/navigation/` — the live side, small and causal so it ports to TS: `route.py` (routes over verified edges),
-  `localize.py` (VPR against reference embeddings → ranked nodes, confirmed/uncertain/lost), `pdr.py` (causal step
-  detector + GraphTracker, `nav map pdr-replay`).
+- `nav/navigation/` — the live side, small and causal: `route.py` (routes over verified edges by default) and
+  `localize.py` (VPR against reference embeddings → ranked nodes, confirmed/uncertain/lost), both served by nav-api;
+  `pdr.py` (causal step detector + GraphTracker, `nav map pdr-replay`), reference code that nothing live runs.
 - `docs/` — the navigation-side design (`main_idea.md`, `navigation_stack.md`, by LPA, from
-  tungsten-united/demo-repository@navigation) and `map.schema.json` (regenerate: `nav map schema --out ...`; a test checks it).
+  tungsten-united/demo-repository@navigation, aligned with Orient's architecture) and `map.schema.json` (regenerate: `nav map schema --out ...`; a test checks it).
 - `nav/mapping/inference.py` — every model call on files: local models, or the inference host when `NAV_INFER_URL` is set.
 - `nav/infer/` — inference host: `server.py` (`nav infer serve`: models + Claude Code map job over HTTP, one GPU slot
   where nav-api's live frames go ahead of queued batch calls, bounded queues, 503 + Retry-After), `client.py`
@@ -69,7 +71,7 @@ Deployment (Cloud Run, project `tungsten-united`, `europe-southwest1`; the bucke
   data) whose pages call the Cloud Run services; restart it after pulling to get new pages. Helium only pulls maps
   (`nav map push` would overwrite the cloud's map.json).
 Cloudflare Access gates every `helium-*` host: browser login for people, the `helium-clients` service token for
-workers (`~/.cloudflared/access-service-token.env`, headers `CF-Access-Client-Id/Secret`). The app has no auth of its own.
+workers (`~/.cloudflared/access-service-token.env`, headers `CF-Access-Client-Id/Secret`). nav-infer has no auth of its own.
 
 Browser end-to-end check: headless `/usr/bin/chromium` via `uvx --from playwright python` with
 `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`, sensor permissions granted, synthetic
@@ -134,9 +136,14 @@ the live inference host out of it.
   holds) → code assigns stable ids by evidence overlap with the last map (continuity.py), checks ids and adds
   evidence, positions and distances. Voice is transcribed locally (Whisper turbo; no OpenAI key here). Later: Anthropic API with
   structured outputs instead of the Claude Code job; code proposing node/edge spans itself.
+- nav-api is for Orient's orchestrator, server to server: it calls `localize` then `route` for every frame it
+  evaluates and keeps the user's state (nav-api is stateless). The phone never calls nav-engine. map-api and
+  `frontend/` are the team's (mapping, review, debugging). The contract lives in project-description
+  `docs/contracts.md` §2: change it there first, then here.
+- There is no navigation state machine: route state lives in the orchestrator's session, not here.
 
 ## Conventions
-- Work on branch `omm/first_draft`; push with `git push` (gh credential helper is configured for this repo).
+- Branch from `main` as `omm/<topic>` and open a PR; push with `git push` (gh credential helper is configured for this repo).
 - Data sharing: the server does not upload by itself. After new recordings are finalized, run `uv run nav rec push`
   (from the main checkout, so it sees the live `data/`) to keep the team bucket current; check with `--dry-run` first.
   Teammates with access: lpall98@gmail.com (objectAdmin). Grant others per README → "Shared dataset".

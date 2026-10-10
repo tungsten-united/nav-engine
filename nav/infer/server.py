@@ -2,7 +2,7 @@
 
 This machine only does inference here: no recordings or maps are stored, only scratch folders for map jobs
 (NAV_INFER_JOBS_DIR, safe to delete). It is bound to 127.0.0.1 and published through the Cloudflare Tunnel; Cloudflare
-Access is the gate (the worker sends the service token), so the app has no auth of its own.
+Access is the gate (the workers send the service token), so nav-infer has no auth of its own.
 
 It shares one GPU with whatever else runs on this computer, so it protects itself:
 - one model call at a time (a single GPU slot), at most NAV_INFER_QUEUE requests waiting; beyond that 503 with
