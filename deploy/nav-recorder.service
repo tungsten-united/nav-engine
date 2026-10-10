@@ -4,6 +4,8 @@ After=network-online.target
 
 [Service]
 WorkingDirectory=%h/Projects/nav-engine
+# Maps are built on Cloud Run's map-api; helium's local data/ only pulls them.
+Environment=NAV_AUTO_BUILD=0
 ExecStart=%h/.local/bin/uv run --frozen nav serve
 Restart=on-failure
 RestartSec=3
