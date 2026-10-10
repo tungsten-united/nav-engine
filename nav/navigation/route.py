@@ -26,16 +26,18 @@ class Hop:
     instruction: str | None
     steps: list[Step] = field(default_factory=list)
     status: str = "observed"
+    arrival_deg: float | None = None  # walking direction when reaching `target`, map frame (arrival.py checks it)
 
 
 def hops(e: PlaceEdge) -> list[Hop]:
     """Both directions of an edge (the reverse only if it is bidirectional)."""
     out = [Hop(e.id, e.source, e.target, True, e.distance_m, e.departure_heading_deg, e.instruction, e.steps,
-               e.status)]
+               e.status, arrival_deg=e.arrival_heading_deg)]
     if e.bidirectional:
         back = None if e.arrival_heading_deg is None else round((e.arrival_heading_deg + 180) % 360, 1)
+        back_arrival = None if e.departure_heading_deg is None else round((e.departure_heading_deg + 180) % 360, 1)
         out.append(Hop(e.id, e.target, e.source, False, e.distance_m, back, e.reverse_instruction,
-                       e.reverse_steps, e.reverse_status or "inferred"))
+                       e.reverse_steps, e.reverse_status or "inferred", arrival_deg=back_arrival))
     return out
 
 

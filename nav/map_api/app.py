@@ -52,8 +52,8 @@ PAGES = {
     "viz": (("../config.js", "viz.js", "viz.css"), "Map viewer: the graph of each place, details, directions"),
     "loc": (("../config.js", "loc-core.js", "loc.js", "loc.css"),
             "Localization debugger (nav-api): camera, recording or image -> ranked nodes"),
-    "nav": (("../config.js", "../loc/loc-core.js", "nav.js", "../loc/loc.css"),
-            "Navigation debugger (nav-api): routes, spoken instructions, live checkpoints"),
+    "nav": (("../config.js", "../loc/loc-core.js", "arrival.js", "nav.js", "../loc/loc.css"),
+            "Navigation debugger (nav-api): routes, spoken instructions, live checkpoints, auto-confirmation"),
 }
 
 

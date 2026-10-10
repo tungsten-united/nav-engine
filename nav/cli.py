@@ -325,6 +325,52 @@ def map_pdr_replay(map_id: str, rec_id: str,
               f"{r.sigma_m:>6.2f} {r.arrival_probability:>5.2f} {alert:>6} {r.step_length_after:>6.3f}")
 
 
+@maps.command("nav-replay")
+def map_nav_replay(map_id: str, rec_id: str,
+                   step_scale: float = typer.Option(1.0, help="0.85 = a user with 15% shorter steps."),
+                   heading_bias: float = typer.Option(0.0, help="Compass bias of the user's phone, degrees."),
+                   k: int = typer.Option(None, help="Votes needed (ArrivalParams.k)."),
+                   n: int = typer.Option(None, help="... among the last n localizations (ArrivalParams.n)."),
+                   heading_tol: float = typer.Option(None, help="Heading tolerance, degrees."),
+                   confirm_score: float = typer.Option(None, help="Override NAV_LOC_CONFIRM_SCORE."),
+                   confirm_margin: float = typer.Option(None, help="Override NAV_LOC_CONFIRM_MARGIN.")) -> None:
+    """Replay a mapping walk as a user navigating its route with the whole live loop: steps -> dead reckoning,
+    frames -> localization against the map's references (frames near the walk's own references left out), and the
+    node confirmer (nav/navigation/arrival.py). Reports how each node got confirmed and how late."""
+    from dataclasses import replace
+
+    from nav.navigation.arrival import ArrivalParams
+    from nav.navigation.replay import nav_replay
+    from nav.schemas.navigation import Thresholds
+
+    _logging()
+    store = _map_store()
+    params = ArrivalParams()
+    params = replace(params, **{f: v for f, v in (("k", k), ("n", n), ("heading_tol_deg", heading_tol))
+                                if v is not None})
+    th = Thresholds(confirm_score=confirm_score if confirm_score is not None else config.LOC_CONFIRM_SCORE,
+                    confirm_margin=confirm_margin if confirm_margin is not None else config.LOC_CONFIRM_MARGIN,
+                    lost_score=config.LOC_LOST_SCORE)
+    res = nav_replay(store.get(map_id), store.dir(map_id), config.RECORDINGS_DIR / rec_id, config.CACHE_DIR, th,
+                     params, step_scale, heading_bias)
+    if res is None:
+        print(f"{rec_id} doesn't walk any edge of {map_id}, or the map has no reference embeddings")
+        raise typer.Exit(1)
+    print(f"frames {res.frames_used} (+{res.frames_excluded} left out near the walk's own references) · "
+          f"k={params.k}/n={params.n} · score>={th.confirm_score} margin>={th.confirm_margin}")
+    print(f"{'#':>2} {'to':<24} {'len':>5} {'reached':>8} {'how':<8} {'delay':>6} {'unc':>4} {'off':>4} "
+          f"{'score':>6} {'step':>6}")
+    for r in res.rows:
+        length = f"{r.length_m:.1f}" if r.length_m is not None else "-"
+        delay = f"{r.delay_s:+.1f}" if r.delay_s is not None else "-"
+        score = f"{r.best_score:.2f}" if r.best_score is not None else "-"
+        print(f"{r.hop_index + 1:>2} {r.name[:24]:<24} {length:>5} {r.arrival_s:>7.1f}s {r.kind:<8} {delay:>6} "
+              f"{r.uncertain:>4} {r.off_route:>4} {score:>6} {r.step_length_after:>6.3f}")
+    print(f"confirmed by the camera: {res.confirmed}/{len(res.rows)} · a person had to confirm: "
+          f"{sum(r.kind == 'manual' for r in res.rows)} · premature (false): {res.premature} · "
+          f"off-route alarms: {sum(r.off_route for r in res.rows)}")
+
+
 @maps.command("schema")
 def map_schema(out: Path = typer.Option(None, help="Write here instead of printing.")) -> None:
     """JSON Schema of the published map (PlaceMap), for nav-api's callers (committed as docs/map.schema.json)."""

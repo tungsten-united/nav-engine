@@ -1,10 +1,13 @@
 // Nav Navigate: a route over a map's trusted edges (nav-api POST /maps/{id}/route), its spoken instructions, and a
-// bare-bones controller to try it: live frames are localized against the next checkpoint, and arrival is confirmed
-// by hand (docs/navigation_stack.md 4.3: recognising a place from afar is not being there). The real controller is
-// the app's; this is for checking routes, wording and checkpoint recognition.
+// bare-bones controller to try it: live frames are localized against the next checkpoint; arrival is confirmed by
+// hand, or with "auto-confirm" by the node confirmer (arrival.js, the port of nav/navigation/arrival.py): votes over
+// consecutive localizations + dead reckoning from the phone's steps + the compass (docs/navigation_stack.md 4.3: a
+// place recognised from afar is not reached). The real controller is the app's; this is for checking routes, wording
+// and checkpoint recognition.
 "use strict";
 
-const N = { map: null, names: {}, route: null, hop: 0, confirmed: null, busy: false, timer: null };
+const N = { map: null, names: {}, route: null, hop: 0, confirmed: null, busy: false, timer: null,
+            confirmer: null, steps: new ArrivalNav.StepDetector() };
 const zoom = zoomer();
 const picker = sourcePicker($("#video"), $("#image"), { images: false });
 
@@ -53,9 +56,59 @@ async function plan() {
   N.hop = 0;
   N.confirmed = N.route.start;
   History.items = [];
+  startConfirmer();
   render();
   if (N.route.found && N.route.hops.length) speak(hopText(N.route.hops[0]));
 }
+
+// --- node confirmation (arrival.js) --------------------------------------------------------------------------
+// Dead reckoning needs the phone's own steps: only with the camera as the source. A recording's video or an image
+// has no live steps, so the confirmer then works without it (and needs every one of the last n votes).
+const headingMap = () => {
+  const abs = Frames.heading();
+  const zero = N.map?.frame?.heading_zero_abs_deg;
+  return abs == null ? null : zero == null ? abs : ((abs - zero) % 360 + 360) % 360;
+};
+
+function startConfirmer() {
+  const hops = N.route?.found ? N.route.hops.slice(N.hop) : [];
+  const live = Frames.kind === "camera";
+  const tracker = live && hops.length
+    ? new ArrivalNav.GraphTracker(hops, { stepLength: N.map?.frame?.step_length_m || 0.7 }) : null;
+  N.confirmer = new ArrivalNav.NodeConfirmer(hops, tracker);
+  showPdr();
+}
+
+function showPdr() {
+  const c = N.confirmer, s = c?.pdr();
+  $("#pdr").textContent = !c || c.done ? "" : s
+    ? `${fmtM(Math.max(s.remaining_m, 0))} ± ${fmtM(s.sigma_m)} to ${N.names[c.expected]} · votes ${c.votes.map((v) => v ? v[0] : "·").join("")}`
+    : `no steps (${Frames.kind || "no source"}): camera votes only · ${c.votes.map((v) => v ? v[0] : "·").join("")}`;
+}
+
+function onConfirmerEvent(ev) {
+  if (!ev) return;
+  const name = N.names[ev.node] || ev.node;
+  if (ArrivalNav.CONFIRM_KINDS.includes(ev.kind)) {
+    advance(ev.kind === "passed" ? `Passed ${name}.` : `${name}.`);
+  } else if (ev.kind === "uncertain") {
+    $("#arrive").textContent = `Not sure you reached ${name}: stop and pan slowly, or confirm by hand.`;
+    speak(`Not sure you reached ${name}. Stop and turn slowly, or confirm.`);
+  } else if (ev.kind === "off_route") {
+    $("#arrive").textContent = `This looks like ${name}, off the route. Locate yourself and plan again.`;
+    speak(`This looks like ${name}, which is off the route. Stop, then plan again.`);
+  }
+  showPdr();
+}
+
+addEventListener("devicemotion", (e) => {
+  const a = e.accelerationIncludingGravity;
+  if (!a || a.x == null || !N.confirmer?.tracker || !$("#autoconfirm").checked) return;
+  if (N.steps.update(e.timeStamp / 1000, [a.x, a.y, a.z])) {
+    onConfirmerEvent(N.confirmer.onStep(headingMap(), e.timeStamp / 1000));
+    showPdr();
+  }
+});
 
 function render() {
   const r = N.route;
@@ -96,20 +149,29 @@ function render() {
   History.render($("#history"), N.names);
 }
 
-function confirmArrival() {
+// The current hop's target is reached (by hand or by the confirmer): move on and say what's next.
+function advance(prefix) {
   const hop = current();
   if (!hop) return;
   N.confirmed = hop.target;
   N.hop += 1;
   render();
   const next = current();
-  speak(next ? `${N.names[hop.target]}. ${hopText(next)}` : `You have arrived at ${N.names[hop.target]}.`);
+  speak(next ? `${prefix || N.names[hop.target] + "."} ${hopText(next)}` : `You have arrived at ${N.names[hop.target]}.`);
+}
+
+function confirmArrival() {
+  if (!current()) return;
+  N.confirmer?.confirmManual(performance.now() / 1000);  // keeps the confirmer (and its step length) in step
+  advance();
+  showPdr();
 }
 
 function backOne() {
   if (N.hop === 0) return;
   N.hop -= 1;
   N.confirmed = current().source;
+  startConfirmer();
   render();
 }
 
@@ -124,6 +186,16 @@ async function run() {
     const res = await localize(N.map.map_id, blobs, {
       previous: N.confirmed, expected: hop?.target || null, heading: Frames.heading(), topK: 3 });
     History.push(res);
+    if ($("#autoconfirm").checked && N.confirmer && hop) {
+      if ((Frames.kind === "camera") !== !!N.confirmer.tracker) startConfirmer();  // the source changed
+      const ev = N.confirmer.onLocalization(performance.now() / 1000, res);
+      showPdr();
+      if (ev) {
+        $("#result").replaceChildren(resultCard(res, { names: N.names, compact: true, onZoom: zoom }));
+        onConfirmerEvent(ev);
+        return res;
+      }
+    }
     $("#result").replaceChildren(resultCard(res, { names: N.names, compact: true, onZoom: zoom }));
     History.render($("#history"), N.names);
     const steady = History.steady();

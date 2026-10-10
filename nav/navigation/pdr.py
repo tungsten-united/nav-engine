@@ -168,39 +168,54 @@ def walk_route(pmap: PlaceMap, rec_id: str) -> list[tuple[Hop, float]]:
     return [(by_pair[(a, b)], t) for (_, a), (t, b) in zip(seq, seq[1:]) if (a, b) in by_pair]
 
 
-def replay(pmap: PlaceMap, rec_dir: Path, step_scale: float = 1.0, heading_bias_deg: float = 0.0,
-           step_length: float | None = None) -> list[ReplayRow]:
-    """Replay a recording as a user walking the route it walked. `step_scale` 0.85 = a user with 15% shorter steps;
-    `heading_bias_deg` a compass bias. Each node is confirmed when the walk really got there (standing in for the
-    visual confirmation)."""
+def user_steps(rec_dir: Path, step_scale: float = 1.0) -> np.ndarray:
+    """Step times (s, recording clock) of a mapping walk replayed as a user: the causal detector on its IMU, and
+    1/step_scale steps where the mapper took one (0.85 = a user with 15% shorter steps)."""
     import pyarrow.parquet as pq
 
-    from nav.mapping.prepare import load_motion_only
-
-    rec_id = rec_dir.name
-    route = walk_route(pmap, rec_id)
-    if not route:
-        return []
     imu = pq.read_table(rec_dir / "imu.parquet").to_pydict()
     t_s = np.asarray(imu["t_ms"], float) / 1000
     acc = np.stack([np.asarray(imu[k], float) for k in ("ax", "ay", "az")], axis=1)
     steps = detect_steps(t_s, acc)
-    track = load_motion_only(rec_id, rec_dir.parent)
-    events, carry = [], 0.0  # a user with shorter steps takes 1/step_scale steps where the mapper took one
+    events, carry = [], 0.0
     for i, t in enumerate(steps):
         carry += 1.0 / step_scale
         n = int(carry)
         carry -= n
         nxt = steps[i + 1] if i + 1 < len(steps) else t + 0.8
         events += [t + k * (nxt - t) / max(n, 1) for k in range(n)]
-    nodes = {n.id: n.name for n in pmap.nodes}
-    default_len = pmap.frame.step_length_m if pmap.frame and pmap.frame.step_length_m else 0.7
-    tracker = GraphTracker([h for h, _ in route], step_length=step_length or default_len)
-    rows = []
+    return np.asarray(events)
+
+
+def map_step_length(pmap: PlaceMap) -> float:
+    return pmap.frame.step_length_m if pmap.frame and pmap.frame.step_length_m else 0.7
+
+
+def route_start_ms(pmap: PlaceMap, rec_id: str, route: list[tuple[Hop, float]]) -> float:
+    """When the walk left the route's first node (its last view of it before reaching the second)."""
     first = route[0][0]
     left = [ev.t_ms for n in pmap.nodes if n.id == first.source for ev in n.evidence
             if ev.rec_id == rec_id and ev.t_ms < route[0][1]]
-    ei = int(np.searchsorted(events, max(left, default=0.0) / 1000))  # steps count from leaving the first node
+    return max(left, default=0.0)
+
+
+def replay(pmap: PlaceMap, rec_dir: Path, step_scale: float = 1.0, heading_bias_deg: float = 0.0,
+           step_length: float | None = None) -> list[ReplayRow]:
+    """Replay a recording as a user walking the route it walked. `step_scale` 0.85 = a user with 15% shorter steps;
+    `heading_bias_deg` a compass bias. Each node is confirmed when the walk really got there (standing in for the
+    visual confirmation)."""
+    from nav.mapping.prepare import load_motion_only
+
+    rec_id = rec_dir.name
+    route = walk_route(pmap, rec_id)
+    if not route:
+        return []
+    events = user_steps(rec_dir, step_scale)
+    track = load_motion_only(rec_id, rec_dir.parent)
+    nodes = {n.id: n.name for n in pmap.nodes}
+    tracker = GraphTracker([h for h, _ in route], step_length=step_length or map_step_length(pmap))
+    rows = []
+    ei = int(np.searchsorted(events, route_start_ms(pmap, rec_id, route) / 1000))  # steps from leaving the first node
     for k, (hop, arrival_ms) in enumerate(route):
         first_alert, n_steps = None, 0
         while ei < len(events) and events[ei] * 1000 <= arrival_ms:
