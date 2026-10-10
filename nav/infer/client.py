@@ -130,9 +130,16 @@ class InferenceClient:
                 out[pos] = int(k)
         return out
 
-    def transcribe(self, path: Path, model: str) -> str:
-        files = {"audio": (path.name, path.read_bytes(), AUDIO_MIME.get(path.suffix.lower(), "application/octet-stream"))}
-        return self._send("POST", "/infer/v1/transcribe", data={"model": model}, files=files).json()["text"]
+    @staticmethod
+    def _audio(path: Path) -> dict:
+        return {"audio": (path.name, path.read_bytes(), AUDIO_MIME.get(path.suffix.lower(), "application/octet-stream"))}
+
+    def language(self, path: Path, model: str) -> dict[str, float]:
+        return self._send("POST", "/infer/v1/language", data={"model": model}, files=self._audio(path)).json()["probs"]
+
+    def transcribe(self, path: Path, model: str, language: str | None = None) -> str:
+        data = {"model": model} | ({"language": language} if language else {})
+        return self._send("POST", "/infer/v1/transcribe", data=data, files=self._audio(path)).json()["text"]
 
     # --- the Claude Code map job ----------------------------------------------------------------------------------
     def map_draft(self, build_dir: Path, job_id: str, place: str, language: str, model: str, effort: str,

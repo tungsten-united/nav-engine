@@ -59,6 +59,14 @@
      ],
      "title": "Transcribe Model"
     },
+    "transcribe_languages": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "default": {},
+     "title": "Transcribe Languages",
+     "type": "object"
+    },
     "llm": {
      "$ref": "#/$defs/LlmRun"
     },

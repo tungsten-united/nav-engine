@@ -7,7 +7,7 @@
       odo-<key>.json            floor odometry: metres walked every half second (odometry.py)
       emb-<key>.npy             frame embeddings (DINOv2), same order
       place-<key>.npy           place embeddings (MegaLoc), same order
-      voice-<key>.json          {clip: text}
+      voice-<key>.json          {language, texts: {clip: text}}  (one language per walk, see voice_language)
 
 Each key is a short hash of the stage's inputs (parameters, model name, video size), so changing a parameter
 or a model recomputes only what depends on it and old entries can simply be deleted.
@@ -24,7 +24,7 @@ from PIL import Image
 
 from nav.infer.errors import InferenceUnavailable
 from nav.mapping.calibrate import CALIB_VERSION, Calibration, calibrate, default_fov, video_yaw
-from nav.mapping.inference import embed_files, place_files, transcribe_file
+from nav.mapping.inference import detect_language_file, embed_files, place_files, transcribe_file
 from nav.mapping.motion import MotionTrack, load_motion, video_motion
 from nav.mapping.odometry import (CAMERA_HEIGHT_M, ODOMETRY_VERSION, FloorSegment, floor_odometry, fuse)
 from nav.mapping.select import Frame, SelectParams
@@ -32,6 +32,7 @@ from nav.schemas.recording import Event, Manifest
 
 log = logging.getLogger(__name__)
 FRAMES_VERSION = 1
+VOICE_VERSION = 2  # 2: one language per recording
 
 
 def _key(*parts) -> str:
@@ -46,6 +47,7 @@ class Prepared:
     marks: list[dict]  # [{t_ms, tag}]
     voice: list[dict]  # [{t_ms, t_end_ms, clip, text}]
     calibration: Calibration
+    voice_language: str | None = None  # what the voice notes were transcribed as
 
 
 @dataclass
@@ -165,8 +167,50 @@ def load_walk(rec_dir: Path, cache_root: Path, p: SelectParams) -> Walk:
     return Walk(m, events, track, fdir, rows, cal)
 
 
+def voice_language(votes: list[tuple[dict[str, float], float]]) -> tuple[str | None, float]:
+    """The walk's language from its clips' (language probabilities, seconds): the most likely language over all the
+    speech, and its share. A walker keeps to one language, and a short clip alone is often misdetected (1.7 s of
+    accented English came out as Spanish)."""
+    total: dict[str, float] = {}
+    for probs, seconds in votes:
+        for code, p in probs.items():
+            total[code] = total.get(code, 0.0) + p * max(seconds, 0.1)
+    if not total:
+        return None, 0.0
+    code = max(total, key=total.get)
+    return code, total[code] / sum(total.values())
+
+
+def _transcribe_walk(rec_dir: Path, m: Manifest, model: str, language: str | None) -> tuple[str | None, dict, bool]:
+    """(language, {clip: text}, complete); not complete when the language couldn't be detected from any clip, so
+    the clips were left to detect it one by one and the result shouldn't be cached."""
+    complete = True
+    if not language:
+        votes = []
+        for v in m.voice:
+            try:
+                votes.append((detect_language_file(rec_dir / v.file, model), (v.t_end_ms - v.t_start_ms) / 1000))
+            except InferenceUnavailable:
+                raise
+            except Exception as e:  # a broken clip doesn't vote (an older inference host has no /language either)
+                log.warning("%s: language of voice clip %d: %s", m.rec_id, v.clip, e)
+        language, share = voice_language(votes)
+        complete = bool(votes)
+        log.info("%s: voice notes in %s (%.0f%% of the speech)", m.rec_id, language or "?", 100 * share)
+    out = {}
+    for v in m.voice:
+        try:
+            out[str(v.clip)] = transcribe_file(rec_dir / v.file, model, language)
+        except InferenceUnavailable:  # not the clip's fault: don't cache a transcript without it
+            raise
+        except Exception as e:  # a broken clip shouldn't sink the map
+            log.warning("%s: voice clip %d: %s", m.rec_id, v.clip, e)
+    return language, out, complete
+
+
 def prepare(rec_dir: Path, cache_root: Path, p: SelectParams, embed_model: str, place_model: str,
-            transcribe_model: str | None) -> Prepared:
+            transcribe_model: str | None, transcribe_language: str | None = None) -> Prepared:
+    """`transcribe_language` forces the voice notes' language (NAV_TRANSCRIBE_LANGUAGE); unset, it is detected per walk."""
     w = load_walk(rec_dir, cache_root, p)
     m, events, track, fdir, rows = w.manifest, w.events, w.track, w.frames_dir, w.rows
     cache = cache_root / m.rec_id
@@ -188,21 +232,19 @@ def prepare(rec_dir: Path, cache_root: Path, p: SelectParams, embed_model: str, 
 
     # voice
     texts: dict[str, str] = {}
+    language = None
     if transcribe_model and m.voice:
-        vkey = _key(transcribe_model, [(v.clip, v.bytes) for v in m.voice])
+        vkey = _key(transcribe_model, [(v.clip, v.bytes) for v in m.voice], transcribe_language or "auto",
+                    VOICE_VERSION)
         vpath = cache / f"voice-{vkey}.json"
-        if not vpath.is_file():
+        if vpath.is_file():
+            got = json.loads(vpath.read_text())
+            language, texts = got["language"], got["texts"]
+        else:
             log.info("%s: transcribing %d voice notes with %s", m.rec_id, len(m.voice), transcribe_model)
-            out = {}
-            for v in m.voice:
-                try:
-                    out[str(v.clip)] = transcribe_file(rec_dir / v.file, transcribe_model)
-                except InferenceUnavailable:  # not the clip's fault: don't cache a transcript without it
-                    raise
-                except Exception as e:  # a broken clip shouldn't sink the map
-                    log.warning("%s: voice clip %d: %s", m.rec_id, v.clip, e)
-            vpath.write_text(json.dumps(out, ensure_ascii=False, indent=1))
-        texts = json.loads(vpath.read_text())
+            language, texts, complete = _transcribe_walk(rec_dir, m, transcribe_model, transcribe_language)
+            if complete:
+                vpath.write_text(json.dumps({"language": language, "texts": texts}, ensure_ascii=False, indent=1))
 
     frames = [Frame(rec_id=m.rec_id, t_ms=r["t_ms"], sharpness=r["sharpness"], brightness=r["brightness"],
                     image_path=str(fdir / r["file"]), emb=emb[i], place=place[i], motion=track.at(r["t_ms"]))
@@ -210,7 +252,7 @@ def prepare(rec_dir: Path, cache_root: Path, p: SelectParams, embed_model: str, 
     marks = [{"t_ms": e.t_ms, "tag": e.data.get("tag", "?")} for e in events if e.type == "mark"]
     voice = [{"t_ms": v.t_start_ms, "t_end_ms": v.t_end_ms, "clip": v.clip, "text": texts.get(str(v.clip), "")}
              for v in m.voice]
-    return Prepared(m, track, frames, marks, voice, w.calibration)
+    return Prepared(m, track, frames, marks, voice, w.calibration, language)
 
 
 def load_motion_only(rec_id: str, recordings_root: Path | None = None, cache_root: Path | None = None) -> MotionTrack:

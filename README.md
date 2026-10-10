@@ -166,7 +166,8 @@ uv run nav map pull [<map_id> …]
      ~0 m. Where the floor can't be tracked, the steps fill in at a step length re-estimated from the video.
      Itnig: 32 m walked (steps × 0.7 m said 107 m: hand sway while talking counted as steps, and a slow walk while
      filming takes ~0.3 m steps), Main entrance → Drinks area 5.9 m against 7 m measured;
-   - voice notes transcribed locally with **Whisper** (`openai/whisper-large-v3-turbo`);
+   - voice notes transcribed locally with **Whisper** (`openai/whisper-large-v3-turbo`), all of a walk's notes in
+     one language: the one Whisper hears over all of them (a 1.7 s note alone was taken for Spanish);
    - **calibration** ([`calibrate.py`](nav/mapping/calibrate.py)): the video's own yaw (ORB shift between frames
      0.1 s apart) cross-correlated with the sensor heading gives the sensor-to-video offset (Itnig: +0.6 s, the
      encoder starting late) and the camera's horizontal field of view (38°); applied when the correlation is clear.
@@ -254,7 +255,7 @@ through it. Design: [`docs/main_idea.md`](docs/main_idea.md), [`docs/navigation_
 (by LPA); the map's JSON Schema for nav-api's callers is [`docs/map.schema.json`](docs/map.schema.json) (also
 `GET /api/v1/schema/map`).
 
-Defaults can be changed with `NAV_EMBED_MODEL`, `NAV_PLACE_MODEL`, `NAV_TRANSCRIBE_MODEL`, `NAV_MAP_LLM_MODEL` (default `opus`), `NAV_MAP_LLM_EFFORT` (default `medium`),
+Defaults can be changed with `NAV_EMBED_MODEL`, `NAV_PLACE_MODEL`, `NAV_TRANSCRIBE_MODEL`, `NAV_TRANSCRIBE_LANGUAGE` (unset: detected once per walk from all its voice notes), `NAV_MAP_LLM_MODEL` (default `opus`), `NAV_MAP_LLM_EFFORT` (default `medium`),
 `NAV_MAP_LANGUAGE` (default `en`), `NAV_QUALITY_MODEL` (default `jev-latest`), `NAV_MAP_LLM_BUDGET_USD` (default 5) and `NAV_GCS_MAPS_URL`. A build of a
 2-minute walk takes about 15 s of preprocessing on the GPU plus 4 minutes and about $1 of Claude Code.
 

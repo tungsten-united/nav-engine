@@ -41,6 +41,8 @@ EMBED_MODEL = os.environ.get("NAV_EMBED_MODEL", "facebook/dinov2-base")
 # Same-place retrieval across walks: torch.hub "owner/repo:commit" (MegaLoc, MIT).
 PLACE_MODEL = os.environ.get("NAV_PLACE_MODEL", "gmberton/MegaLoc:5fe0dd697c4a70ba3e23607f6716ab3c606b16db")
 TRANSCRIBE_MODEL = os.environ.get("NAV_TRANSCRIBE_MODEL", "openai/whisper-large-v3-turbo")
+# Language of the voice notes (a Whisper code, e.g. "en"); unset: detected once per recording from all its clips.
+TRANSCRIBE_LANGUAGE = os.environ.get("NAV_TRANSCRIBE_LANGUAGE") or None
 MAP_LLM_MODEL = os.environ.get("NAV_MAP_LLM_MODEL", "opus")  # Claude Code --model (alias or full id)
 MAP_LLM_EFFORT = os.environ.get("NAV_MAP_LLM_EFFORT", "medium")  # low, medium, high, xhigh, max
 # Cheap quality check of every built map (nav/mapping/quality.py); skipped without TYPESAFE_API_KEY.

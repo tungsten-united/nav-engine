@@ -40,8 +40,13 @@ class Stub:
         self.calls.append(("match", len(images), len(pairs)))
         return [len(images[i]) + len(images[j]) for i, j in pairs]
 
-    def transcribe(self, path, model):
-        return f"heard {path.suffix}"
+    def detect_language(self, path, model):
+        return {"en": 0.8, "es": 0.2}
+
+    def transcribe(self, path, model, language=None):
+        if language == "xx":
+            raise ValueError("unknown language xx")
+        return f"heard {path.suffix}" + (f" in {language}" if language else "")
 
     def map_draft(self, work_dir, place, language, model, effort, budget_usd):
         self.release.wait(5)
@@ -94,6 +99,10 @@ def test_models_round_trip_in_chunks(host, tmp_path):
     clip = tmp_path / "000.webm"
     clip.write_bytes(b"opus")
     assert client.transcribe(clip, "whisper") == "heard .webm"
+    assert client.transcribe(clip, "whisper", "es") == "heard .webm in es"
+    assert client.language(clip, "whisper") == {"en": 0.8, "es": 0.2}
+    with pytest.raises(InferenceError, match="422"):
+        client.transcribe(clip, "whisper", "xx")
 
 
 def test_wrong_model_and_bad_requests_are_refused(host, tmp_path):

@@ -633,12 +633,15 @@ def _edge_turns(edges: list[PlaceEdge], passes: dict[str, list[Pass]], tracks: d
 def build_map(place: str, *, recordings_root: Path, maps_root: Path, cache_root: Path, params: SelectParams,
               embed_model: str, place_model: str, transcribe_model: str | None, llm_model: str, language: str,
               budget_usd: float,
-              run_llm: bool = True, effort: str = "medium", build_id: str | None = None) -> BuildResult:
-    """`build_id` (UTC "%Y%m%dT%H%M%SZ") lets a caller name the build folder before it exists, e.g. to report status."""
+              run_llm: bool = True, effort: str = "medium", build_id: str | None = None,
+              transcribe_language: str | None = None) -> BuildResult:
+    """`build_id` (UTC "%Y%m%dT%H%M%SZ") lets a caller name the build folder before it exists, e.g. to report status.
+    `transcribe_language` forces the voice notes' language; unset, each walk's is detected from its clips."""
     rec_dirs = recordings_for(recordings_root, place)
     if not rec_dirs:
         raise ValueError(f"no finished recordings with video for place {place!r}")
-    preps = [prepare(d, cache_root, params, embed_model, place_model, transcribe_model) for d in rec_dirs]
+    preps = [prepare(d, cache_root, params, embed_model, place_model, transcribe_model, transcribe_language)
+             for d in rec_dirs]
     place = preps[-1].manifest.place  # spelled as in the latest recording
 
     given = build_id is not None
@@ -646,7 +649,9 @@ def build_map(place: str, *, recordings_root: Path, maps_root: Path, cache_root:
     build_dir = maps_root / slugify(place) / "builds" / build_id
     build_dir.mkdir(parents=True, exist_ok=given)
     cset = select_candidates(place, preps, params, embed_model, place_model, build_dir)
-    (build_dir / "build.json").write_text(json.dumps({"transcribe_model": transcribe_model}))
+    languages = {p.manifest.rec_id: p.voice_language for p in preps if p.voice_language}
+    (build_dir / "build.json").write_text(json.dumps({"transcribe_model": transcribe_model,
+                                                      "transcribe_languages": languages}))
     published = build_dir.parent.parent / "map.json"
     if published.is_file():  # what the LLM keeps stable, and what ids are matched against
         # the build's own map, not the reviewed one: hidden items keep their ids, so the review keeps hiding them
@@ -751,6 +756,7 @@ def publish(build_dir: Path, cset: CandidateSet, draft: MapDraft, run, recording
                      params=cset.params, embed_model=cset.embed_model, embed_dim=cset.embed_dim,
                      place_model=cset.place_model,
                      transcribe_model=extra.get("transcribe_model"),
+                     transcribe_languages=extra.get("transcribe_languages") or {},
                      llm=run, candidates=len(cset.candidates))
     retired = []
     if (build_dir / "previous.json").is_file():

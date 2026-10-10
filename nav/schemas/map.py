@@ -417,6 +417,7 @@ class BuildInfo(BaseModel):
     embed_dim: int | None = None
     place_model: str | None = None  # None: built before MegaLoc (DINOv2 decided merges)
     transcribe_model: str | None
+    transcribe_languages: dict[str, str] = {}  # rec_id -> language its voice notes were transcribed in
     llm: LlmRun
     candidates: int
 

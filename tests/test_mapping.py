@@ -519,3 +519,48 @@ def test_turn_is_measured_from_how_you_stand_after_arriving():
                e.model_copy(update={"id": "e2", "source": "n2", "target": "n3"})]
     m = finish_map(d, cset, BUILD, "b", {"r1": pts})
     assert 25 <= m.edges[1].turn_deg <= 40  # bear right, not the -70 the node-centre geometry gave
+
+
+def test_a_walk_is_transcribed_in_the_language_of_most_of_its_speech():
+    from nav.mapping.prepare import voice_language
+
+    # a long English note outweighs a short one that sounds Spanish on its own
+    votes = [({"en": 0.9, "es": 0.1}, 10.9), ({"en": 0.3, "es": 0.7}, 1.7), ({"en": 0.8, "es": 0.2}, 2.8)]
+    code, share = voice_language(votes)
+    assert code == "en" and 0.7 < share < 0.85
+    assert voice_language([({"es": 0.9, "en": 0.1}, 5.0)])[0] == "es"
+    assert voice_language([]) == (None, 0.0)
+
+
+def test_voice_notes_are_decoded_in_the_walks_language(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    import nav.mapping.prepare as prep
+    from nav.infer.errors import InferenceError
+
+    clips = [SimpleNamespace(clip=i, file=f"voice/{i:03d}.webm", t_start_ms=0, t_end_ms=ms)
+             for i, ms in enumerate([10900, 1700])]
+    m = SimpleNamespace(rec_id="r", voice=clips)
+    heard = {"voice/000.webm": {"en": 0.9, "es": 0.1}, "voice/001.webm": {"en": 0.3, "es": 0.7}}
+    detected = []
+
+    def detect(path, model):
+        detected.append(path.name)
+        return heard[f"voice/{path.name}"]
+
+    monkeypatch.setattr(prep, "detect_language_file", detect)
+    monkeypatch.setattr(prep, "transcribe_file", lambda path, model, language: f"{path.name}:{language}")
+    rec = tmp_path / "rec"
+    assert prep._transcribe_walk(rec, m, "w", None) == ("en", {"0": "000.webm:en", "1": "001.webm:en"}, True)
+    assert detected == ["000.webm", "001.webm"]
+
+    detected.clear()  # a language set in the environment skips detection
+    assert prep._transcribe_walk(rec, m, "w", "es")[:2] == ("es", {"0": "000.webm:es", "1": "001.webm:es"})
+    assert detected == []
+
+    def old_host(path, model):  # an inference host from before /language
+        raise InferenceError("POST /infer/v1/language: 404 Not Found")
+
+    monkeypatch.setattr(prep, "detect_language_file", old_host)
+    language, texts, complete = prep._transcribe_walk(rec, m, "w", None)
+    assert language is None and texts["1"] == "001.webm:None" and not complete  # each clip detects; not cached

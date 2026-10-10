@@ -499,7 +499,8 @@ function renderPanel() {
       h("dt", {}, "Frame"), h("dd", {}, m.frame ? `${m.frame.heading_source}${m.frame.heading_zero_abs_deg != null ? " (0° = north)" : ""}` : "unknown"),
       h("dt", {}, "Review"), h("dd", {}, m.reviewed_at_utc ? `${fmtDate(m.reviewed_at_utc)} · ${m.nodes.filter((n) => n.status === "verified").length}/${m.nodes.length} nodes, ` +
         `${m.edges.filter((e) => e.status === "verified").length}/${m.edges.length} edges verified` : "not reviewed"),
-      h("dt", {}, "Voice"), h("dd", {}, b.transcribe_model || "not transcribed"),
+      h("dt", {}, "Voice"), h("dd", {}, b.transcribe_model ? b.transcribe_model + (Object.keys(b.transcribe_languages || {}).length
+        ? ` · ${[...new Set(Object.values(b.transcribe_languages))].join(", ")}` : "") : "not transcribed"),
       h("dt", {}, "Files"), h("dd", {}, ["candidates.json", "job/prompt.md", "job/claude.json"].map((f) => [h("a", { href: frameUrl(`builds/${b.build_id}/${f}`) }, f), " "])))
   ].flat(Infinity).filter(Boolean));
 }
