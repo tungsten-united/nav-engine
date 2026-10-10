@@ -164,6 +164,65 @@ def test_bad_requests(nav):
     assert places.calls == []
 
 
+def lines(capsys) -> list[dict]:
+    """nav-api's decision log (nav/nav_api/log.py) since the last call: the JSON lines on stdout."""
+    return [json.loads(x) for x in capsys.readouterr().out.splitlines() if x.startswith("{")]
+
+
+def test_each_localization_is_one_structured_log_line(nav, capsys, monkeypatch):
+    c, places, map_id = nav
+    monkeypatch.setattr("nav.config.COMMIT", "abc123")
+    places.answer = unit(0.1, 0, 1, 0.3)
+    r = c.post(f"{API}/maps/{map_id}/localize", files=[("images", ("f.jpg", JPEG, "image/jpeg"))],
+               data={"expected": "n3"}, headers={"X-Client-Id": "c2cd8407-aaaa", "X-Session-Id": "s1"})
+    assert r.status_code == 200
+    [e] = lines(capsys)
+    assert e["kind"] == "nav_localize" and e["service"] == "nav-api" and e["severity"] == "INFO"
+    assert e["mapId"] == map_id and e["status"] == "confirmed" and e["best"] == "n2" and e["bestName"] == "N2"
+    assert e["clientId"] == "c2cd8407-aaaa" and e["sessionId"] == "s1" and "requestId" not in e
+    assert e["commit"] == "abc123" and e["version"] and e["expectedRank"] == 3 and set(e["tookMs"]) >= {"total"}
+    assert e["message"].startswith(f"[nav-api] localize {map_id} · confirmed N2 ")
+    assert " · expected n3 #3 · " in e["message"] and e["message"].endswith(" ms")
+
+    places.answer = unit(0, 0, 0, 0, 0.5, 0, 0, 1)
+    [e] = (localize(c, map_id), lines(capsys))[1]
+    assert e["status"] == "lost" and e["severity"] == "WARNING" and "lost N3" in e["message"]
+    assert "clientId" not in e
+
+
+def test_failed_localizations_and_routes_are_logged_too(nav, capsys):
+    c, places, map_id = nav
+    places.answer = InferenceUnavailable("inference host unreachable or busy")
+    assert localize(c, map_id).status_code == 503
+    [e] = lines(capsys)
+    assert e["kind"] == "nav_localize" and e["severity"] == "ERROR" and e["httpStatus"] == 503
+    assert e["message"].startswith(f"[nav-api] localize {map_id} · error 503: inference host unavailable")
+    assert localize(c, "nope").status_code == 404
+    [e] = lines(capsys)
+    assert e["severity"] == "WARNING" and e["httpStatus"] == 404 and e["mapId"] == "nope"
+    assert localize(c, map_id, n=5).status_code == 422
+    assert lines(capsys)[0]["frames"] == 5
+
+    assert c.post(f"{API}/maps/{map_id}/route", json={"start": "n1", "goal": "n9"}).status_code == 404
+    [e] = lines(capsys)
+    assert e["kind"] == "nav_route" and e["severity"] == "WARNING" and e["goal"] == "n9" and "no node" in e["error"]
+
+
+def test_each_route_is_one_structured_log_line(nav, capsys):
+    c, _, map_id = nav
+    c.post(f"{API}/maps/{map_id}/route", json={"start": "n1", "goal": "n3"})
+    [e] = lines(capsys)
+    assert e["kind"] == "nav_route" and e["found"] is False and e["hops"] == 0 and e["severity"] == "WARNING"
+    assert e["message"] == f"[nav-api] route {map_id} · N1 → N3 (verified) · no route" and "lengthM" not in e
+    c.post(f"{API}/maps/{map_id}/route", json={"start": "n1", "goal": "n3", "trust": "observed"})
+    [e] = lines(capsys)
+    assert e["found"] and e["hops"] == 2 and e["severity"] == "INFO" and e["lengthM"] > 0
+    assert e["message"].endswith(f"(observed) · 2 hops, {e['lengthM']:.1f} m")
+    c.get(f"{API}/maps/{map_id}")
+    c.get(f"{API}/health")
+    assert lines(capsys) == []  # reads aren't decisions
+
+
 def test_a_map_without_references_is_lost_without_calling_the_host(tmp_path):
     places = Places()
     map_id = publish(tmp_path / "maps", refs=False)
