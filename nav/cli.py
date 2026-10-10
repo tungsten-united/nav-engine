@@ -178,6 +178,7 @@ def map_build(place: str = typer.Argument(..., help="Place name as recorded (cas
                        cache_root=config.CACHE_DIR, params=SelectParams(max_candidates=max_candidates),
                        embed_model=config.EMBED_MODEL, place_model=config.PLACE_MODEL,
                        transcribe_model=config.TRANSCRIBE_MODEL if transcribe else None,
+                       transcribe_language=config.TRANSCRIBE_LANGUAGE,
                        llm_model=model, language=language, budget_usd=budget, run_llm=llm, effort=effort)
     _print_build(result)
 

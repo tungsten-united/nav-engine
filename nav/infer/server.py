@@ -14,7 +14,8 @@ It shares one GPU with whatever else runs on this computer, so it protects itsel
     POST /infer/v1/embed       images[] (JPEG), model          -> {model, n, dim, data: base64 float32}
     POST /infer/v1/place       images[] (JPEG), model, priority? -> same, MegaLoc (priority=live: ahead of batches)
     POST /infer/v1/match       images[] (JPEG), pairs: [[i,j]] -> {inliers: [...]}
-    POST /infer/v1/transcribe  audio, model                    -> {text}
+    POST /infer/v1/language    audio, model                    -> {probs: {code: p}}, Whisper's language guess
+    POST /infer/v1/transcribe  audio, model, language?         -> {text}
     POST /infer/v1/jobs/map-draft   job_id, place, language, model, effort, budget_usd, candidates, previous?, frames[]
     GET  /infer/v1/jobs/{job_id}                -> {status: queued|running|done|failed, error, files, ...}
     GET  /infer/v1/jobs/{job_id}/files/{name}   -> claude.json, claude.log, prompt.md, schema.json, command.txt
@@ -62,7 +63,8 @@ class Backend(Protocol):
     def embed(self, images: list[bytes], model: str) -> np.ndarray: ...
     def place(self, images: list[bytes], model: str) -> np.ndarray: ...
     def match(self, images: list[bytes], pairs: list[tuple[int, int]]) -> list[int]: ...
-    def transcribe(self, path: Path, model: str) -> str: ...
+    def detect_language(self, path: Path, model: str) -> dict[str, float]: ...
+    def transcribe(self, path: Path, model: str, language: str | None = None) -> str: ...
     def map_draft(self, work_dir: Path, place: str, language: str, model: str, effort: str, budget_usd: float) -> None: ...
 
 
@@ -87,10 +89,15 @@ class LocalBackend:
 
         return local_pair_inliers(images, pairs)
 
-    def transcribe(self, path, model):
+    def detect_language(self, path, model):
+        from nav.mapping.models import detect_language
+
+        return detect_language(path, model)
+
+    def transcribe(self, path, model, language=None):
         from nav.mapping.models import transcribe
 
-        return transcribe(path, model)
+        return transcribe(path, model, language)
 
     def map_draft(self, work_dir, place, language, model, effort, budget_usd):
         from nav.mapping.llm import run_claude_code
@@ -324,20 +331,28 @@ def create_infer_app(backend: Backend | None = None, jobs_dir: Path | None = Non
             raise HTTPException(422, f"send 1..{MAX_PAIRS} pairs of indexes into images")
         return {"inliers": [int(k) for k in await gpu.run(backend.match, data, pp)]}
 
-    @app.post(f"{api}/transcribe")
-    async def transcribe(model: str = Form(...), audio: UploadFile = File(...)) -> dict:
-        check_model("transcribe", model)
+    async def on_audio(audio: UploadFile, fn: Callable, *args):
         suffix = Path(audio.filename or "clip.webm").suffix[:8] or ".webm"
         with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
             tmp.write(await audio.read())
             tmp.flush()
             try:
-                text = await gpu.run(backend.transcribe, Path(tmp.name), model)
+                return await gpu.run(fn, Path(tmp.name), *args)
             except Busy:
                 raise
-            except Exception as e:  # undecodable clip: the caller's input, not a host failure
+            except Exception as e:  # undecodable clip or unknown language: the caller's input, not a host failure
                 raise HTTPException(422, f"could not transcribe: {type(e).__name__}: {e}")
-        return {"text": text}
+
+    @app.post(f"{api}/language")
+    async def language(model: str = Form(...), audio: UploadFile = File(...)) -> dict:
+        check_model("transcribe", model)
+        return {"probs": await on_audio(audio, backend.detect_language, model)}
+
+    @app.post(f"{api}/transcribe")
+    async def transcribe(model: str = Form(...), audio: UploadFile = File(...),
+                         language: str | None = Form(None)) -> dict:
+        check_model("transcribe", model)
+        return {"text": await on_audio(audio, backend.transcribe, model, language or None)}
 
     @app.post(f"{api}/jobs/map-draft", status_code=202)
     async def map_draft(job_id: str = Form(...), place: str = Form(...), language: str = Form(...),

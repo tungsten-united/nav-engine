@@ -79,9 +79,18 @@ def pair_inliers(paths: Sequence[Path | str], pairs: Sequence[tuple[int, int]]) 
     return local_pair_inliers(paths, pairs)
 
 
-def transcribe_file(path: Path, model: str) -> str:
+def detect_language_file(path: Path, model: str) -> dict[str, float]:
+    """Whisper's language probabilities for a voice clip, {code: p}."""
     if client := remote():
-        return client.transcribe(path, model)
+        return client.language(path, model)
+    from nav.mapping.models import detect_language
+
+    return detect_language(path, model)
+
+
+def transcribe_file(path: Path, model: str, language: str | None = None) -> str:
+    if client := remote():
+        return client.transcribe(path, model, language)
     from nav.mapping.models import transcribe
 
-    return transcribe(path, model)
+    return transcribe(path, model, language)

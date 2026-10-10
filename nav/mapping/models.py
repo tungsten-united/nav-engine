@@ -8,7 +8,8 @@
 - Local features: ALIKED keypoints + LightGlue matching; `count_inliers` is the number of matches consistent
   with one fundamental matrix, i.e. whether two frames really see the same structure.
 - Voice transcription: Whisper (NAV_TRANSCRIBE_MODEL) through the transformers ASR pipeline; clips are decoded
-  to 16 kHz mono with ffmpeg. The language is detected per clip.
+  to 16 kHz mono with ffmpeg. `detect_language` gives a clip's language probabilities, so the caller can decide one
+  language for a whole walk (a short clip on its own is often misdetected) and pass it to `transcribe`.
 """
 
 import subprocess
@@ -141,12 +142,32 @@ def decode_audio(path: Path, rate: int = 16000) -> np.ndarray:
     return np.frombuffer(pcm, dtype=np.float32)
 
 
-def transcribe(path: Path, name: str) -> str:
+def detect_language(path: Path, name: str) -> dict[str, float]:
+    """Whisper's language probabilities for a clip ({"en": 0.93, ...}) from its first 30 s; {} for a silent stub."""
+    import torch
+
+    audio = decode_audio(path)[:30 * 16000]
+    if len(audio) < 1600:  # < 0.1 s
+        return {}
+    pipe = _asr(name)
+    model, gen = pipe.model, pipe.model.generation_config
+    feats = pipe.feature_extractor(audio, sampling_rate=16000, return_tensors="pt").input_features
+    start = torch.tensor([[gen.decoder_start_token_id]], device=model.device)
+    with torch.inference_mode():
+        logits = model(input_features=feats.to(model.device, model.dtype), decoder_input_ids=start).logits[0, -1]
+    codes = list(gen.lang_to_id)
+    p = torch.softmax(logits[list(gen.lang_to_id.values())].float(), -1).cpu().numpy()
+    return {c.strip("<|>"): float(x) for c, x in zip(codes, p)}
+
+
+def transcribe(path: Path, name: str, language: str | None = None) -> str:
+    """The clip's text; in `language` (a Whisper code such as "en") when given, else Whisper detects it."""
     audio = decode_audio(path)
     if len(audio) < 1600:  # < 0.1 s
         return ""
+    kw = {"task": "transcribe"} | ({"language": language} if language else {})
     result = _asr(name)({"raw": audio, "sampling_rate": 16000}, return_timestamps=len(audio) > 30 * 16000,
-                        generate_kwargs={"task": "transcribe"})
+                        generate_kwargs=kw)
     return " ".join(result["text"].split())
 
 

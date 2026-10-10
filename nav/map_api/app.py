@@ -250,6 +250,7 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
                             params=SelectParams(max_candidates=req.max_candidates), embed_model=config.EMBED_MODEL,
                             place_model=config.PLACE_MODEL,
                             transcribe_model=config.TRANSCRIBE_MODEL if req.transcribe else None,
+                            transcribe_language=config.TRANSCRIBE_LANGUAGE,
                             llm_model=config.MAP_LLM_MODEL, language=req.language or config.MAP_LANGUAGE,
                             budget_usd=config.MAP_LLM_BUDGET_USD, run_llm=req.llm, effort=config.MAP_LLM_EFFORT,
                             build_id=build_id)
