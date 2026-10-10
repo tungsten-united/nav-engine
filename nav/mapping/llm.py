@@ -14,7 +14,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from nav.schemas.map import LlmRun, MapDraft, draft_json_schema
+from nav.schemas.map import MAX_INSTRUCTION_CHARS, LlmRun, MapDraft, draft_json_schema
 
 log = logging.getLogger(__name__)
 
@@ -104,7 +104,8 @@ people. The app will use it to tell people where they are and to give spoken, st
   in `visual_cues` instead.
 - Instructions are egocentric (ahead, left, right, behind; "turn so the wall is on your left"), short and concrete:
   direction, roughly how far, what you pass and can touch or hear, and how you know you have arrived. Mention hazards:
-  steps, cables on the floor, low tables, glass doors.
+  steps, cables on the floor, low tables, glass doors. At most {max_chars} characters each: the app cuts a longer
+  one after the last whole sentence that fits, and the user stops there.
 - People, bags, laptops and other things that move are not landmarks. Fixed furniture, counters, walls, pillars,
   doors and floor changes are. Screens and signs are fixed but visual: they go in `visual_cues`.
 - Names are what the app will say: 1-4 words, unique, using the walker's words where possible. Put the details in
@@ -134,7 +135,8 @@ frames now (ignore `evidence`, it is for code).
 
 
 def build_prompt(place: str, language: str, previous: bool = False) -> str:
-    prompt = PROMPT.format(place=place, language=language, language_name=LANGUAGES.get(language, language))
+    prompt = PROMPT.format(place=place, language=language, language_name=LANGUAGES.get(language, language),
+                           max_chars=MAX_INSTRUCTION_CHARS)
     return prompt.replace("## Output", PREVIOUS.lstrip() + "\n## Output") if previous else prompt
 
 

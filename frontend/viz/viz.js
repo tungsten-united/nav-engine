@@ -329,8 +329,6 @@ function pinCard() {
     qualityBlock(e.quality, true),
     ...items("Check", e.review_flags, "visual"),
     e.walked === false && h("p", { class: "hint" }, "Not walked directly: the walk passed other spots in between, so this connection is inferred."),
-    e.via?.length && h("p", { class: "hint" }, `Goes past ${e.via.map((i) => S.raw?.nodes.find((n) => n.id === i)?.name || i).join(", ")}: ` +
-      "spots too few walks saw, folded into this edge by the cleaner."),
     h("dl", { class: "kv" }, h("dt", {}, "Distance"), h("dd", {}, e.measured_distance_m != null ? `${fmtM(e.measured_distance_m)} (measured)` :
         e.distance_m != null ? `${fmtM(e.distance_m)} (from the steps, not measured)` : "unknown"),
       h("dt", {}, "Basis"), h("dd", {}, e.walked === false ? "inferred (not walked directly)" :
@@ -415,8 +413,7 @@ function prunedList() {
   const edgeName = (id) => { const e = S.raw?.edges.find((x) => x.id === id); return e && `${name(e.source) || e.source} → ${name(e.target) || e.target}`; };
   return [h("h3", {}, `Left out by the cleaner · ${pruned.length}`),
     h("p", { class: "hint" }, `Only what the walks back up is published: edges walked by ≥ ${m.clean.params.min_edge_walks} walks ` +
-      `(weaker ones only where the map would fall apart), spots seen by ≥ ${m.clean.params.min_node_walks}. ` +
-      `Keep publishes an item anyway.`),
+      `(weaker ones only where the map would fall apart), and the spots they reach. Keep publishes an item anyway.`),
     pruned.length ? h("ul", { class: "list pruned" }, pruned.map(([id, why]) => {
       const kind = id.startsWith("e") ? "edges" : "nodes";
       return h("li", {}, h("b", {}, (kind === "nodes" ? name(id) : edgeName(id)) || id), h("span", { class: "id" }, ` · ${id}`),

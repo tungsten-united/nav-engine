@@ -66,13 +66,13 @@ class RefIndex:
         return cls(pmap, vectors, refs)
 
     def distances_from(self, node: str, unknown_m: float = 10.0) -> dict[str, float]:
-        """Shortest walk (metres) from `node` to every node over the map's edges, either direction; through a merged
-        area only in and out of the same part (as route.py)."""
+        """Shortest walk (metres) from `node` to every node over the map's links (its connections before cleaning),
+        either direction; through a merged area only in and out of the same part (as route.py)."""
         from nav.navigation.route import edge_parts
 
         areas = set(self.pmap.merged.values())
         graph: dict[str, list[tuple[str, float, str, str]]] = {}  # node -> (next node, metres, part left, reached)
-        for e in self.pmap.edges:
+        for e in self.pmap.links or self.pmap.edges:
             length = e.distance_m if e.distance_m is not None else unknown_m
             sp, tp = edge_parts(e)
             graph.setdefault(e.source, []).append((e.target, length, sp, tp))
@@ -103,7 +103,7 @@ class RefIndex:
 
     def neighbours(self, node: str) -> set[str]:
         out = {node}
-        for e in self.pmap.edges:
+        for e in self.pmap.links or self.pmap.edges:
             if e.source == node:
                 out.add(e.target)
             elif e.target == node and e.bidirectional:
