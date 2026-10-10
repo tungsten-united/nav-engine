@@ -1,6 +1,9 @@
 """Motion from the phone's IMU: steps, walked distance, heading, camera pitch and a dead-reckoned path.
 
-- Gravity is the low-passed accelerationIncludingGravity (it points up, in the device frame).
+- Gravity is the low-passed accelerationIncludingGravity (it points up, in the device frame). iOS Safari reports it
+  pointing down (Nati House, 2026-10-10, iPhone: y -9.4 held upright, against +9.1 to +9.4 on four Android walks), so
+  it is turned to agree with the phone's own tilt (deviceorientation beta and gamma) when they disagree. Pointing
+  down, it put the floor above the camera (no floor odometry at all), and turned every heading change backwards.
 - Steps are peaks of the band-passed |acceleration| while the phone is moving; distance = steps x step length. When the
   video shows the floor, odometry.py replaces that distance with a measured one (prepare.load_walk).
 - Heading: the gyro's rotation about gravity is integrated (smooth, no magnetic disturbance, but drifts) and its
@@ -99,6 +102,25 @@ def _bouts(peaks: np.ndarray) -> list[np.ndarray]:
     return [r for r in runs if len(r) >= BOUT_MIN]
 
 
+def tilt_up(beta_deg: np.ndarray, gamma_deg: np.ndarray) -> np.ndarray:
+    """[N, 3] up in device axes (x right, y up the screen, z out of it) from deviceorientation beta and gamma: the
+    W3C rotation Z(alpha) X(beta) Y(gamma) applied backwards to the world's up."""
+    b, g = np.radians(beta_deg), np.radians(gamma_deg)
+    return np.stack([-np.cos(b) * np.sin(g), np.sin(b), np.cos(b) * np.cos(g)], axis=-1)
+
+
+def gravity_points_down(acc: np.ndarray, t: np.ndarray, ori: dict) -> bool:
+    """Whether accelerationIncludingGravity points down (iOS) rather than up (the spec, Android): its mean against
+    the up the phone's tilt gives over the same time. Without the tilt angles, the spec is assumed."""
+    beta, gamma = _col(ori, "beta"), _col(ori, "gamma")
+    ok = ~(np.isnan(beta) | np.isnan(gamma))
+    if ok.sum() < 10:
+        return False
+    t_ori = _col(ori, "t_ms")[ok]
+    up = tilt_up(np.interp(t, t_ori, beta[ok]), np.interp(t, t_ori, gamma[ok]))
+    return float(np.nanmean((acc * up).sum(axis=1))) < 0
+
+
 def load_motion(rec_dir: Path, step_length_m: float, duration_ms: float | None = None,
                 user_agent: str = "") -> MotionTrack:
     imu = pq.read_table(rec_dir / "imu.parquet").to_pydict() if (rec_dir / "imu.parquet").is_file() else {}
@@ -113,6 +135,8 @@ def load_motion(rec_dir: Path, step_length_m: float, duration_ms: float | None =
         return MotionTrack(t, z, nan, z, z.copy(), nan, np.zeros(n, bool), np.array([]), False, "none", "none")
 
     acc = np.stack([_interp(t, t_imu, _col(imu, k)) for k in ("ax", "ay", "az")], axis=1)
+    if ori and gravity_points_down(acc, t, ori):
+        acc = -acc
     gyro = np.nan_to_num(np.stack([_interp(t, t_imu, _col(imu, k)) for k in ("gx", "gy", "gz")], axis=1))
     grav = _lowpass(acc, 0.3)
     up = grav / np.linalg.norm(grav, axis=1, keepdims=True).clip(1e-6)

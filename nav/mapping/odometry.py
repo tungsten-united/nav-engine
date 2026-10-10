@@ -31,7 +31,7 @@ from nav.mapping.motion import MotionTrack
 
 log = logging.getLogger(__name__)
 
-ODOMETRY_VERSION = 1
+ODOMETRY_VERSION = 2  # 2: gravity turned up for iOS (motion.py), so iPhone walks get floor odometry
 CAMERA_HEIGHT_M = 1.35  # phone held in front of the chest while filming (Itnig, calibrated: 1.36 m)
 ODO_FPS = 10.0  # frames per second tracked
 ODO_WIDTH = 540  # px, width of the greyscale frames tracked

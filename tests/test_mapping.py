@@ -74,8 +74,9 @@ def test_slugify():
 
 
 # --- motion ------------------------------------------------------------------------------------------------
-def write_walk(d, *, seconds=20.0, cadence=1.8, turn_at=10.0, turn_deg=90.0, chrome=True, amp=0.35):
-    """Phone upright (gravity on +y), walking with small vertical bounces, one right turn about vertical."""
+def write_walk(d, *, seconds=20.0, cadence=1.8, turn_at=10.0, turn_deg=90.0, chrome=True, amp=0.35, ios=False):
+    """Phone upright (gravity on +y), walking with small vertical bounces, one right turn about vertical. `ios`: the
+    accelerometer reports gravity pointing down, as iOS Safari does."""
     t = np.arange(0, seconds * 1000, 1000 / 60)
     ts = t / 1000
     walking = (ts > 1) & (ts < seconds - 1)
@@ -86,9 +87,13 @@ def write_walk(d, *, seconds=20.0, cadence=1.8, turn_at=10.0, turn_deg=90.0, chr
     imu = {"t_ms": t, "ax": noise, "ay": 9.81 + bounce, "az": noise,
            # recorder stores gx/gy/gz = beta/gamma/alpha; Chrome puts alpha/beta/gamma around x/y/z
            "gx": yaw if chrome else noise, "gy": noise if chrome else yaw, "gz": noise}
+    if ios:
+        imu |= {k: -imu[k] for k in ("ax", "ay", "az")}
     pq.write_table(pa.table({k: pa.array(v, pa.float64()) for k, v in imu.items()}), d / "imu.parquet")
     heading = 90 + np.clip((ts - turn_at) / 2, 0, 1) * turn_deg
-    pq.write_table(pa.table({"t_ms": t, "heading_deg": heading}), d / "orientation.parquet")
+    upright = np.full(len(t), 90.0)  # deviceorientation beta: the phone held upright, screen facing the user
+    pq.write_table(pa.table({"t_ms": t, "heading_deg": heading, "beta": upright, "gamma": upright * 0}),
+                   d / "orientation.parquet")
     return t
 
 
@@ -104,6 +109,20 @@ def test_motion_steps_heading_and_gyro_layout(tmp_path, chrome):
     # heading starts east, then south: dead reckoning goes +x, then -y
     p = tr.at(19000)
     assert p["x_m"] > 3 and p["y_m"] < -3
+
+
+def test_ios_gravity_pointing_down_gives_the_same_motion(tmp_path):
+    """iOS Safari reports accelerationIncludingGravity pointing down. The same walk recorded that way must give the same
+    pitch, steps, heading and path: pointing down, it put the floor above the camera and turned every turn backwards."""
+    for d in ("android", "iphone"):
+        (tmp_path / d).mkdir()
+    write_walk(tmp_path / "android", chrome=False)
+    write_walk(tmp_path / "iphone", chrome=False, ios=True)
+    a, i = (load_motion(tmp_path / d, step_length_m=0.7, duration_ms=20000) for d in ("android", "iphone"))
+    assert np.allclose(i.up, a.up) and np.allclose(i.pitch_deg, a.pitch_deg, equal_nan=True)
+    assert np.array_equal(i.step_t_ms, a.step_t_ms) and i.gyro_layout == a.gyro_layout
+    assert np.allclose(i.heading_deg, a.heading_deg) and np.allclose(i.x_m, a.x_m) and np.allclose(i.y_m, a.y_m)
+    assert abs(i.at(10000)["pitch_deg"]) < 5  # upright: the camera looks level, not at the ceiling
 
 
 def test_motion_without_imu(tmp_path):
@@ -584,3 +603,28 @@ def test_real_walks_are_transcribed_in_english_though_short_notes_alone_are_not(
             if max(c["languages"], key=c["languages"].get) != "en":
                 alone[f"{rec_id[-4:]} clip {c['clip']}"] = max(c["languages"], key=c["languages"].get)
     assert alone == {"7f42 clip 5": "es", "601a clip 7": "is", "601a clip 11": "es"}
+
+
+@pytest.mark.parametrize("walk, ios", [("iphone-nati-house-20261010T195025Z_bf0e", True),
+                                       ("android-itnig-20261010T130629Z_ddb1", False)])
+def test_real_phones_gravity_is_turned_to_agree_with_their_tilt(walk, ios):
+    """The first minute of two real walks (tests/fixtures/sensors): Nati House on an iPhone, whose accelerometer
+    reports gravity pointing down (y -9.4 held upright), and Itnig on Android (+9.4). The camera pitch from gravity
+    must match the one from the phone's own tilt (deviceorientation beta and gamma) on both: on the iPhone it read
+    +16° (the camera at the ceiling), its floor odometry measured nothing, and the walk came out at 158 m instead of
+    69 m."""
+    from pathlib import Path
+
+    from nav.mapping.motion import _col, gravity_points_down
+
+    d = Path(__file__).parent / "fixtures" / "sensors" / walk
+    imu = pq.read_table(d / "imu.parquet").to_pydict()
+    ori = pq.read_table(d / "orientation.parquet").to_pydict()
+    acc = np.stack([_col(imu, k) for k in ("ax", "ay", "az")], axis=1)
+    assert gravity_points_down(acc, _col(imu, "t_ms"), ori) == ios
+
+    track = load_motion(d, step_length_m=0.6, duration_ms=60_000)
+    b, g = np.radians(_col(ori, "beta")), np.radians(_col(ori, "gamma"))
+    tilt_pitch = np.degrees(np.arcsin(-np.cos(b) * np.cos(g)))  # the camera axis (device -z) against the horizon
+    assert abs(np.nanmedian(track.pitch_deg) - np.nanmedian(tilt_pitch)) < 3
+    assert -25 < np.nanmedian(track.pitch_deg) < -5  # held upright, tilted a little towards the floor

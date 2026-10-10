@@ -155,10 +155,17 @@ the live inference host out of it.
   2.9 -> 5.5 m). Folding is gone; localization measures over `links`. tests/test_clean.py checks both on 200 random
   maps and on tests/fixtures/itnig.
 
+- iOS Safari reports accelerationIncludingGravity pointing down (Nati House, 2026-10-10, iPhone: y -9.4 held
+  upright; four Android walks +9.1 to +9.4). Taken as up, it put the floor above the camera: the floor odometry
+  measured nothing (0 of 323 segments), every distance fell back to steps (158 m for a 3-minute walk in a flat,
+  69 m with the floor measured), the calibration failed, pitch read +16° and turns integrated backwards.
+  `motion.py` turns gravity to agree with the phone's tilt (deviceorientation beta/gamma). The live side uses
+  |acceleration| and the tilt angles, so it was never affected.
 - A problem found live becomes a test made from its real data, not only a fix: `tests/fixtures/itnig` (the map
   that stalled guidance after cleaning), `tests/fixtures/glories-basement` (a place walked once: no way back over
   `observed`), `tests/fixtures/voice-languages.json` (Whisper's guesses for short notes that alone came out Spanish
-  or Icelandic). Each says in its docstring or `about` where it came from.
+  or Icelandic), `tests/fixtures/sensors` (a minute of an iPhone and an Android walk). Each says in its docstring or
+  `about` where it came from.
 
 ## Product decisions
 - A recording is a **free walk through a place**, not a route. `place` (required, whitespace-normalised,
