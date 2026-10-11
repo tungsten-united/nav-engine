@@ -52,13 +52,15 @@ class RefIndex:
     refs: list  # ReferenceImage, aligned with vectors
 
     @classmethod
-    def build(cls, pmap: PlaceMap, embeddings: np.ndarray | None) -> "RefIndex":
-        """Keep the references with an embedding row (hidden nodes are already out of a published map)."""
+    def build(cls, pmap: PlaceMap, embeddings: np.ndarray | None, exclude_rec: str | None = None) -> "RefIndex":
+        """Keep the references with an embedding row (hidden nodes are already out of a published map); without
+        those taken from `exclude_rec` (replaying that walk against the others' references only)."""
         nodes = {n.id for n in pmap.nodes}
         refs, rows = [], []
         if embeddings is not None and embeddings.ndim == 2:
             for r in pmap.references:
-                if r.embedding_row is not None and 0 <= r.embedding_row < len(embeddings) and r.node in nodes:
+                if r.embedding_row is not None and 0 <= r.embedding_row < len(embeddings) and r.node in nodes \
+                        and r.rec_id != exclude_rec:
                     refs.append(r)
                     rows.append(r.embedding_row)
         dim = embeddings.shape[1] if embeddings is not None and embeddings.ndim == 2 else 0

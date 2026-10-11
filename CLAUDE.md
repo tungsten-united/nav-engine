@@ -39,7 +39,12 @@ calls map-api directly. `frontend/` here is a debugging frontend, not Orient's a
   `localize.py` (VPR against reference embeddings → ranked nodes, confirmed/uncertain/lost), both served by nav-api;
   `pdr.py` (causal step detector + GraphTracker, `nav map pdr-replay`) and `arrival.py` (node confirmer, ported 1:1
   to `frontend/nav/arrival.js`: /nav's auto-confirm, where a rule is tried before the orchestrator copies it),
-  reference code that nothing live runs.
+  reference code that nothing live runs. `replay.py` replays walks through the orchestrator's loop (`Track`,
+  `Episode`, `run_episode`); `belief.py` is that loop on a probability per node (a Bayes filter: steps move it along
+  the links, each /localize result's score differences reweigh it) instead of votes; `episodes.py` stitches pieces
+  of walks into more routes than were walked, scores a loop on them (nodes reached in time; wrong moves cost) and
+  picks its parameters (`nav map tune`, scipy differential evolution, each walk matched against the others'
+  references only).
 - `docs/` — the navigation-side design (`main_idea.md`, `navigation_stack.md`, by LPA, from
   tungsten-united/demo-repository@navigation, aligned with Orient's architecture) and `map.schema.json` (regenerate: `nav map schema --out ...`; a test checks it).
 - `nav/mapping/inference.py` — every model call on files: local models, or the inference host when `NAV_INFER_URL` is set.
@@ -47,7 +52,7 @@ calls map-api directly. `frontend/` here is a debugging frontend, not Orient's a
   where nav-api's live frames go ahead of queued batch calls, bounded queues, 503 + Retry-After), `client.py`
   (chunking, retries, deadlines, Cloudflare service token).
 - `nav/cli.py` — `nav serve [--app nav-api]`, `nav infer serve`, `nav rec list|show|finalize|import|push|pull`,
-  `nav map setup|build|llm|refinish|check|review|clean|republish|measure|route|pdr-replay|orchestrator-replay|schema|list|show|push|pull`.
+  `nav map setup|build|llm|refinish|check|review|clean|republish|measure|route|pdr-replay|orchestrator-replay|tune|schema|list|show|push|pull`.
 - `Dockerfile` + `deploy/cloudrun.sh` + `deploy/{map-api,nav-api}.env.yaml` — the two Cloud Run services;
   `deploy/nav-infer.service`, `deploy/nav-recorder.service` (helium-nav: map-api serving the debugging pages) — helium units.
 - `data/recordings/<rec_id>/` — recordings (gitignored). Shared copy for the team: `gs://tungsten-united-nav-recordings/recordings/<rec_id>/`
@@ -161,6 +166,15 @@ the live inference host out of it.
   69 m with the floor measured), the calibration failed, pitch read +16° and turns integrated backwards.
   `motion.py` turns gravity to agree with the phone's tilt (deviceorientation beta/gamma). The live side uses
   |acceleration| and the tilt angles, so it was never affected.
+- Replays must stop at the goal: a walk replayed to its route's goal kept sending the frames of the rest of the walk
+  with the user still "at" the goal (Itnig ddb1: goal at 10 s, frames to 170 s), so following the walker on was
+  scored wrong. Walk episodes end GOAL_TAIL_S after the goal, as stitched ones do. Replays against a walk's own
+  references flatter (frames 0.4 s from a reference are near copies): tune and judge with the other walks' only.
+- Live frames separate nodes less than replays (Itnig median lead 0.05 live vs 0.068 replayed; Glories walk-back
+  0.024, walked against its one walk's direction), and the belief's tuned optimum is a cliff (temperature 0.25: 0
+  wrong of 966 episode nodes, 0.18: 203). The orchestrator runs 0.18 (0.25 scaled by the live/replay lead ratio).
+  With walk_scale 3.7 a steady 0.1 lead doesn't gather while walking 3 m links: the belief commits when the user
+  pauses. Tune against live traces (top_k 20 answers) once staging has them; replay noise matching is next.
 - A problem found live becomes a test made from its real data, not only a fix: `tests/fixtures/itnig` (the map
   that stalled guidance after cleaning), `tests/fixtures/glories-basement` (a place walked once: no way back over
   `observed`), `tests/fixtures/voice-languages.json` (Whisper's guesses for short notes that alone came out Spanish
@@ -185,7 +199,9 @@ the live inference host out of it.
   node further on (one the camera missed: the route goes on from there; nav-api's walked-distance gate keeps a node
   seen from afar from counting); lost
   (other nodes win, or nothing recognised for a while), it starts over. `nav map orchestrator-replay` models that loop
-  (replay.py `OrchestratorLoop`) and picks its parameters. The phone never calls nav-api. map-api and
+  (replay.py `OrchestratorLoop`, `--loop votes`) and the proposed replacement for its votes, a probability per node
+  (belief.py `BeliefLoop`, the default; the orchestrator's `pipeline::Belief` is its port, orient-orchestrator#16); `nav map tune` picks either's
+  parameters on stitched episodes. The phone never calls nav-api. map-api and
   `frontend/` are the team's (mapping, review, debugging); Orient's `/map` page records walks into map-api with its
   token (asked once per phone, never built into the public app). The contract lives in project-description
   `docs/contracts.md` §2: change it there first, then here.
