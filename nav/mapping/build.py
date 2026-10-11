@@ -8,6 +8,7 @@
                                      positions aligned through shared nodes, measured walking distances, headings,
                                      status (observed / inferred), spatial relations as bearings
     publish                          reference images + their embeddings for live localization (references.py),
+                                     the visual memory: every frame of every walk, where it was taken (memory.py),
                                      quality check (quality.py), human review overlay (review.py), then only what
                                      the walks back up (clean.py)
 """
@@ -770,11 +771,14 @@ def publish(build_dir: Path, cset: CandidateSet, draft: MapDraft, run, recording
         pmap.warnings.append(f"previous nodes not in this build (retired; their review entries wait): "
                              f"{', '.join(dropped)}. Check the notes: a rebuild should keep them.")
     from nav import config
+    from nav.mapping.memory import add_memory
     from nav.mapping.quality import check_map
     from nav.mapping.references import add_references
 
     pmap = add_references(pmap, cset.params, build_dir, recordings_root or config.RECORDINGS_DIR,
                           cache_root or config.CACHE_DIR, cset.place_model or config.PLACE_MODEL)
+    pmap = add_memory(pmap, cset.params, build_dir, recordings_root or config.RECORDINGS_DIR,
+                      cache_root or config.CACHE_DIR, cset.place_model or config.PLACE_MODEL)
     pmap = check_map(pmap, config.QUALITY_MODEL)
     write_map(build_dir, pmap)
     return BuildResult(build_dir, cset, pmap)
@@ -814,6 +818,19 @@ def build_map_of(map_dir: Path) -> tuple[Path, PlaceMap]:
     build_id = PlaceMap.model_validate_json((map_dir / "map.json").read_text()).build.build_id
     build_dir = map_dir / "builds" / build_id
     return build_dir, PlaceMap.model_validate_json((build_dir / "map.json").read_text())
+
+
+def remember(map_dir: Path, recordings_root: Path | None = None, cache_root: Path | None = None) -> PlaceMap:
+    """(Re)build the visual memory of the published build and publish it again: no LLM call, nothing else changes
+    (`nav map memory`, for maps built before memory.py)."""
+    from nav import config
+    from nav.mapping.memory import add_memory
+
+    build_dir, pmap = build_map_of(map_dir)
+    pmap.warnings = [w for w in pmap.warnings if not w.startswith("memory: ")]
+    pmap = add_memory(pmap, pmap.build.params, build_dir, recordings_root or config.RECORDINGS_DIR,
+                      cache_root or config.CACHE_DIR, pmap.build.place_model or config.PLACE_MODEL)
+    return write_map(build_dir, pmap)
 
 
 def republish(map_dir: Path) -> PlaceMap:

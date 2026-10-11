@@ -12,6 +12,7 @@ import logging
 import os
 import random
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
@@ -60,7 +61,8 @@ class InferenceClient:
         return cls(config.INFER_URL, headers)
 
     # --- transport ----------------------------------------------------------------------------------------------
-    def _send(self, method: str, path: str, deadline_s: float | None = None, **kw) -> httpx.Response:
+    def _send(self, method: str, path: str, deadline_s: float | None = None, accept: tuple[int, ...] = (),
+              **kw) -> httpx.Response:
         end = time.monotonic() + (deadline_s or self.deadline_s)
         attempt, last = 0, ""
         while True:
@@ -75,7 +77,7 @@ class InferenceClient:
                 if r.is_redirect or r.status_code in (401, 403):
                     raise InferenceUnavailable(f"{self.base_url} answered {r.status_code}: the Cloudflare Access "
                                                "service token (CF_ACCESS_CLIENT_ID/SECRET) is missing or rejected")
-                if r.status_code < 400:
+                if r.status_code < 400 or r.status_code in accept:
                     return r
                 if r.status_code not in RETRY_STATUS:
                     raise InferenceError(f"{method} {path}: {r.status_code} {r.text[:500]}")
@@ -117,6 +119,25 @@ class InferenceClient:
         host, and given up after `deadline_s` (InferenceUnavailable) rather than keeping a walking user waiting."""
         return self._vectors("place", [(f"live{i}.jpg", b) for i, b in enumerate(images)], model, live=True,
                              deadline_s=deadline_s)
+
+    def verify_live(self, queries: list[bytes], refs: list[tuple[str, Callable[[], bytes]]],
+                    deadline_s: float) -> list[list[int]]:
+        """LightGlue inliers of each camera frame (rows) with each memory frame (columns), for nav-api: refs go by key,
+        and their images only when the host asks for them (409 missing: not cached yet, or evicted)."""
+        keys = [k for k, _ in refs]
+        data = {"refs": json.dumps(keys)}
+        files = [("queries", (f"q{i}.jpg", b, "image/jpeg")) for i, b in enumerate(queries)]
+        end = time.monotonic() + deadline_s
+        r = self._send("POST", "/infer/v1/verify", deadline_s=deadline_s, accept=(409,), data=data, files=files)
+        if r.status_code == 409:
+            missing = r.json().get("missing")
+            if not isinstance(missing, list):
+                raise InferenceError(f"POST /infer/v1/verify: 409 {r.text[:300]}")
+            load = dict(refs)
+            files += [("ref_images", (f"{keys.index(k)}.jpg", load[k](), "image/jpeg")) for k in missing]
+            r = self._send("POST", "/infer/v1/verify", deadline_s=max(0.5, end - time.monotonic()), data=data,
+                           files=files)
+        return r.json()["inliers"]
 
     def match(self, paths: list[Path], pairs: list[tuple[int, int]]) -> list[int]:
         out = [0] * len(pairs)

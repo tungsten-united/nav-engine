@@ -1,5 +1,5 @@
 """Published maps for nav-api, read from the maps folder (the team bucket, mounted read-only on Cloud Run) and kept in
-memory with their reference embeddings. A map is reloaded when its map.json changes; that is checked at most every
+memory with their reference embeddings and visual memory (nav/mapping/memory.py). A map is reloaded when its map.json changes; that is checked at most every
 `reload_s` per map, since a stat on the bucket mount is a network call."""
 
 import logging
@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
+from nav.mapping.memory import load_memory
 from nav.mapping.store import MapStore
 from nav.navigation.localize import RefIndex
 from nav.recorder.store import NotFound
@@ -26,9 +27,12 @@ class _Entry:
 
 
 class MapCache:
-    def __init__(self, root: Path, reload_s: float = 30, clock=time.monotonic):
+    def __init__(self, root: Path, reload_s: float = 30, clock=time.monotonic, memory_radius_m: float | None = None):
+        from nav import config
+
         self.store = MapStore(root)
         self.reload_s = reload_s
+        self.memory_radius_m = config.LOC_MEMORY_RADIUS_M if memory_radius_m is None else memory_radius_m
         self._clock = clock
         self._lock = threading.Lock()
         self._maps: dict[str, _Entry] = {}
@@ -62,9 +66,16 @@ class MapCache:
                 vectors = np.load(self.store.file(map_id, pmap.embedding.file))
             except (NotFound, ValueError, OSError) as e:
                 log.warning("map %s: no reference embeddings (%s)", map_id, e)
-        index = RefIndex.build(pmap, vectors)
-        log.info("map %s: build %s, %d nodes, %d reference images", map_id, pmap.build.build_id, len(pmap.nodes),
-                 len(index.refs))
+        memory = None
+        if pmap.memory:
+            try:
+                memory = load_memory(self.store.dir(map_id), pmap.memory)
+            except (ValueError, OSError) as e:
+                log.warning("map %s: no visual memory (%s)", map_id, e)
+        index = RefIndex.build(pmap, vectors, memory=memory, memory_radius_m=self.memory_radius_m)
+        log.info("map %s: build %s, %d nodes, %d reference images, %d memory frames (%d in a node's region)", map_id,
+                 pmap.build.build_id, len(pmap.nodes), len(index.refs), len(index.memory.frames) if index.memory else 0,
+                 sum(n is not None for n in index.memory.nodes) if index.memory else 0)
         return index
 
     def get(self, map_id: str) -> PlaceMap:
@@ -74,11 +85,11 @@ class MapCache:
         return self.store.summaries(get=self.get)
 
     def file(self, map_id: str, rel: str) -> Path:
-        """Only what nav-api's callers need from the published build: its reference images, candidate frames and embeddings.
-        Builds' job files, candidates and older builds stay on map-api."""
+        """Only what nav-api's callers need from the published build: its reference images, candidate frames, memory
+        frames and embeddings. Builds' job files, candidates and older builds stay on map-api."""
         pmap = self.get(map_id)
         build = f"builds/{pmap.build.build_id}/"
-        ok = (rel.startswith(build) and rel.count("/") == 3 and rel.split("/")[2] in ("refs", "frames")
+        ok = (rel.startswith(build) and rel.count("/") == 3 and rel.split("/")[2] in ("refs", "frames", "memory")
               and rel.endswith(".jpg")) or (pmap.embedding is not None and rel == pmap.embedding.file)
         if not ok:
             raise NotFound(rel)

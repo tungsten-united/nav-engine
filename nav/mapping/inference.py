@@ -59,6 +59,24 @@ def place_live(images: Sequence[bytes], model: str, deadline_s: float) -> np.nda
     return embed_places([load_rgb(b) for b in images], model)
 
 
+@cache
+def _features():
+    from nav.mapping.models import FeatureCache
+
+    return FeatureCache(config.INFER_FEATURE_CACHE)
+
+
+def verify_live(queries: Sequence[bytes], refs: Sequence[tuple[str, Path]], deadline_s: float) -> list[list[int]]:
+    """LightGlue inliers of each camera frame (rows, JPEG bytes) with each memory frame (columns: a cache key and its
+    image file), for nav-api; on the inference host when NAV_INFER_URL is set (it keeps the frames' features)."""
+    if client := remote():
+        return client.verify_live(list(queries), [(k, (lambda p=p: Path(p).read_bytes())) for k, p in refs],
+                                  deadline_s)
+    from nav.mapping.models import verify
+
+    return verify([load_rgb(b) for b in queries], [(k, (lambda p=p: load_rgb(p))) for k, p in refs], _features())
+
+
 def local_pair_inliers(images: Sequence[ImageSource], pairs: Sequence[tuple[int, int]]) -> list[int]:
     """ALIKED + LightGlue inliers for each (i, j) pair of images; each image's features are extracted once."""
     from nav.mapping.models import count_inliers, local_features

@@ -523,12 +523,16 @@ def run_episode(pmap: PlaceMap, index: RefIndex | dict, episode: Episode, thresh
     return OrchestratorResult(events, nodes, evaluations, goal)
 
 
-def ref_indexes(pmap: PlaceMap, map_dir: Path, holdout: bool) -> RefIndex | dict:
-    """The map's reference index; with `holdout`, one per walk of the map without that walk's references."""
-    emb = np.load(map_dir / pmap.embedding.file)
+def ref_indexes(pmap: PlaceMap, map_dir: Path, holdout: bool, memory: bool = True) -> RefIndex | dict:
+    """The map's reference index (with its visual memory, if it has one and `memory`); with `holdout`, one per walk
+    of the map without that walk's references and memory frames."""
+    from nav.mapping.memory import load_memory
+
+    emb = np.load(map_dir / pmap.embedding.file) if pmap.embedding else np.zeros((0, 0), np.float32)
+    mem = load_memory(map_dir, pmap.memory) if memory and pmap.memory else None
     if not holdout:
-        return RefIndex.build(pmap, emb)
-    return {rec: RefIndex.build(pmap, emb, exclude_rec=rec) for rec in pmap.recordings}
+        return RefIndex.build(pmap, emb, memory=mem)
+    return {rec: RefIndex.build(pmap, emb, exclude_rec=rec, memory=mem) for rec in pmap.recordings}
 
 
 def loop_factory(pmap: PlaceMap, kind: str, params=None):

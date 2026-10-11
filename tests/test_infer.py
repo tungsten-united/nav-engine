@@ -40,6 +40,20 @@ class Stub:
         self.calls.append(("match", len(images), len(pairs)))
         return [len(images[i]) + len(images[j]) for i, j in pairs]
 
+    def verify(self, queries, refs):
+        """Inliers = query length x 10 + reference length; references by key, cached once seen (as LocalBackend)."""
+        from nav.infer.errors import MissingFeatures
+
+        self.cached = getattr(self, "cached", {})
+        missing = [k for k, b in refs if b is None and k not in self.cached]
+        if missing:
+            raise MissingFeatures(missing)
+        for k, b in refs:
+            if b is not None:
+                self.cached[k] = len(b)
+        self.calls.append(("verify", len(queries), [k for k, b in refs if b is not None]))
+        return [[10 * len(q) + self.cached[k] for k, _ in refs] for q in queries]
+
     def detect_language(self, path, model):
         return {"en": 0.8, "es": 0.2}
 
@@ -269,3 +283,71 @@ def test_live_frames_go_in_the_live_lane(host):
     assert v.shape == (2, 3) and v[:, 2].tolist() == [3, 2]
     client.place([p for p in frames(http.app.state.jobs.root.parent, 1)], "megaloc")
     assert seen == [(1, 0), (0, 1)]
+
+
+def test_live_verification_sends_memory_frames_only_when_the_host_lacks_them(host):
+    stub, client, http = host
+    gpu, seen = http.app.state.gpu, []
+    verify = stub.verify
+
+    def spy(queries, refs):
+        seen.append(gpu.live_pending)
+        return verify(queries, refs)
+
+    stub.verify = spy
+    loads = []
+
+    def ref(key, size):
+        return key, lambda: loads.append(key) or b"r" * size
+
+    got = client.verify_live([b"ab", b"abc"], [ref("m/b/m0001", 5), ref("m/b/m0002", 7)], deadline_s=2)
+    assert got == [[25, 27], [35, 37]] and loads == ["m/b/m0001", "m/b/m0002"]
+    got = client.verify_live([b"a"], [ref("m/b/m0002", 7), ref("m/b/m0003", 1)], deadline_s=2)
+    assert got == [[17, 11]] and loads[2:] == ["m/b/m0003"]  # m0002 was cached: only m0003 travels
+    assert [c for c in stub.calls if c[0] == "verify"] == [("verify", 2, ["m/b/m0001", "m/b/m0002"]),
+                                                            ("verify", 1, ["m/b/m0003"])]
+    assert seen and all(n == 1 for n in seen)  # the live lane
+    r = http.post("/infer/v1/verify", data={"refs": "[]"}, files=[("queries", ("q.jpg", b"x", "image/jpeg"))])
+    assert r.status_code == 422
+    r = http.post("/infer/v1/verify", data={"refs": '["k"]'}, files=[("queries", ("q.jpg", b"x", "image/jpeg")),
+                                                                      ("ref_images", ("7.jpg", b"x", "image/jpeg"))])
+    assert r.status_code == 422 and "index" in r.json()["detail"]
+
+
+def test_feature_cache_drops_the_least_recently_used():
+    from nav.mapping.models import FeatureCache
+
+    c = FeatureCache(size=2)
+    c.put("a", {"x": 1})
+    c.put("b", {"x": 2})
+    assert c.get("a") == {"x": 1}  # a is now the most recent
+    c.put("c", {"x": 3})
+    assert c.get("b") is None and c.get("a") and c.get("c") and len(c) == 2
+
+
+def test_verify_asks_for_what_it_has_not_seen(monkeypatch):
+    from nav.infer.errors import MissingFeatures
+    from nav.mapping import models
+
+    monkeypatch.setattr(models, "local_features", lambda img: {"n": int(img)})
+    monkeypatch.setattr(models, "_compact", lambda f: f)
+    monkeypatch.setattr(models, "_on_device", lambda c: c)
+    monkeypatch.setattr(models, "fit_long_side", lambda img, n: img)
+    monkeypatch.setattr(models, "count_inliers", lambda a, b: a["n"] * 100 + b["n"])
+    cache = models.FeatureCache()
+    with pytest.raises(MissingFeatures) as e:
+        models.verify([1], [("k1", None), ("k2", lambda: 2)], cache)
+    assert e.value.keys == ["k1"]
+    assert models.verify([1, 3], [("k1", lambda: 5), ("k2", lambda: 2)], cache) == [[105, 102], [305, 302]]
+    assert models.verify([4], [("k1", None)], cache) == [[405]]  # from the cache now
+
+
+def test_degenerate_matches_have_no_inliers_instead_of_an_error():
+    from nav.mapping.models import geometric_inliers
+
+    line = np.array([[float(i), 2.0 * i] for i in range(10)], np.float32)  # every point on one line
+    assert geometric_inliers(line, line + 1) == 0
+    assert geometric_inliers(line[:5], line[:5]) == 0
+    rng = np.random.default_rng(0)
+    pts = rng.uniform(0, 500, (60, 2)).astype(np.float32)
+    assert geometric_inliers(pts, pts + np.float32([12, -3])) >= 50  # a pure shift fits one geometry
