@@ -6,8 +6,8 @@ the last one needs less evidence than one across the map, and nothing restarts o
 - Motion: walking w metres, the user leaves node a for its neighbour b (over the map's links, either way) at a rate
   w / length(a, b); without steps, `walk_m_per_call` stands in for w. A little of the belief (`jump`) spreads over
   every node each call: a move the camera and steps missed, or a wrong start.
-- Seeing: a result with node scores s multiplies node n by exp((s_n - s_best) / temperature) (nodes not among the
-  candidates score as the last one); a node nav-api marks not plausible (farther than walked from `previous`) also
+- Seeing: a result with node scores s multiplies node n by exp((s_n - s_best) / temperature) (a node not among the
+  candidates scores as the lowest one, at most the leader's score minus the margin); a node nav-api marks not plausible (farther than walked from `previous`) also
   by `gate`. Live scores are low and the leader's lead is what tells (CLAUDE.md, Itnig 2026-10-10): this uses only
   differences.
 
@@ -70,7 +70,8 @@ class NodeBelief:
         scores = {c.node: c.score for c in loc.candidates if c.node in self.ix}
         if not scores:
             return
-        best, floor = max(scores.values()), min(scores.values())
+        best = max(scores.values())
+        floor = min([*scores.values(), best - (loc.margin or 0.0)])  # a node not listed: at most the second's score
         s = np.full(len(self.nodes), floor)
         gate = np.ones(len(self.nodes))
         for c in loc.candidates:

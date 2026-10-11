@@ -93,3 +93,12 @@ def test_without_steps_the_belief_still_moves_and_with_steps_standing_still_does
         lp.on_localization(loc({}), steps, 1)
     assert moving.belief.prob("n1") > 0.1
     assert still.belief.prob("n1") < 0.05  # only the jump
+
+
+def test_one_candidate_still_tells_through_the_margin():
+    """nav-api with top_k=1 (or a fake) lists only the leader: the others score at most the leader minus the margin."""
+    b = NodeBelief(PMAP, P)
+    one = loc({"n2": 0.4})
+    one.candidates, one.margin = one.candidates[:1], 0.1
+    b.update(one)
+    assert b.best()[0] == "n2" and b.prob("n2") > 3 * b.prob("n3")
