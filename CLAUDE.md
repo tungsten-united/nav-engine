@@ -170,6 +170,11 @@ the live inference host out of it.
   with the user still "at" the goal (Itnig ddb1: goal at 10 s, frames to 170 s), so following the walker on was
   scored wrong. Walk episodes end GOAL_TAIL_S after the goal, as stitched ones do. Replays against a walk's own
   references flatter (frames 0.4 s from a reference are near copies): tune and judge with the other walks' only.
+- Live frames separate nodes less than replays (Itnig median lead 0.05 live vs 0.068 replayed; Glories walk-back
+  0.024, walked against its one walk's direction), and the belief's tuned optimum is a cliff (temperature 0.25: 0
+  wrong of 966 episode nodes, 0.18: 203). The orchestrator runs 0.18 (0.25 scaled by the live/replay lead ratio).
+  With walk_scale 3.7 a steady 0.1 lead doesn't gather while walking 3 m links: the belief commits when the user
+  pauses. Tune against live traces (top_k 20 answers) once staging has them; replay noise matching is next.
 - A problem found live becomes a test made from its real data, not only a fix: `tests/fixtures/itnig` (the map
   that stalled guidance after cleaning), `tests/fixtures/glories-basement` (a place walked once: no way back over
   `observed`), `tests/fixtures/voice-languages.json` (Whisper's guesses for short notes that alone came out Spanish
@@ -195,7 +200,7 @@ the live inference host out of it.
   seen from afar from counting); lost
   (other nodes win, or nothing recognised for a while), it starts over. `nav map orchestrator-replay` models that loop
   (replay.py `OrchestratorLoop`, `--loop votes`) and the proposed replacement for its votes, a probability per node
-  (belief.py `BeliefLoop`, the default; for the orchestrator to port, ~60 lines); `nav map tune` picks either's
+  (belief.py `BeliefLoop`, the default; the orchestrator's `pipeline::Belief` is its port, orient-orchestrator#16); `nav map tune` picks either's
   parameters on stitched episodes. The phone never calls nav-api. map-api and
   `frontend/` are the team's (mapping, review, debugging); Orient's `/map` page records walks into map-api with its
   token (asked once per phone, never built into the public app). The contract lives in project-description
