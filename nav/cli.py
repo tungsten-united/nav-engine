@@ -11,6 +11,8 @@ rec = typer.Typer(no_args_is_help=True, help="Inspect and finalize recordings.")
 app.add_typer(rec, name="rec")
 maps = typer.Typer(no_args_is_help=True, help="Build, inspect and share the map of each place.")
 app.add_typer(maps, name="map")
+live = typer.Typer(no_args_is_help=True, help="Live calls nav-api recorded (NAV_CAPTURE_DIR): pull, list, logs.")
+app.add_typer(live, name="live")
 
 
 APPS = {"map-api": "nav.map_api.app:create_app", "nav-api": "nav.nav_api.app:create_nav_app"}
@@ -542,6 +544,59 @@ def map_pull(map_ids: list[str] = typer.Argument(None, help="Default: everything
         _gcloud_rsync(config.GCS_MAPS_URL, str(config.MAPS_DIR), dry_run=dry_run)
     for map_id in map_ids or []:
         _gcloud_rsync(f"{config.GCS_MAPS_URL}/{map_id}", str(config.MAPS_DIR / map_id), dry_run=dry_run)
+
+
+
+@live.command("pull")
+def live_pull(map_ids: list[str] = typer.Argument(None, help="Default: every map."), dry_run: bool = False) -> None:
+    """Download what nav-api recorded (NAV_GCS_LIVE_URL, the bucket's live/) into NAV_DATA_DIR/live. Never deletes."""
+    config.LIVE_DIR.mkdir(parents=True, exist_ok=True)
+    if not map_ids:
+        _gcloud_rsync(config.GCS_LIVE_URL, str(config.LIVE_DIR), dry_run=dry_run)
+    for map_id in map_ids or []:
+        _gcloud_rsync(f"{config.GCS_LIVE_URL}/{map_id}", str(config.LIVE_DIR / map_id), dry_run=dry_run)
+
+
+@live.command("sessions")
+def live_sessions(map_id: str = typer.Argument(None, help="Default: every map."),
+                  since: str = typer.Option(None, help="YYYY-MM-DD"),
+                  root: Path = typer.Option(None, help="Default: NAV_DATA_DIR/live (after `nav live pull`).")) -> None:
+    """The recorded sessions (one walk of one user each): calls, frames, how long, nav-api's answers."""
+    from nav.navigation.captured import sessions
+
+    for s in sessions(root or config.LIVE_DIR, map_id, since):
+        x = s.summary()
+        statuses = " ".join(f"{k} {v}" for k, v in sorted(x["statuses"].items()))
+        print(f"{x['map_id']:18s} {x['date']} {x['session'][:36]:36s} {x['localize']:4d} localize "
+              f"{x['routes']:2d} routes {x['frames']:4d} frames {x['minutes']:5.1f} min  {statuses}")
+
+
+@live.command("logs")
+def live_logs(map_id: str, date: str, session: str,
+              root: Path = typer.Option(None, help="Default: NAV_DATA_DIR/live."),
+              days: int = typer.Option(30, help="How far back Cloud Logging is searched.")) -> None:
+    """Save every Cloud Logging entry of a session (nav-api's and the orchestrator's: their sessionId) next to its
+    calls, as logs.jsonl: what the orchestrator decided and said with each answer."""
+    import json
+    import subprocess
+
+    folder = (root or config.LIVE_DIR) / map_id / date / session
+    if not folder.is_dir():
+        raise typer.BadParameter(f"no session folder {folder} (run `nav live pull` first)")
+    cmd = ["gcloud", "logging", "read", f'jsonPayload.sessionId="{session}"', "--project", "tungsten-united",
+           "--freshness", f"{days}d", "--order", "asc", "--format", "json", "--limit", "100000"]
+    print("$", " ".join(cmd))
+    out = subprocess.run(cmd, capture_output=True, text=True)
+    if out.returncode:
+        print(out.stderr)
+        raise typer.Exit(1)
+    entries = json.loads(out.stdout or "[]")
+    with (folder / "logs.jsonl").open("w") as f:
+        for e in entries:
+            f.write(json.dumps({"t": e.get("timestamp"), "service": e.get("resource", {}).get("labels", {})
+                                .get("service_name"), **(e.get("jsonPayload") or {"text": e.get("textPayload")})},
+                               ensure_ascii=False) + "\n")
+    print(f"{len(entries)} entries -> {folder / 'logs.jsonl'}")
 
 
 if __name__ == "__main__":

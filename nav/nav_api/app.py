@@ -14,11 +14,13 @@ The models run on the inference host (helium nav-infer, NAV_INFER_URL), like map
                                               -> Localization
 
 Same pattern as map-api (nav/web.py): NAV_API_TOKEN on /api/* (its own token), CORS, no frontend. Each route and
-localize call prints one structured line for Cloud Logging, `[nav-api] …` (nav/nav_api/log.py). Recordings, map
+localize call prints one structured line for Cloud Logging, `[nav-api] …` (nav/nav_api/log.py), and with
+NAV_CAPTURE_DIR is also recorded whole, frames included, per map and session (nav/nav_api/capture.py). Recordings, map
 builds, reviews and build internals stay on map-api (nav/map_api/app.py), which also serves the debugging pages
 that exercise this API (/loc/, /nav/); with NAV_FRONTEND_URL set, page paths here redirect there.
 """
 
+import json
 import time
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -31,6 +33,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from nav import config, web
 from nav.infer.errors import InferenceError, InferenceUnavailable
 from nav.nav_api import log
+from nav.nav_api.capture import Capture
 from nav.nav_api.maps import MapCache
 from nav.navigation.localize import localize
 from nav.navigation.route import plan_route
@@ -68,9 +71,10 @@ def infer_health() -> dict:
 
 def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_fn=None, api_token=_DEFAULT,
                    cors_origins=_DEFAULT, cors_origin_regex=_DEFAULT, frontend_url=_DEFAULT,
-                   thresholds: Thresholds | None = None) -> FastAPI:
+                   thresholds: Thresholds | None = None, capture=_DEFAULT) -> FastAPI:
     """Settings default to nav/config.py (environment); tests pass them explicitly. `place_fn(images, model)` gives
-    the place embeddings of JPEG frames (default: the inference host, live priority, short deadline)."""
+    the place embeddings of JPEG frames (default: the inference host, live priority, short deadline). `capture`: where
+    every call is recorded (a Capture, or None: nowhere; default NAV_CAPTURE_DIR)."""
     maps = maps or MapCache(config.MAPS_DIR, config.MAP_RELOAD_S)
     place_fn = place_fn or live_place
     infer_health_fn = infer_health_fn or infer_health
@@ -79,9 +83,14 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
     cors_origin_regex = config.CORS_ORIGIN_REGEX if cors_origin_regex is _DEFAULT else cors_origin_regex
     frontend_url = config.FRONTEND_URL if frontend_url is _DEFAULT else frontend_url
     thresholds = thresholds or config.loc_thresholds()
+    if capture is _DEFAULT:
+        capture = Capture(config.CAPTURE_DIR) if config.CAPTURE_DIR else None
     app = FastAPI(title="nav-engine nav-api", version=f"map-schema-{MAP_SCHEMA_VERSION}",
                   description="The live API for Orient's orchestrator: published maps, routes, localization.")
     app.state.maps = maps
+    app.state.capture = capture
+    if capture:
+        app.router.on_shutdown.append(lambda: capture.flush(timeout_s=8))  # Cloud Run gives ~10 s after SIGTERM
     web.setup(app, api_token=api_token, cors_origins=cors_origins, cors_origin_regex=cors_origin_regex)
 
     @app.exception_handler(StarletteHTTPException)
@@ -132,8 +141,14 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
             out = plan(map_id, pmap, req)
         except (HTTPException, NotFound) as e:
             log.emit(log.failed("route", map_id, *failure(e), who, start=req.start, goal=req.goal, trust=req.trust))
+            if capture:
+                status, detail = failure(e)
+                capture.route(map_id, who, req.model_dump(), error={"status": status, "detail": detail})
             raise
         log.emit(log.routed(out, {n.id: n.name for n in pmap.nodes}, who))
+        if capture:
+            capture.route(map_id, who, req.model_dump(), response=out.model_dump(mode="json"),
+                          build_id=pmap.build.build_id)
         return out
 
     def plan(map_id: str, pmap: PlaceMap, req: RouteRequest) -> Route:
@@ -169,32 +184,62 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
         nodes with their best matching references, and confirmed / uncertain / lost (nav/navigation/localize.py).
         Stateless: the caller (the orchestrator) keeps the last confirmed node and combines consecutive results."""
         who = log.caller(request)
+        t0 = time.perf_counter()
+        data: list[bytes] = []
+
+        def asked() -> dict:
+            """The request as sent, for the capture: motion parts parsed as JSON where they are."""
+            parts = []
+            for part in motion or []:
+                try:
+                    parts.append(json.loads(part))
+                except ValueError:
+                    parts.append(part)
+            return {"previous": previous, "expected": expected, "heading_deg": heading_deg, "top_k": top_k,
+                    "previous_step_count": previous_step_count, "motion": parts}
+
         try:
-            res = await locate(map_id, images, previous, expected, heading_deg, top_k, motion, previous_step_count)
+            data = await read_frames(images)
+            res = await locate(map_id, data, previous, expected, heading_deg, top_k, motion, previous_step_count, t0)
         except (HTTPException, NotFound) as e:
             log.emit(log.failed("localize", map_id, *failure(e), who, frames=len(images), previous=previous,
                                 expected=expected))
+            if capture and data:
+                status, detail = failure(e)
+                capture.localize(map_id, who, data, asked(), error={"status": status, "detail": detail},
+                                 build_id=build_of(map_id))
             raise
         log.emit(log.localized(res, who))
+        if capture:
+            capture.localize(map_id, who, data, asked(), response=res.model_dump(mode="json"),
+                             build_id=build_of(map_id))
         return res
 
-    async def locate(map_id: str, images: list[UploadFile], previous: str | None, expected: str | None,
-                     heading_deg: float | None, top_k: int, motion: list[str] | None,
-                     previous_step_count: int | None) -> Localization:
-        t0 = time.perf_counter()
+    async def read_frames(images: list[UploadFile]) -> list[bytes]:
         if not images or len(images) > MAX_FRAMES:
             raise HTTPException(422, f"send 1..{MAX_FRAMES} images")
         data = [await f.read(MAX_FRAME_BYTES + 1) for f in images]
         if any(len(d) > MAX_FRAME_BYTES for d in data) or not all(data):
             raise HTTPException(413, f"each image must be 1 byte .. {MAX_FRAME_BYTES // 1024 // 1024} MiB")
+        return data
+
+    def build_of(map_id: str) -> str | None:
+        try:
+            return maps.get(map_id).build.build_id
+        except (NotFound, HTTPException, ValueError, OSError):
+            return None
+
+    async def locate(map_id: str, data: list[bytes], previous: str | None, expected: str | None,
+                     heading_deg: float | None, top_k: int, motion: list[str] | None,
+                     previous_step_count: int | None, t0: float) -> Localization:
         motions: list[LiveMotion | None] = []
         for part in motion or []:
             try:
                 motions.append(None if part.strip() in ("", "null") else LiveMotion.model_validate_json(part))
             except ValidationError as e:
                 raise HTTPException(422, f"motion: {e.errors()[0]['msg']}")
-        if motions and len(motions) != len(images):
-            raise HTTPException(422, f"send one motion part per image ({len(images)}), `null` for a frame without one")
+        if motions and len(motions) != len(data):
+            raise HTTPException(422, f"send one motion part per image ({len(data)}), `null` for a frame without one")
         index = await run_in_threadpool(maps.index, map_id)
         model = index.pmap.embedding.model if index.pmap.embedding else ""
         took: dict[str, float] = {}
