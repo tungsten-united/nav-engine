@@ -241,10 +241,10 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
         if motions and len(motions) != len(data):
             raise HTTPException(422, f"send one motion part per image ({len(data)}), `null` for a frame without one")
         index = await run_in_threadpool(maps.index, map_id)
-        model = index.pmap.embedding.model if index.pmap.embedding else ""
+        model = index.model
         took: dict[str, float] = {}
         queries = None
-        if index.refs:
+        if not index.empty:
             t = time.perf_counter()
             try:
                 queries = await run_in_threadpool(place_fn, data, model)

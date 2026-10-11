@@ -167,6 +167,17 @@ def load_walk(rec_dir: Path, cache_root: Path, p: SelectParams) -> Walk:
     return Walk(m, events, track, fdir, rows, cal)
 
 
+def place_embeddings(w: Walk, cache_root: Path, place_model: str) -> np.ndarray:
+    """MegaLoc embeddings of a walk's sampled frames, [len(w.rows), D], cached next to them (also the visual memory's,
+    nav/mapping/memory.py)."""
+    fkey = w.frames_dir.name.removeprefix("frames-")
+    path = cache_root / w.manifest.rec_id / f"place-{_key(fkey, place_model)}.npy"
+    if not path.is_file():
+        log.info("%s: place embeddings for %d frames with %s", w.manifest.rec_id, len(w.rows), place_model)
+        np.save(path, place_files([w.frames_dir / r["file"] for r in w.rows], place_model))
+    return np.load(path)
+
+
 def voice_language(votes: list[tuple[dict[str, float], float]]) -> tuple[str | None, float]:
     """The walk's language from its clips' (language probabilities, seconds): the most likely language over all the
     speech, and its share. A walker keeps to one language, and a short clip alone is often misdetected (1.7 s of
@@ -223,12 +234,7 @@ def prepare(rec_dir: Path, cache_root: Path, p: SelectParams, embed_model: str, 
         log.info("%s: embedding %d frames with %s", m.rec_id, len(rows), embed_model)
         np.save(epath, embed_files([fdir / r["file"] for r in rows], embed_model))
     emb = np.load(epath)
-    pkey = _key(fkey, place_model)
-    ppath = cache / f"place-{pkey}.npy"
-    if not ppath.is_file():
-        log.info("%s: place embeddings for %d frames with %s", m.rec_id, len(rows), place_model)
-        np.save(ppath, place_files([fdir / r["file"] for r in rows], place_model))
-    place = np.load(ppath)
+    place = place_embeddings(w, cache_root, place_model)
 
     # voice
     texts: dict[str, str] = {}

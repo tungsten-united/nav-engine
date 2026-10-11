@@ -287,6 +287,21 @@ def map_republish(map_id: str) -> None:
           + (f" (cleaned from {m.clean.nodes_before} / {m.clean.edges_before})" if m.clean else ""))
 
 
+@maps.command("memory")
+def map_memory(map_id: str) -> None:
+    """Build the visual memory of the published build (every usable frame of every walk, where it was taken) and
+    publish again. Maps built from now on have it; this is for the ones before. No LLM call."""
+    from nav.mapping.build import remember
+
+    _logging()
+    pmap = remember(_map_store().dir(map_id))
+    m = pmap.memory
+    print(f"{map_id}: " + (f"{m.frames} memory frames ({m.file})" if m else "no memory (no usable frames)"))
+    for w in pmap.warnings:
+        if w.startswith("memory: "):
+            print("  warning:", w)
+
+
 @maps.command("measure")
 def map_measure(map_id: str, start: str, goal: str, meters: float,
                 sigma: float = typer.Option(0.5, help="How sure the measurement is, metres."),

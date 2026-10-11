@@ -88,6 +88,9 @@ LOC_LOST_SCORE = float(os.environ.get("NAV_LOC_LOST_SCORE", "0.35"))
 LOC_MAX_ABS_PITCH_DEG = float(os.environ.get("NAV_LOC_MAX_ABS_PITCH_DEG", "55"))
 LOC_GATE_SLACK_M = float(os.environ.get("NAV_LOC_GATE_SLACK_M", "1.0"))
 LOC_GATE_SLACK_FRAC = float(os.environ.get("NAV_LOC_GATE_SLACK_FRAC", "0.35"))
+# Visual memory (nav/mapping/memory.py): a frame belongs to the nearest node within this many metres of where it was
+# taken (Nati House: nodes 1-4 m apart; Itnig 3-7 m).
+LOC_MEMORY_RADIUS_M = float(os.environ.get("NAV_LOC_MEMORY_RADIUS_M", "5.0"))
 
 
 def loc_thresholds():

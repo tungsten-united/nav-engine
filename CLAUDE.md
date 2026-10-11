@@ -34,13 +34,18 @@ calls map-api directly. `frontend/` here is a debugging frontend, not Orient's a
   (same-place pairs: MegaLoc retrieval + LightGlue check), `llm.py` (Claude Code job + prompt),
   `build.py` (orchestration + finish), `quality.py` (TypeSafe Jev check), `store.py`, `calibrate.py` (video yaw,
   sensor-to-video offset, FOV), `odometry.py` (metres walked from the floor seen in the video, fused with steps),
-  `references.py` (reference images + embeddings for live VPR), `review.py` (human review overlay
+  `references.py` (reference images + embeddings for live VPR), `memory.py` (the visual memory, localization's
+  "where": every usable frame of every walk with its MegaLoc embedding and where it was taken, positions from the
+  placed tracks; nodes stay the "what" and get frames by position at load, so a review moves regions with it;
+  `nav map memory` adds it to a build made before), `review.py` (human review overlay
   `maps/<id>/review.json`, incl. distances measured on site that set the scale, and `merge_into` to fold nodes into
   one area), `clean.py` (only what the walks back up is published: ≥ 2 walks, weaker edges only to keep the map
   walkable; nodes and edges kept or left out whole; `pruned` says why; `links` keeps the connections from before it
   for localization; published map.json = latest build + review, cleaned).
 - `nav/navigation/` — the live side, small and causal: `route.py` (routes over verified edges by default) and
-  `localize.py` (VPR against reference embeddings → ranked nodes, confirmed/uncertain/lost), both served by nav-api;
+  `localize.py` (VPR against reference embeddings and the visual memory → ranked nodes, confirmed/uncertain/lost,
+  and `position`: where the best memory frame was taken; a memory frame scores for the nearest node within
+  `NAV_LOC_MEMORY_RADIUS_M`), both served by nav-api;
   `pdr.py` (causal step detector + GraphTracker, `nav map pdr-replay`) and `arrival.py` (node confirmer, ported 1:1
   to `frontend/nav/arrival.js`: /nav's auto-confirm, where a rule is tried before the orchestrator copies it),
   reference code that nothing live runs. `replay.py` replays walks through the orchestrator's loop (`Track`,
@@ -58,7 +63,7 @@ calls map-api directly. `frontend/` here is a debugging frontend, not Orient's a
 - `nav/cli.py` — `nav serve [--app nav-api]`, `nav infer serve`, `nav rec list|show|finalize|import|push|pull`,
   `nav live pull|sessions|logs` (captured live calls; `logs` saves the session's Cloud Logging entries, the
   orchestrator's included, as `logs.jsonl`),
-  `nav map setup|build|llm|refinish|check|review|clean|republish|measure|route|pdr-replay|orchestrator-replay|tune|schema|list|show|push|pull`.
+  `nav map setup|build|llm|refinish|check|review|clean|republish|memory|measure|route|pdr-replay|orchestrator-replay|tune|schema|list|show|push|pull`.
 - `Dockerfile` + `deploy/cloudrun.sh` + `deploy/{map-api,nav-api}.env.yaml` — the two Cloud Run services;
   `deploy/nav-infer.service`, `deploy/nav-recorder.service` (helium-nav: map-api serving the debugging pages) — helium units.
 - `data/recordings/<rec_id>/` — recordings (gitignored). Shared copy for the team: `gs://tungsten-united-nav-recordings/recordings/<rec_id>/`
@@ -183,6 +188,12 @@ the live inference host out of it.
   wrong of 966 episode nodes, 0.18: 203). The orchestrator runs 0.18 (0.25 scaled by the live/replay lead ratio).
   With walk_scale 3.7 a steady 0.1 lead doesn't gather while walking 3 m links: the belief commits when the user
   pauses. Tune against live traces (top_k 20 answers) once staging has them; replay noise matching is next.
+- Area nodes can't be told apart by a picture: in an open hall a view belongs to several of them, and the map gave
+  one view different nodes in different walks (Itnig: of 84 confident cross-walk LightGlue matches that "disagreed"
+  with the node, 78 were neighbours, and the 9 checked by eye were the same spot). Leads stayed ~0.03 live and the
+  belief, with the leader flipping between neighbours, never reached 0.7. Matching to the frame instead (any frame
+  of the other walks) put the camera a median 1.5 m from where it was: the visual memory (memory.py) gives
+  `position`, and nodes get frames by where they were taken, not by what they show.
 - A problem found live becomes a test made from its real data, not only a fix: `tests/fixtures/itnig` (the map
   that stalled guidance after cleaning), `tests/fixtures/glories-basement` (a place walked once: no way back over
   `observed`), `tests/fixtures/voice-languages.json` (Whisper's guesses for short notes that alone came out Spanish

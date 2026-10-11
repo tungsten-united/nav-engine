@@ -338,6 +338,29 @@ class EmbeddingInfo(BaseModel):
     file: str  # map-relative path of the .npy ([N, dim] float32 unit vectors)
 
 
+class MemoryFrame(BaseModel):
+    """One camera frame of the visual memory (nav/mapping/memory.py): where it was taken, which way it looked."""
+
+    id: str  # "m0001" ...; the row of its embedding
+    rec_id: str
+    t_ms: float
+    image: str  # map-relative path
+    x_m: float | None  # camera position in the build's map frame (before a review's scale); None: walk not placed
+    y_m: float | None
+    heading_deg: float | None  # camera heading, map frame
+
+
+class MemoryInfo(BaseModel):
+    """The visual memory of the build: every usable frame of every walk with its place embedding and position.
+    The frames are in `file` (JSON: {"frames": [MemoryFrame ...]}), their embeddings in `embeddings` (row i = frame i)."""
+
+    model: str  # the place model (as `embedding.model`): live frames are embedded with it
+    dim: int
+    frames: int
+    file: str  # map-relative path of memory.json
+    embeddings: str  # map-relative path of memory.npy ([frames, dim] float32 unit vectors)
+
+
 class MapFrame(BaseModel):
     """The frame of positions and headings: x east, y north when compass-referenced, metres; headings clockwise."""
 
@@ -481,6 +504,9 @@ class PlaceMap(MapDraft):
     frame: MapFrame | None = None
     references: list[ReferenceImage] = []
     embedding: EmbeddingInfo | None = None
+    # Where each frame of every walk was taken (nav/mapping/memory.py): live localization's "where", apart from the
+    # nodes' "what". None: maps built before it (localization uses `references` only).
+    memory: MemoryInfo | None = None
     reviewed_at_utc: datetime | None = None  # when review.json was last applied (None: never reviewed)
     hidden: list[str] = []  # node / edge / relation ids hidden by the review (still in the build's map.json)
     merged: dict[str, str] = {}  # node id -> the node the review merged it into (edges keep the part: *_part)

@@ -469,6 +469,40 @@
    "title": "MeasuredDistanceCheck",
    "type": "object"
   },
+  "MemoryInfo": {
+   "description": "The visual memory of the build: every usable frame of every walk with its place embedding and position.\nThe frames are in `file` (JSON: {\"frames\": [MemoryFrame ...]}), their embeddings in `embeddings` (row i = frame i).",
+   "properties": {
+    "model": {
+     "title": "Model",
+     "type": "string"
+    },
+    "dim": {
+     "title": "Dim",
+     "type": "integer"
+    },
+    "frames": {
+     "title": "Frames",
+     "type": "integer"
+    },
+    "file": {
+     "title": "File",
+     "type": "string"
+    },
+    "embeddings": {
+     "title": "Embeddings",
+     "type": "string"
+    }
+   },
+   "required": [
+    "model",
+    "dim",
+    "frames",
+    "file",
+    "embeddings"
+   ],
+   "title": "MemoryInfo",
+   "type": "object"
+  },
   "PlaceEdge": {
    "properties": {
     "id": {
@@ -1512,6 +1546,17 @@
    "anyOf": [
     {
      "$ref": "#/$defs/EmbeddingInfo"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "memory": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/MemoryInfo"
     },
     {
      "type": "null"

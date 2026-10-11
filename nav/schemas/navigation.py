@@ -49,7 +49,7 @@ class RefMatch(BaseModel):
 
     id: str
     score: float
-    role: ImageRole
+    role: ImageRole | Literal["memory"]  # memory: a frame of the visual memory (PlaceMap.memory), not a reference
     edge: str | None = None
     toward: str | None = None
     heading_deg: float | None = None  # camera heading of the reference, map frame
@@ -64,6 +64,21 @@ class NodeMatch(BaseModel):
     refs: list[RefMatch]  # best first
     distance_m: float | None = None  # shortest walk from `previous` over the map's edges (with previous + motion)
     plausible: bool | None = None  # walked far enough to be there (None: not checked)
+
+
+class LivePosition(BaseModel):
+    """Where the live frames were taken: the position of the memory frame they look most like (map frame, metres,
+    the review's scale applied), and how sure that is."""
+
+    x_m: float
+    y_m: float
+    heading_deg: float | None = None  # that frame's camera heading, map frame
+    frame: str  # memory frame id
+    rec_id: str
+    t_ms: float
+    score: float  # place-embedding cosine with it (mean over the burst)
+    node: str | None = None  # the node whose region it is in (nearest node within the memory radius)
+    inliers: int | None = None  # local features matched with it in one geometry (None: not verified)
 
 
 class Thresholds(BaseModel):
@@ -119,3 +134,4 @@ class Localization(BaseModel):
     walked_m: float | None = None  # since `previous`: (stepCount - previous_step_count) x the map's live step length
     thresholds: Thresholds
     took_ms: dict[str, float]  # embed (the inference host), match, total
+    position: LivePosition | None = None  # with a visual memory: where the frames were taken

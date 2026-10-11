@@ -138,6 +138,15 @@ def test_imported_video_builds_a_map_with_references_and_relations(tmp_path, pan
     assert {"at", "outgoing"} <= roles
     out = [r for r in pmap.references if r.role == "outgoing"]
     assert all(r.node == "n1" and r.edge == "e1" and r.toward == "n2" for r in out) and e.reference_views
+
+    # the visual memory: every usable frame of the walk, where it was taken, its embedding from the walk's cache
+    mem = pmap.memory
+    assert mem and mem.model == "thumb" and mem.frames >= len(pmap.references) // 2
+    frames = json.loads((res.build_dir / "memory.json").read_text())["frames"]
+    assert len(frames) == mem.frames == len(np.load(res.build_dir / "memory.npy"))
+    assert all(f["x_m"] is not None and (maps_root / "video-hall" / f["image"]).is_file() for f in frames)
+    xs = [f["x_m"] for f in frames]
+    assert xs == sorted(xs) and xs[-1] > xs[0]  # walking on: positions move along the placed track
     assert all((maps_root / "video-hall" / r.image).is_file() for r in pmap.references)
     assert pmap.embedding and pmap.embedding.dim == 64
     vectors = np.load(maps_root / "video-hall" / pmap.embedding.file)
