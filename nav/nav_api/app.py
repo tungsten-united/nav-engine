@@ -21,7 +21,9 @@ that exercise this API (/loc/, /nav/); with NAV_FRONTEND_URL set, page paths her
 """
 
 import json
+import logging
 import time
+from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.exception_handlers import http_exception_handler
@@ -41,6 +43,7 @@ from nav.recorder.store import NotFound
 from nav.schemas.map import MAP_SCHEMA_VERSION, MapSummary, PlaceMap
 from nav.schemas.navigation import LiveMotion, Localization, Route, RouteHop, RouteRequest, Thresholds
 
+logger = logging.getLogger(__name__)
 _DEFAULT = object()
 MAX_FRAMES = 4  # a short burst
 MAX_FRAME_BYTES = 4 * 1024 * 1024
@@ -51,6 +54,12 @@ def live_place(images: list[bytes], model: str):
     from nav.mapping.inference import place_live
 
     return place_live(images, model, config.LIVE_INFER_DEADLINE_S)
+
+
+def live_verify(images: list[bytes], refs: list[tuple[str, Path]]) -> list[list[int]]:
+    from nav.mapping.inference import verify_live
+
+    return verify_live(images, refs, config.LIVE_VERIFY_DEADLINE_S)
 
 
 def failure(e: HTTPException | NotFound) -> tuple[int, str]:
@@ -71,10 +80,12 @@ def infer_health() -> dict:
 
 def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_fn=None, api_token=_DEFAULT,
                    cors_origins=_DEFAULT, cors_origin_regex=_DEFAULT, frontend_url=_DEFAULT,
-                   thresholds: Thresholds | None = None, capture=_DEFAULT) -> FastAPI:
+                   thresholds: Thresholds | None = None, capture=_DEFAULT, verify_fn=_DEFAULT,
+                   verify_params=None) -> FastAPI:
     """Settings default to nav/config.py (environment); tests pass them explicitly. `place_fn(images, model)` gives
     the place embeddings of JPEG frames (default: the inference host, live priority, short deadline). `capture`: where
-    every call is recorded (a Capture, or None: nowhere; default NAV_CAPTURE_DIR)."""
+    every call is recorded (a Capture, or None: nowhere; default NAV_CAPTURE_DIR). `verify_fn(images, refs)`: LightGlue
+    inliers of the frames with memory frames ([(cache key, image path)]), default the inference host; None: off."""
     maps = maps or MapCache(config.MAPS_DIR, config.MAP_RELOAD_S)
     place_fn = place_fn or live_place
     infer_health_fn = infer_health_fn or infer_health
@@ -83,6 +94,8 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
     cors_origin_regex = config.CORS_ORIGIN_REGEX if cors_origin_regex is _DEFAULT else cors_origin_regex
     frontend_url = config.FRONTEND_URL if frontend_url is _DEFAULT else frontend_url
     thresholds = thresholds or config.loc_thresholds()
+    verify_fn = live_verify if verify_fn is _DEFAULT else verify_fn
+    verify_params = verify_params or config.verify_params()
     if capture is _DEFAULT:
         capture = Capture(config.CAPTURE_DIR) if config.CAPTURE_DIR else None
     app = FastAPI(title="nav-engine nav-api", version=f"map-schema-{MAP_SCHEMA_VERSION}",
@@ -253,12 +266,32 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
             except InferenceError as e:
                 raise HTTPException(502, f"inference host: {e}")
             took["embed"] = round((time.perf_counter() - t) * 1000, 1)
+        verify = None
+        if verify_fn and verify_params.k > 0 and index.memory and index.memory.frames:
+            def verify(rows: list[int], frames: list[int]) -> dict[int, int] | None:
+                """LightGlue on the inference host; an answer without it beats none (logged, then unverified)."""
+                mem, build = index.memory, index.pmap.build.build_id
+                refs = [(f"{map_id}/{build}/{mem.frames[i].id}", maps.store.dir(map_id) / mem.frames[i].image)
+                        for i in rows]
+                t = time.perf_counter()
+                try:
+                    got = verify_fn([data[k] for k in frames], refs)
+                except (InferenceError, OSError) as e:
+                    took["verify_failed"] = 1
+                    logger.warning("verify %s: %s", map_id, e)
+                    return None
+                finally:
+                    took["verify"] = round((time.perf_counter() - t) * 1000, 1)
+                return {i: max(int(row[c]) for row in got) for c, i in enumerate(rows)}
+
         t = time.perf_counter()
-        res = localize(index, queries if queries is not None else [[0.0]], thresholds, top_k=top_k, previous=previous,
-                       expected=expected, heading_abs_deg=heading_deg, model=model, motions=motions or None,
-                       previous_step_count=previous_step_count)
+        res = await run_in_threadpool(
+            lambda: localize(index, queries if queries is not None else [[0.0]], thresholds, top_k=top_k,
+                             previous=previous, expected=expected, heading_abs_deg=heading_deg, model=model,
+                             motions=motions or None, previous_step_count=previous_step_count, verify=verify,
+                             verify_params=verify_params))
         res.frames = len(data)
-        took["match"] = round((time.perf_counter() - t) * 1000, 1)
+        took["match"] = round((time.perf_counter() - t) * 1000 - took.get("verify", 0.0), 1)
         took["total"] = round((time.perf_counter() - t0) * 1000, 1)
         res.took_ms = took
         return res

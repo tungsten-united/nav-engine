@@ -63,6 +63,7 @@ INFER_PORT = int(os.environ.get("NAV_INFER_PORT", "8451"))
 INFER_JOBS_DIR = Path(os.environ.get("NAV_INFER_JOBS_DIR", DATA_DIR / "infer-jobs")).resolve()
 INFER_QUEUE = int(os.environ.get("NAV_INFER_QUEUE", "4"))  # model requests waiting for the GPU before 503
 INFER_JOB_QUEUE = int(os.environ.get("NAV_INFER_JOB_QUEUE", "2"))  # map jobs waiting behind the running one
+INFER_FEATURE_CACHE = int(os.environ.get("NAV_INFER_FEATURE_CACHE", "3000"))  # memory frames' local features kept
 
 # Which service `nav serve` runs: map-api (recordings, map builds, review, the debugging frontend) or nav-api (the
 # live side for Orient's orchestrator: published maps, routes, localization; read-only on the data).
@@ -91,6 +92,24 @@ LOC_GATE_SLACK_FRAC = float(os.environ.get("NAV_LOC_GATE_SLACK_FRAC", "0.35"))
 # Visual memory (nav/mapping/memory.py): a frame belongs to the nearest node within this many metres of where it was
 # taken (Nati House: nodes 1-4 m apart; Itnig 3-7 m).
 LOC_MEMORY_RADIUS_M = float(os.environ.get("NAV_LOC_MEMORY_RADIUS_M", "5.0"))
+# Live verification (localize.py VerifyParams): LightGlue on the inference host between the camera frames and the
+# NAV_LOC_VERIFY_K best memory frames (0: off); inliers from LOW to HIGH add up to GAIN to that frame's score.
+# Itnig, cross-walk: >= 300 inliers put the camera within 3 m of the matched frame 80% of the time. Defaults from
+# `nav map loc-bench` on Itnig and Nati House with degraded frames: every walk located (memory alone: 3 of 4 Itnig
+# walks, Nati House after 31 s), 95-100% of the belief's commits within 3 m of the truth; a stronger gain commits
+# faster and strays more.
+LOC_VERIFY_K = int(os.environ.get("NAV_LOC_VERIFY_K", "6"))
+LOC_VERIFY_LOW = int(os.environ.get("NAV_LOC_VERIFY_LOW", "150"))
+LOC_VERIFY_HIGH = int(os.environ.get("NAV_LOC_VERIFY_HIGH", "500"))
+LOC_VERIFY_GAIN = float(os.environ.get("NAV_LOC_VERIFY_GAIN", "0.3"))
+LIVE_VERIFY_DEADLINE_S = float(os.environ.get("NAV_LIVE_VERIFY_DEADLINE_S", "3"))  # then the answer goes unverified
+
+
+def verify_params():
+    """nav-api's live verification settings from the environment (NAV_LOC_VERIFY_*)."""
+    from nav.navigation.localize import VerifyParams
+
+    return VerifyParams(k=LOC_VERIFY_K, low=LOC_VERIFY_LOW, high=LOC_VERIFY_HIGH, gain=LOC_VERIFY_GAIN)
 
 
 def loc_thresholds():

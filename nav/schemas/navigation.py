@@ -135,3 +135,4 @@ class Localization(BaseModel):
     thresholds: Thresholds
     took_ms: dict[str, float]  # embed (the inference host), match, total
     position: LivePosition | None = None  # with a visual memory: where the frames were taken
+    verified: dict[str, int] = {}  # memory frame id -> LightGlue inliers with the live frames (the frames checked)

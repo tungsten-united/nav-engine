@@ -14,6 +14,9 @@ It shares one GPU with whatever else runs on this computer, so it protects itsel
     POST /infer/v1/embed       images[] (JPEG), model          -> {model, n, dim, data: base64 float32}
     POST /infer/v1/place       images[] (JPEG), model, priority? -> same, MegaLoc (priority=live: ahead of batches)
     POST /infer/v1/match       images[] (JPEG), pairs: [[i,j]] -> {inliers: [...]}
+    POST /infer/v1/verify      queries[] (JPEG), refs: [key], ref_images[]? (named <index>.jpg) -> {inliers: [[...]]}
+                               live (nav-api): the camera frames against visual-memory frames, whose features stay
+                               cached by key; 409 {missing: [key]} asks for the images of the ones not cached
     POST /infer/v1/language    audio, model                    -> {probs: {code: p}}, Whisper's language guess
     POST /infer/v1/transcribe  audio, model, language?         -> {text}
     POST /infer/v1/jobs/map-draft   job_id, place, language, model, effort, budget_usd, candidates, previous?, frames[]
@@ -47,6 +50,8 @@ log = logging.getLogger(__name__)
 
 MAX_IMAGES = 32  # per embed / place request
 MAX_PAIRS = 64  # per match request ...
+MAX_VERIFY_QUERIES = 4  # a burst
+MAX_VERIFY_REFS = 16
 MAX_MATCH_IMAGES = 48  # ... over at most this many distinct images
 MAX_BODY = 16 * 1024 * 1024  # model requests
 MAX_JOB_BODY = 96 * 1024 * 1024  # map jobs (candidates + up to MAX_JOB_FRAMES frames); Cloudflare allows 100 MB
@@ -63,6 +68,7 @@ class Backend(Protocol):
     def embed(self, images: list[bytes], model: str) -> np.ndarray: ...
     def place(self, images: list[bytes], model: str) -> np.ndarray: ...
     def match(self, images: list[bytes], pairs: list[tuple[int, int]]) -> list[int]: ...
+    def verify(self, queries: list[bytes], refs: list[tuple[str, bytes | None]]) -> list[list[int]]: ...
     def detect_language(self, path: Path, model: str) -> dict[str, float]: ...
     def transcribe(self, path: Path, model: str, language: str | None = None) -> str: ...
     def map_draft(self, work_dir: Path, place: str, language: str, model: str, effort: str, budget_usd: float) -> None: ...
@@ -70,7 +76,10 @@ class Backend(Protocol):
 
 class LocalBackend:
     def __init__(self):
+        from nav.mapping.models import FeatureCache
+
         self.models = {"embed": config.EMBED_MODEL, "place": config.PLACE_MODEL, "transcribe": config.TRANSCRIBE_MODEL}
+        self.features = FeatureCache(config.INFER_FEATURE_CACHE)
 
     def embed(self, images, model):
         from nav.mapping.inference import load_rgb
@@ -88,6 +97,13 @@ class LocalBackend:
         from nav.mapping.inference import local_pair_inliers
 
         return local_pair_inliers(images, pairs)
+
+    def verify(self, queries, refs):
+        from nav.mapping.inference import load_rgb
+        from nav.mapping.models import verify
+
+        return verify([load_rgb(b) for b in queries],
+                      [(k, None if b is None else (lambda b=b: load_rgb(b))) for k, b in refs], self.features)
 
     def detect_language(self, path, model):
         from nav.mapping.models import detect_language
@@ -330,6 +346,33 @@ def create_infer_app(backend: Backend | None = None, jobs_dir: Path | None = Non
         if not pp or len(pp) > MAX_PAIRS or any(not (0 <= k < len(data)) for p in pp for k in p):
             raise HTTPException(422, f"send 1..{MAX_PAIRS} pairs of indexes into images")
         return {"inliers": [int(k) for k in await gpu.run(backend.match, data, pp)]}
+
+    @app.post(f"{api}/verify")
+    async def verify(queries: list[UploadFile] = File(...), refs: str = Form(...),
+                     ref_images: list[UploadFile] | None = File(None)):
+        """Live (nav-api, ahead of batch calls): LightGlue inliers of each camera frame with each memory frame."""
+        from fastapi.responses import JSONResponse
+
+        from nav.infer.errors import MissingFeatures
+
+        q = await read_images(queries, MAX_VERIFY_QUERIES)
+        try:
+            keys = [str(k) for k in json.loads(refs)]
+        except (ValueError, TypeError):
+            raise HTTPException(422, "refs must be a JSON list of keys")
+        if not keys or len(keys) > MAX_VERIFY_REFS:
+            raise HTTPException(422, f"send 1..{MAX_VERIFY_REFS} refs")
+        given: dict[str, bytes] = {}
+        for f in ref_images or []:
+            try:
+                given[keys[int(Path(f.filename or "").stem)]] = await f.read()
+            except (ValueError, IndexError):
+                raise HTTPException(422, f"ref image {f.filename!r}: name it <index into refs>.jpg")
+        try:
+            got = await gpu.run(backend.verify, q, [(k, given.get(k)) for k in keys], live=True)
+        except MissingFeatures as e:
+            return JSONResponse({"missing": e.keys}, status_code=409)
+        return {"inliers": [[int(k) for k in row] for row in got]}
 
     async def on_audio(audio: UploadFile, fn: Callable, *args):
         suffix = Path(audio.filename or "clip.webm").suffix[:8] or ".webm"
