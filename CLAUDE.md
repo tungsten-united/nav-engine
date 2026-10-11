@@ -59,6 +59,10 @@ calls map-api directly. `frontend/` here is a debugging frontend, not Orient's a
   references only).
 - `docs/` — the navigation-side design (`main_idea.md`, `navigation_stack.md`, by LPA, from
   tungsten-united/demo-repository@navigation, aligned with Orient's architecture) and `map.schema.json` (regenerate: `nav map schema --out ...`; a test checks it).
+- `nav/navigation/locbench.py` — `nav map loc-bench`: localization method by method (refs / memory / verify) on the
+  map's walks (each against the others; a single walk minus `--exclude-s` around the query) with the truth, or on
+  captured live sessions (`--live`) without it; every answer sequence through the belief at the orchestrator's live
+  temperature: when it locates, how often it commits, how far from the truth. The scoreboard for localization changes.
 - `nav/mapping/inference.py` — every model call on files: local models, or the inference host when `NAV_INFER_URL` is set.
 - `nav/infer/` — inference host: `server.py` (`nav infer serve`: models + Claude Code map job over HTTP, one GPU slot
   where nav-api's live frames go ahead of queued batch calls, bounded queues, 503 + Retry-After), `client.py`
@@ -66,7 +70,7 @@ calls map-api directly. `frontend/` here is a debugging frontend, not Orient's a
 - `nav/cli.py` — `nav serve [--app nav-api]`, `nav infer serve`, `nav rec list|show|finalize|import|push|pull`,
   `nav live pull|sessions|logs` (captured live calls; `logs` saves the session's Cloud Logging entries, the
   orchestrator's included, as `logs.jsonl`),
-  `nav map setup|build|llm|refinish|check|review|clean|republish|memory|measure|route|pdr-replay|orchestrator-replay|tune|schema|list|show|push|pull`.
+  `nav map setup|build|llm|refinish|check|review|clean|republish|memory|loc-bench|measure|route|pdr-replay|orchestrator-replay|tune|schema|list|show|push|pull`.
 - `Dockerfile` + `deploy/cloudrun.sh` + `deploy/{map-api,nav-api}.env.yaml` — the two Cloud Run services;
   `deploy/nav-infer.service`, `deploy/nav-recorder.service` (helium-nav: map-api serving the debugging pages) — helium units.
 - `data/recordings/<rec_id>/` — recordings (gitignored). Shared copy for the team: `gs://tungsten-united-nav-recordings/recordings/<rec_id>/`

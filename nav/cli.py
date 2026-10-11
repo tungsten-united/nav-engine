@@ -517,6 +517,39 @@ def map_tune(map_id: str,
             print(f"  {rec}  {evaluate(pmap, index, [ep], thresholds, loop, params)}{mark}")
 
 
+@maps.command("loc-bench")
+def map_loc_bench(map_id: str,
+                  methods: str = typer.Option("refs,memory,verify", help="Comma-separated: refs (reference images "
+                                              "only), memory (+ the visual memory), verify (+ LightGlue)."),
+                  exclude_s: float = typer.Option(3.0, help="Map walked once: leave out its frames this close to "
+                                                  "the query (more than one walk: each is matched against the others)."),
+                  live: bool = typer.Option(False, help="Replay the captured live sessions (`nav live pull`) instead "
+                                            "of the map's walks."),
+                  since: str = typer.Option(None, help="Live sessions from this day (YYYY-MM-DD)."),
+                  live_root: Path = typer.Option(None, help="Default: NAV_DATA_DIR/live.")) -> None:
+    """How often, how fast and how right localization is, method by method: the map's walks replayed with the truth
+    (where the walk was), or the captured live sessions without it. Each answer sequence also goes through the
+    orchestrator's belief (its live temperature): when it locates, how often it commits, how far from the truth."""
+    from nav.navigation.locbench import bench_sessions, bench_walks
+    from nav.schemas.map import PlaceMap
+
+    _logging()
+    d = _map_store().dir(map_id)
+    pmap = PlaceMap.model_validate_json((d / "map.json").read_text())
+    ms = [m.strip() for m in methods.split(",") if m.strip()]
+    if live:
+        from nav.navigation.captured import sessions
+
+        found = sessions(live_root or config.LIVE_DIR, map_id, since)
+        print(f"{map_id}: {len(found)} live sessions")
+        scores = bench_sessions(pmap, d, found, config.loc_thresholds(), ms, config.verify_params())
+    else:
+        scores = bench_walks(pmap, d, config.RECORDINGS_DIR, config.CACHE_DIR, config.loc_thresholds(), ms,
+                             exclude_s=exclude_s, verify_params=config.verify_params())
+    for sc in scores:
+        print(sc.line())
+
+
 @maps.command("schema")
 def map_schema(out: Path = typer.Option(None, help="Write here instead of printing.")) -> None:
     """JSON Schema of the published map (PlaceMap), for nav-api's callers (committed as docs/map.schema.json)."""

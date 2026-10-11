@@ -169,6 +169,12 @@ uv run nav live pull [<map_id> …]                  # gs://…/live/ -> data/li
 uv run nav live sessions [nati-house] [--since 2026-10-11]   # one line per walk: calls, frames, minutes, answers
 uv run nav live logs nati-house 2026-10-11 <session>  # its Cloud Logging entries (orchestrator too) -> logs.jsonl
 ```
+Replay them (or the map's own walks, with the truth) through today's localizer, method by method:
+```sh
+uv run nav map memory nati-house                       # a published build from before the visual memory: add it
+uv run nav map loc-bench nati-house [--methods refs,memory,verify] [--exclude-s 3]   # the walks, with the truth
+uv run nav map loc-bench nati-house --live [--since 2026-10-11]                     # the captured sessions
+```
 
 ### Pipeline
 1. **Preprocess** each walk (cached per recording in `data/cache/<rec_id>/`, keyed by parameters and model):
