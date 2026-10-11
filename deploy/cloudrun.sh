@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # The two Cloud Run services, one image (the Dockerfile), on the team bucket. Idempotent; only creates or updates.
 #   map-api  recordings, map builds, review, map files + the debugging frontend; bucket read-write; runs as nav-worker
-#   nav-api  the live API for Orient's orchestrator: published maps, routes, localization; bucket read-only; runs as nav-api
+#   nav-api  the live API for Orient's orchestrator: published maps, routes, localization; bucket read-only (but for
+#            live/, where it records every call it answers: nav/nav_api/capture.py); runs as nav-api
 #
 #   deploy/cloudrun.sh setup                     once: APIs, service accounts + bucket access, empty secrets
+#   deploy/cloudrun.sh capture-setup             once: let nav-api write (only) under the bucket's live/ prefix
 #   deploy/cloudrun.sh [deploy] [map-api|nav-api|all]   build the image here (docker), push it, deploy (default all)
 #   deploy/cloudrun.sh url [map-api|nav-api]     the service URL (default map-api)
 #   deploy/cloudrun.sh token [map-api|nav-api]   the API token that service wants (default map-api)
@@ -87,6 +89,7 @@ setup() {
         --role roles/storage.objectAdmin >/dev/null
     gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member "serviceAccount:$(sa nav-api)" \
         --role roles/storage.objectViewer >/dev/null
+    capture-setup
     local svc pair name
     for svc in "${SERVICES[@]}"; do
         for pair in $(secrets_of "$svc"); do
@@ -98,6 +101,17 @@ setup() {
         done
     done
     echo "setup done; now: $0 secrets, then $0 deploy"
+}
+
+# nav-api records every call it answers under live/ (NAV_CAPTURE_DIR, a mount of only that prefix). It may create,
+# overwrite and delete objects there (GCS FUSE rewrites an object while a file is written) and nowhere else: an IAM
+# condition on the object name, which needs the bucket's uniform access (it has it).
+capture-setup() {
+    gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member "serviceAccount:$(sa nav-api)" \
+        --role roles/storage.objectUser \
+        --condition "expression=resource.name.startsWith('projects/_/buckets/$BUCKET/objects/live/'),title=nav-api-live-capture,description=nav-api records live calls under live/" \
+        >/dev/null
+    echo "nav-api may write under gs://$BUCKET/live/"
 }
 
 # GitHub Actions: OIDC tokens of this repo -> the shared workload identity pool "github" -> nav-deployer, which may
@@ -162,14 +176,17 @@ image() {  # build the Dockerfile and push it; prints the image reference
 
 # How each service runs. nav-api replaced the all-in-one service of the same name, and `gcloud run deploy` keeps
 # whatever a flag doesn't set, so its flags also undo that one's: the read-write mount, no CPU throttling.
+# nav-api's second volume is the bucket's live/ prefix only, read-write: where it records the calls (NAV_CAPTURE_DIR).
 flags() {
     local volume="name=data,type=cloud-storage,bucket=$BUCKET,mount-options=implicit-dirs"
+    local live="name=live,type=cloud-storage,bucket=$BUCKET,mount-options=implicit-dirs;only-dir=live"
     case "$1" in
         map-api) echo --add-volume "$volume" --add-volume-mount volume=data,mount-path=/data \
                       --cpu 2 --memory 4Gi --no-cpu-throttling --min-instances 1 --max-instances 1 \
                       --concurrency 40 --timeout 3600 ;;
         nav-api) echo --clear-volumes --clear-volume-mounts --add-volume "$volume,readonly=true" \
                       --add-volume-mount volume=data,mount-path=/data \
+                      --add-volume "$live" --add-volume-mount volume=live,mount-path=/live \
                       --cpu 1 --memory 1Gi --cpu-throttling --min-instances 1 --max-instances 3 \
                       --concurrency 20 --timeout 60 ;;
     esac

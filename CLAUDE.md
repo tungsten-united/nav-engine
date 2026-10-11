@@ -17,6 +17,10 @@ calls map-api directly. `frontend/` here is a debugging frontend, not Orient's a
     routes, localization (`maps.py`: published maps + reference embeddings cached, reloaded when map.json changes).
     Formats in `nav/schemas/navigation.py`. `log.py`: one JSON line per localize/route call for Cloud Logging, `message`
     prefixed `[nav-api]`, the orchestrator's field names (`clientId` from `X-Client-Id`), `commit` from `NAV_COMMIT`.
+    `capture.py`: with `NAV_CAPTURE_DIR` every localize/route call is recorded whole (frames, motion, answer or error)
+    under `<map_id>/<date>/<sessionId>/`, on a background thread; on Cloud Run that is the bucket's `live/` prefix,
+    the only place nav-api may write (`deploy/cloudrun.sh capture-setup`). Read back with `nav/navigation/captured.py`
+    (`nav live pull|sessions|logs`): the test set for live localization.
 - `nav/recorder/store.py` — recording storage, idempotent uploads, `finalize` (chunks → `video.mp4`, batches →
   parquet/jsonl).
 - `frontend/` — the debugging frontend, for the team and for testing the APIs by hand (not Orient's app):
@@ -52,11 +56,15 @@ calls map-api directly. `frontend/` here is a debugging frontend, not Orient's a
   where nav-api's live frames go ahead of queued batch calls, bounded queues, 503 + Retry-After), `client.py`
   (chunking, retries, deadlines, Cloudflare service token).
 - `nav/cli.py` — `nav serve [--app nav-api]`, `nav infer serve`, `nav rec list|show|finalize|import|push|pull`,
+  `nav live pull|sessions|logs` (captured live calls; `logs` saves the session's Cloud Logging entries, the
+  orchestrator's included, as `logs.jsonl`),
   `nav map setup|build|llm|refinish|check|review|clean|republish|measure|route|pdr-replay|orchestrator-replay|tune|schema|list|show|push|pull`.
 - `Dockerfile` + `deploy/cloudrun.sh` + `deploy/{map-api,nav-api}.env.yaml` — the two Cloud Run services;
   `deploy/nav-infer.service`, `deploy/nav-recorder.service` (helium-nav: map-api serving the debugging pages) — helium units.
 - `data/recordings/<rec_id>/` — recordings (gitignored). Shared copy for the team: `gs://tungsten-united-nav-recordings/recordings/<rec_id>/`
   (project `tungsten-united`, not the active gcloud project `kotie-app`), via `nav rec push|pull` (`gcloud storage rsync`, no deletes, skips `raw/`).
+- `data/live/<map_id>/<date>/<session>/` — live calls nav-api recorded (gitignored), from `gs://…/live/` via
+  `nav live pull`. They show people at the venue: team use only, never in the repo.
 - `data/maps/<map_id>/` — maps (gitignored), shared under `gs://tungsten-united-nav-recordings/maps/<map_id>/` via
   `nav map push|pull`; `data/cache/<rec_id>/` — preprocessing cache, safe to delete.
 

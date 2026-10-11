@@ -159,6 +159,17 @@ uv run nav map push [<map_id> …]      # upload to gs://tungsten-united-nav-rec
 uv run nav map pull [<map_id> …]
 ```
 
+### Live capture (benchmarks from real walks)
+nav-api records every call it answers when `NAV_CAPTURE_DIR` is set (on Cloud Run: `/live`, a mount of
+`gs://tungsten-united-nav-recordings/live/`; run `deploy/cloudrun.sh capture-setup` once so it may write there).
+One folder per map, UTC day and orchestrator session (`X-Session-Id`), each call a JSON (request, the phone's motion,
+the answer or the error) next to its frames:
+```sh
+uv run nav live pull [<map_id> …]                  # gs://…/live/ -> data/live/ (never deletes)
+uv run nav live sessions [nati-house] [--since 2026-10-11]   # one line per walk: calls, frames, minutes, answers
+uv run nav live logs nati-house 2026-10-11 <session>  # its Cloud Logging entries (orchestrator too) -> logs.jsonl
+```
+
 ### Pipeline
 1. **Preprocess** each walk (cached per recording in `data/cache/<rec_id>/`, keyed by parameters and model):
    - frames at **1 fps**, the sharpest of each second (variance of the Laplacian), 768 px;
