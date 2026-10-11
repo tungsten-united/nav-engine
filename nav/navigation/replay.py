@@ -356,6 +356,7 @@ ORCH_FPS = 1.5  # the phone uploads a frame, waits for the 202, then 500 ms: abo
 TRUTH_S = 3.0  # a node counts as "there" from this long before the walk reached it until the next node
 LATE_S = 10.0  # a node the walk left less than this long ago is a late move, not a wrong one
 LEAD_S = 5.0  # navigation starts this long before the walk leaves its first node
+GOAL_TAIL_S = 6.0  # an episode goes on this long past its goal (or until the walk's next node), to arrive
 
 
 @dataclass
@@ -438,7 +439,7 @@ class Episode:
 
 def walk_episode(pmap: PlaceMap, track: Track) -> Episode | None:
     """The walk replayed as it went: from just before it left its route's first node to its first visit of the last
-    node it walked to."""
+    node it walked to, and GOAL_TAIL_S on (a loop that missed the goal is not scored on where the walk went next)."""
     rec_id = track.rec_id
     route = walk_route(pmap, rec_id)
     if not route:
@@ -449,7 +450,9 @@ def walk_episode(pmap: PlaceMap, track: Track) -> Episode | None:
     for t, n in track.visits:
         if t >= route[0][1] and truth[-1][0] != goal:
             truth.append((n, t))
-    sel = np.flatnonzero(track.t_ms >= start)
+    after = [t for t, _ in track.visits if t > truth[-1][1]]
+    end = min(after[0] if after else float("inf"), truth[-1][1] + GOAL_TAIL_S * 1000)
+    sel = np.flatnonzero((track.t_ms >= start) & (track.t_ms < end))
     return Episode(track.t_ms[sel], track.emb[sel], [track.motions[i] for i in sel], [rec_id] * len(sel),
                    [(rec_id, float(track.t_ms[i])) for i in sel], truth, goal)
 

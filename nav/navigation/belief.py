@@ -28,14 +28,20 @@ from nav.schemas.navigation import Localization
 
 @dataclass
 class BeliefParams:
-    temperature: float = 0.03  # score difference that makes a node e times less likely than the leader
-    gate: float = 0.2  # likelihood of a node nav-api marks farther than walked
-    jump: float = 0.02  # belief spread over every node each call
-    walk_scale: float = 1.0  # metres walked = phone steps x the map's live step length x this
-    walk_m_per_call: float = 0.8  # metres walked per call when the phone sends no steps
-    reach: float = 0.7  # locate / reach a node ahead this likely
-    leave: float = 0.8  # drop the route for a node off it this likely
+    """From `nav map tune itnig` (2026-10-11, build 20261010T131002Z, its four walks each matched against the other
+    three's references, 150 stitched episodes), rounded. On 300 other episodes (966 nodes): 293 reached, 0 wrong
+    moves, 4 restarts; the votes (LoopParams) 289 reached, 430 wrong, 286 restarts. On the four walks as they went
+    (18 nodes): 5 reached, 1 wrong; the votes 5 and 5. `walk_scale` is a fit, not a step length: the motion model is
+    memoryless and has to move belief on by the time the camera shows the next node. Replays always send steps, so
+    `walk_m_per_call` is not fitted: about the steps of a call at that scale."""
 
+    temperature: float = 0.25  # score difference that makes a node e times less likely than the leader
+    gate: float = 0.8  # likelihood of a node nav-api marks farther than walked
+    jump: float = 0.1  # belief spread over every node each call
+    walk_scale: float = 3.7  # metres walked = phone steps x the map's live step length x this
+    walk_m_per_call: float = 1.5  # metres walked per call when the phone sends no steps
+    reach: float = 0.7  # locate / reach a node ahead this likely
+    leave: float = 0.7  # drop the route for a node off it this likely
 
 class NodeBelief:
     def __init__(self, pmap: PlaceMap, params: BeliefParams | None = None):

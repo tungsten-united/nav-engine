@@ -97,3 +97,18 @@ def test_with_a_clear_camera_the_loops_reach_nodes_and_never_move_the_user_wrong
     th = Thresholds(confirm_score=0.45, confirm_margin=0.05, lost_score=0.35, gate_slack_m=100.0)
     s = evaluate(PMAP, index, episodes, th, kind, None)
     assert s.wrong == 0 and s.reached >= 0.8 * s.nodes
+
+
+@pytest.mark.parametrize("rec_id", PMAP.recordings)
+def test_a_walk_replayed_stops_soon_after_its_goal(rec_id):
+    """Itnig walk ddb1 reached its route's goal (Main entrance) at 10 s and went on for 160 s; the replay kept
+    sending those frames with the user still "at" the goal, so a loop that missed the goal and then followed the
+    walker to the Drinks area was scored wrong twice (2026-10-11)."""
+    from nav.navigation.replay import GOAL_TAIL_S, walk_episode
+
+    tr = track(rec_id)
+    ep = walk_episode(PMAP, tr)
+    goal_t = ep.truth[-1][1]
+    after = [t for t, _ in tr.visits if t > goal_t]
+    assert ep.t_ms[-1] < min(after[0] if after else np.inf, goal_t + GOAL_TAIL_S * 1000)
+    assert ep.t_ms[-1] >= goal_t  # but long enough to arrive

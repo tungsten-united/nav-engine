@@ -18,14 +18,13 @@ from dataclasses import asdict, dataclass, fields
 
 import numpy as np
 
-from nav.navigation.replay import Episode, OrchestratorResult, Track, loop_factory, run_episode
+from nav.navigation.replay import GOAL_TAIL_S, Episode, OrchestratorResult, Track, loop_factory, run_episode
 from nav.navigation.route import hops
 from nav.schemas.map import PlaceMap
 
 WRONG_COST = 3.0
 RESTART_COST = 0.3
 LATE_COST_PER_S = 0.05  # per second after the user got there, up to 10 s
-GOAL_TAIL_S = 6.0  # an episode goes on this long past its goal (or until the walk's next node), to arrive
 MIN_PIECE_S = 1.0  # shorter pieces are two nodes seen at once (Itnig 7f42 at 38 s: Drinks area, Hackathon tables)
 
 
@@ -137,9 +136,9 @@ def evaluate(pmap: PlaceMap, index, episodes: list[Episode], thresholds, kind: s
 
 # What tuning searches, per loop: (low, high, integer).
 SPACES = {
-    "belief": {"temperature": (0.005, 0.1, False), "gate": (0.0, 1.0, False), "jump": (0.001, 0.2, False),
-               "walk_scale": (0.2, 2.0, False), "walk_m_per_call": (0.1, 3.0, False), "reach": (0.4, 0.98, False),
-               "leave": (0.4, 0.99, False)},
+    "belief": {"temperature": (0.005, 0.5, False), "gate": (0.0, 1.0, False), "jump": (0.001, 0.3, False),
+               "walk_scale": (0.2, 5.0, False), "walk_m_per_call": (0.1, 4.0, False), "reach": (0.4, 0.995, False),
+               "leave": (0.4, 0.995, False)},
     "votes": {"k": (1, 6, True), "n": (1, 8, True), "margin": (0.0, 0.15, False), "lost_margin": (0.0, 0.2, False),
               "lost_s": (2.0, 20.0, False)},
 }

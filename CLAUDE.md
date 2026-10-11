@@ -166,6 +166,10 @@ the live inference host out of it.
   69 m with the floor measured), the calibration failed, pitch read +16° and turns integrated backwards.
   `motion.py` turns gravity to agree with the phone's tilt (deviceorientation beta/gamma). The live side uses
   |acceleration| and the tilt angles, so it was never affected.
+- Replays must stop at the goal: a walk replayed to its route's goal kept sending the frames of the rest of the walk
+  with the user still "at" the goal (Itnig ddb1: goal at 10 s, frames to 170 s), so following the walker on was
+  scored wrong. Walk episodes end GOAL_TAIL_S after the goal, as stitched ones do. Replays against a walk's own
+  references flatter (frames 0.4 s from a reference are near copies): tune and judge with the other walks' only.
 - A problem found live becomes a test made from its real data, not only a fix: `tests/fixtures/itnig` (the map
   that stalled guidance after cleaning), `tests/fixtures/glories-basement` (a place walked once: no way back over
   `observed`), `tests/fixtures/voice-languages.json` (Whisper's guesses for short notes that alone came out Spanish
@@ -190,7 +194,9 @@ the live inference host out of it.
   node further on (one the camera missed: the route goes on from there; nav-api's walked-distance gate keeps a node
   seen from afar from counting); lost
   (other nodes win, or nothing recognised for a while), it starts over. `nav map orchestrator-replay` models that loop
-  (replay.py `OrchestratorLoop`) and picks its parameters. The phone never calls nav-api. map-api and
+  (replay.py `OrchestratorLoop`, `--loop votes`) and the proposed replacement for its votes, a probability per node
+  (belief.py `BeliefLoop`, the default; for the orchestrator to port, ~60 lines); `nav map tune` picks either's
+  parameters on stitched episodes. The phone never calls nav-api. map-api and
   `frontend/` are the team's (mapping, review, debugging); Orient's `/map` page records walks into map-api with its
   token (asked once per phone, never built into the public app). The contract lives in project-description
   `docs/contracts.md` §2: change it there first, then here.
