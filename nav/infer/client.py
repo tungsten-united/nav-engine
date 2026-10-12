@@ -170,7 +170,7 @@ class InferenceClient:
         return self._send("POST", "/infer/v1/transcribe", data=data, files=self._audio(path)).json()["text"]
 
     # --- the geometry job -----------------------------------------------------------------------------------------
-    def geometry(self, work: Path, job_id: str, poll_s: float = 20, deadline_s: float = 4 * 3600,
+    def geometry(self, work: Path, job_id: str, poll_s: float = 30, deadline_s: float = 12 * 3600,
                  chunk_frames: int = 48, chunk_bytes: int = 64 * 1024 * 1024) -> dict:
         """The 3D model of a geometry job folder (job.json + images/, nav/mapping/geometry.py) made on the host:
         frames uploaded in chunks, the job submitted and polled (its GPU stage waits for the host's GPU queue),

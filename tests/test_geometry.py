@@ -147,3 +147,28 @@ def test_pairs_are_the_walk_ahead_and_the_most_similar_elsewhere(monkeypatch):
     pairs = set(geometry.make_pairs(frames, place))
     assert (0, 5) in pairs and (0, 6) not in pairs  # 2.5 s ahead in the same walk, not 3 s
     assert all((i, 10 + i) in pairs for i in range(10))  # each one's look-alike in the other walk
+
+
+def test_an_unreachable_host_fails_the_build_other_failures_fall_back(tmp_path, monkeypatch):
+    from nav import config
+    from nav.infer.errors import InferenceUnavailable
+    from nav.mapping import inference
+
+    frames = [geometry.GeoFrame(f"r1/{i}.jpg", "r1", i * 500.0, 1, 1) for i in range(20)]
+    monkeypatch.setattr(geometry, "prepare_job", lambda work, *a: frames)
+    monkeypatch.setattr(config, "INFER_URL", "http://host")
+
+    class Host:
+        def __init__(self, error):
+            self.error = error
+
+        def geometry(self, work, job_id):
+            raise self.error
+
+    monkeypatch.setattr(inference, "remote", lambda: Host(InferenceUnavailable("queue busy")))
+    with pytest.raises(InferenceUnavailable):
+        geometry.build_geometry([], tmp_path, tmp_path / "b1", "m", {}, None, [])
+    monkeypatch.setattr(inference, "remote", lambda: Host(RuntimeError("no model")))
+    warnings = []
+    assert geometry.build_geometry([], tmp_path, tmp_path / "b2", "m", {}, None, warnings) is None
+    assert warnings and "dead reckoning" in warnings[0]

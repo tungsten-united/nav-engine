@@ -36,6 +36,7 @@ import base64
 import json
 import logging
 import re
+import shutil
 import sys
 import tempfile
 import threading
@@ -306,7 +307,11 @@ class Jobs:
             t0 = time.monotonic()
             try:
                 if p.get("kind") == "geometry":
-                    self.backend.geometry(self._dir(job_id) / "work")
+                    try:
+                        self.backend.geometry(self._dir(job_id) / "work")
+                    finally:  # the uploaded frames and intermediate files: only raw.npz and the logs are fetched
+                        for sub in ("images", "gpu", "colmap"):
+                            shutil.rmtree(self._dir(job_id) / "work" / sub, ignore_errors=True)
                 else:
                     self.backend.map_draft(self._dir(job_id) / "work", p["place"], p["language"], p["model"],
                                            p["effort"], p["budget_usd"], p.get("stage", "places"))

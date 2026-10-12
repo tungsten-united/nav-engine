@@ -740,6 +740,10 @@ def build_geometry(rec_dirs: list[Path], cache_root: Path, build_dir: Path, plac
             run_job(work)
         geo = place_in_map(work, tracks, first_rec)
     except Exception as e:  # the map is still worth building from dead reckoning
+        from nav.infer.errors import InferenceUnavailable
+
+        if isinstance(e, InferenceUnavailable):  # the host or its GPU queue didn't get to it: build again later
+            raise
         log.exception("geometry failed")
         warnings.append(f"geometry: no 3D model ({type(e).__name__}: {e}); positions from dead reckoning")
         return None
