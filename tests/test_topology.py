@@ -156,3 +156,33 @@ def test_the_routes_pass_fills_the_words_but_not_the_turns(tmp_path):
     assert me1.walked and me1.distance_m == pytest.approx(10.0) and me1.status == "observed"
     assert me1.reverse_status == "inferred" and "the way back was not walked" in me1.review_flags
     assert me1.reverse_steps and me1.departure_heading_deg == 90 and m.tracks[0].rec_id == "r1"
+
+
+def test_steps_ignore_wobble_and_a_backtrack_is_one_turn_around():
+    out_and_back = [(x, 0.0) for x in range(6)] + [(x, 0.05) for x in range(4, -1, -1)] + [(0.0, -y) for y in range(1, 6)]
+    steps = topology.skeleton(np.array(out_and_back, float), departure_turn=0.0)
+    assert [s.action for s in steps] == ["straight", "turn_around", "turn_left"]
+
+
+def test_nodes_closer_than_a_step_apart_are_one_place(tmp_path):
+    build, cset, places = l_build(tmp_path)
+    cset.candidates[1].position = Point(x_m=0.8, y_m=0.0)  # c02 photographed 0.8 m from c01: one standpoint
+    places.nodes[0].candidates.append("c04")  # n1 now has more candidates: it keeps its words
+    lay = layout_for(build, cset, places)
+    assert [n.id for n in lay.nodes] == ["n1", "n3"] and "c02" in lay.nodes[0].candidates
+    assert any("n2 (N2) is 0.8 m from n1 (N1): merged into it" in w for w in lay.warnings)
+
+
+def test_an_edge_that_wandered_is_flagged(tmp_path):
+    build, cset, places = l_build(tmp_path)
+    pts = [[t * 500, x, y, 90.0] for t, (x, y) in enumerate(
+        [(0, 0)] * 4 + [(x / 2, 6.0) for x in range(0, 21)] + [(10.0, 0.0)] * 4)]  # a detour 6 m to the side
+    (build / "tracks.json").write_text(json.dumps({"r1": pts}))
+    cset.candidates[1].views[0].t_ms = (len(pts) - 2) * 500
+    places.nodes = places.nodes[:2]
+    lay = layout_for(build, cset, places)
+    from nav.mapping.assemble import assemble
+
+    m = finish(assemble(places, None, lay, []), cset, lay, BUILD, "builds/b", {})
+    (e,) = m.edges
+    assert e.distance_m > 20 and any("wandered" in f for f in e.review_flags)

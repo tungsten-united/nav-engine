@@ -39,7 +39,9 @@ import numpy as np
 log = logging.getLogger(__name__)
 
 GEOMETRY_VERSION = 1
-FPS = 2.0
+FPS = 2.0  # frames a second of the model ...
+FPS_SHORT = 4.0  # ... and of a place walked once or briefly: denser frames bridge fast turns (Nati House)
+SHORT_S = 240  # "briefly": all its walks together
 LONG_SIDE = 1024  # px: frames of the model and of the memory; live frames are matched at this size too
 MIN_BRIGHTNESS = 20
 MAX_KEYPOINTS = 2048
@@ -49,8 +51,10 @@ SCALE_WINDOW_MS = 3000  # model distance vs walked distance over windows this lo
 SCALE_MIN_WALKED_M = 1.0
 LOCAL_WINDOW_MS = 15_000  # a frame's offset from dead reckoning vs its neighbours' within this window ...
 LOCAL_M = 2.5  # ... may differ by this much (dead reckoning drifts little in 15 s)
-DRIFT_M = 3.0  # stretches of one walk: their offsets may differ by this ...
-DRIFT_M_PER_S = 0.05  # ... plus this per second between them (a few metres a minute)
+STEP_M = 1.0  # consecutive frames' offsets differing more than this split the walk into stretches ...
+STEP_GAP_MS = 1500  # ... and so does a gap this long between trusted frames
+DRIFT_M = 1.5  # a stretch's offset may differ from the main stretch's by this ...
+DRIFT_M_PER_S = 0.05  # ... plus this per second between them (dead reckoning drifts a few metres a minute)
 MIN_POSED_SHARE = 0.25  # fewer posed frames than this share: no geometry for the build (dead reckoning only)
 
 
@@ -70,7 +74,15 @@ def _key(*parts) -> str:
     return hashlib.sha256(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()[:10]
 
 
-def sample_walk(rec_dir: Path, cache_root: Path) -> tuple[Path, list[GeoFrame], dict]:
+def fps_for(rec_dirs: list[Path]) -> float:
+    from nav.schemas.recording import Manifest
+
+    seconds = sum((Manifest.model_validate_json((d / "manifest.json").read_text()).duration_ms or 0) / 1000
+                  for d in rec_dirs)
+    return FPS_SHORT if len(rec_dirs) == 1 or seconds < SHORT_S else FPS
+
+
+def sample_walk(rec_dir: Path, cache_root: Path, fps: float = FPS) -> tuple[Path, list[GeoFrame], dict]:
     """The walk's model frames (cached in cache/<rec>/geo-<key>/), and its camera: {fov_deg, width, height}."""
     from PIL import Image
 
@@ -82,16 +94,16 @@ def sample_walk(rec_dir: Path, cache_root: Path) -> tuple[Path, list[GeoFrame], 
     rec = walk.manifest.rec_id
     start = next((e.t_ms for e in walk.events if e.type == "video_start"), 0.0)
     video = _video(rec_dir, walk.manifest)
-    key = _key(GEOMETRY_VERSION, FPS, LONG_SIDE, start, walk.calibration.offset_ms,
+    key = _key(GEOMETRY_VERSION, fps, LONG_SIDE, start, walk.calibration.offset_ms,
                video.stat().st_size if video.is_file() else 0)
     fdir, meta = cache_root / rec / f"geo-{key}", cache_root / rec / f"geo-{key}.json"
     if not meta.is_file():
-        log.info("%s: model frames at %.0f fps", rec, FPS)
+        log.info("%s: model frames at %.0f fps", rec, fps)
         if fdir.exists():
             shutil.rmtree(fdir)
         fdir.mkdir(parents=True)
         rows, size = [], None
-        for sf in sample_frames(video, start, FPS, LONG_SIDE) if video.is_file() else []:
+        for sf in sample_frames(video, start, fps, LONG_SIDE) if video.is_file() else []:
             if sf.brightness < MIN_BRIGHTNESS:
                 continue
             t = round(sf.t_ms - walk.calibration.offset_ms, 1)
@@ -111,8 +123,9 @@ def sample_walk(rec_dir: Path, cache_root: Path) -> tuple[Path, list[GeoFrame], 
 def prepare_job(work: Path, rec_dirs: list[Path], cache_root: Path, place_model: str) -> list[GeoFrame]:
     """A job folder for these walks: images linked (or copied) from the cache, job.json."""
     frames, walks = [], {}
+    fps = fps_for(rec_dirs)
     for rec_dir in rec_dirs:
-        fdir, fs, cam = sample_walk(rec_dir, cache_root)
+        fdir, fs, cam = sample_walk(rec_dir, cache_root, fps)
         if not fs:
             continue
         rec = fs[0].rec_id
@@ -126,7 +139,7 @@ def prepare_job(work: Path, rec_dirs: list[Path], cache_root: Path, place_model:
                     shutil.copyfile(fdir / Path(f.name).name, dst)
         frames += fs
         walks[rec] = cam
-    (work / "job.json").write_text(json.dumps({"version": GEOMETRY_VERSION, "place_model": place_model,
+    (work / "job.json").write_text(json.dumps({"version": GEOMETRY_VERSION, "place_model": place_model, "fps": fps,
                                                "frames": [asdict(f) for f in frames], "walks": walks}))
     return frames
 
@@ -279,8 +292,32 @@ def run_gpu_stage(work: Path, queue: bool | None = None, max_time: str = "45m") 
 
 
 # --- mapping (CPU) ---------------------------------------------------------------------------------------------
+def _jumpy(model, frames: list[GeoFrame], index: dict[str, int], fps: float = FPS) -> float:
+    """The share of a walk's consecutive frames (half a second apart) the model puts many times their usual step
+    apart, for the worst walk: a global model that joined a walk wrongly flings frames (Nati House: ~10%)."""
+    worst = 0.0
+    by_rec: dict[str, list[tuple[float, np.ndarray]]] = {}
+    for iid in model.reg_image_ids():
+        im = model.images[iid]
+        f = frames[index[im.name]]
+        by_rec.setdefault(f.rec_id, []).append((f.t_ms, np.asarray(im.projection_center(), float).reshape(3)))
+    for seq in by_rec.values():
+        seq.sort(key=lambda x: x[0])
+        steps = [np.linalg.norm(b[1] - a[1]) for a, b in zip(seq, seq[1:]) if b[0] - a[0] <= 1500 / fps]
+        if len(steps) >= 10:
+            med = float(np.median(steps)) or 1e-9
+            worst = max(worst, float(np.mean(np.array(steps) > JUMP_X * med)))
+    return worst
+
+
+JUMP_X = 8  # a step this many times the median one is a jump
+MAX_JUMPY = 0.02  # a global model with more jumps than this share is mapped again incrementally
+MIN_PIECE_FRAMES = 20  # model components kept (pieces of a walk the model couldn't join)
+
+
 def map_stage(work: Path) -> dict:
-    """COLMAP global mapping from work/gpu -> work/raw.npz (the largest component, in its own frame) + summary."""
+    """COLMAP mapping from work/gpu -> work/raw.npz: global mapping (GLOMAP), or incremental when the global model
+    flings frames (see _jumpy); every component with MIN_PIECE_FRAMES frames, each in its own frame + summary."""
     import pycolmap
 
     frames, walks, _ = job_frames(work)
@@ -317,40 +354,60 @@ def map_stage(work: Path) -> dict:
     (d / "pairs.txt").write_text("\n".join(lines) + "\n")
     t0 = time.time()
     pycolmap.verify_matches(db_path, d / "pairs.txt", pycolmap.TwoViewGeometryOptions())
-    recs = pycolmap.global_mapping(db_path, work / "images", d / "sparse")
+    index = {f.name: i for i, f in enumerate(frames)}
+    mapper = "global"
+    recs = pycolmap.global_mapping(db_path, work / "images", d / "global")
     comps = sorted(recs.values(), key=lambda r: -r.num_reg_images())
+    fps = json.loads((work / "job.json").read_text()).get("fps", FPS)
+    jumpy = _jumpy(comps[0], frames, index, fps) if comps else 1.0
+    if jumpy > MAX_JUMPY:
+        log.info("geometry: the global model flings %.0f%% of a walk's frames: mapping incrementally", 100 * jumpy)
+        o = pycolmap.IncrementalPipelineOptions()
+        o.num_threads = -1
+        o.max_runtime_seconds = 1800
+        recs = pycolmap.incremental_mapping(db_path, work / "images", d / "incremental", o)
+        inc = sorted(recs.values(), key=lambda r: -r.num_reg_images())
+        if inc:
+            comps, mapper = inc, "incremental"
+    comps = [r for r in comps if r.num_reg_images() >= MIN_PIECE_FRAMES]
     if not comps:
         raise RuntimeError("geometry: COLMAP found no model")
-    model = comps[0]
-    index = {f.name: i for i, f in enumerate(frames)}
     n = len(frames)
-    registered = np.zeros(n, bool)
+    component = -np.ones(n, np.int32)
     R, t, focal = np.zeros((n, 3, 3)), np.zeros((n, 3)), np.zeros(n)
-    iid_to_frame = {}
-    for iid in model.reg_image_ids():
-        im = model.images[iid]
-        i = index[im.name]
-        cfw = im.cam_from_world()
-        registered[i] = True
-        R[i] = np.asarray(cfw.rotation.matrix())
-        t[i] = np.asarray(cfw.translation, float).reshape(3)
-        focal[i] = float(model.cameras[im.camera_id].focal_length)
-        iid_to_frame[iid] = i
-    pids = sorted(model.points3D)
-    points = np.array([np.asarray(model.points3D[p].xyz, float).reshape(3) for p in pids]) if pids else np.zeros((0, 3))
-    pindex = {p: k for k, p in enumerate(pids)}
-    obs = [(iid_to_frame[el.image_id], el.point2D_idx, pindex[p]) for p in pids
-           for el in model.points3D[p].track.elements if el.image_id in iid_to_frame]
+    all_points, point_comp, obs = [], [], []
+    for c, model in enumerate(comps):
+        iid_to_frame = {}
+        for iid in model.reg_image_ids():
+            im = model.images[iid]
+            i = index[im.name]
+            if component[i] >= 0:
+                continue  # in two components (incremental mapping overlaps them): the larger keeps it
+            cfw = im.cam_from_world()
+            component[i] = c
+            R[i] = np.asarray(cfw.rotation.matrix())
+            t[i] = np.asarray(cfw.translation, float).reshape(3)
+            focal[i] = float(model.cameras[im.camera_id].focal_length)
+            iid_to_frame[iid] = i
+        base = len(all_points)
+        pids = sorted(model.points3D)
+        pindex = {p: base + k for k, p in enumerate(pids)}
+        all_points += [np.asarray(model.points3D[p].xyz, float).reshape(3) for p in pids]
+        point_comp += [c] * len(pids)
+        obs += [(iid_to_frame[el.image_id], el.point2D_idx, pindex[p]) for p in pids
+                for el in model.points3D[p].track.elements if el.image_id in iid_to_frame]
+    points = np.array(all_points).reshape(-1, 3)
     obs = np.array(obs, np.int64).reshape(-1, 3)
-    np.savez(work / "raw.npz", registered=registered, R=R, t=t, focal=focal, points=points,
-             obs_frame=obs[:, 0].astype(np.int32), obs_kp=obs[:, 1].astype(np.int32),
-             obs_point=obs[:, 2].astype(np.int32), kps=kps, kp_offsets=koff,
+    np.savez(work / "raw.npz", registered=component >= 0, component=component, R=R, t=t, focal=focal,
+             points=points, point_component=np.array(point_comp, np.int32), obs_frame=obs[:, 0].astype(np.int32),
+             obs_kp=obs[:, 1].astype(np.int32), obs_point=obs[:, 2].astype(np.int32), kps=kps, kp_offsets=koff,
              place=np.load(work / "gpu" / "place.npy"))
-    summary = {"frames": n, "pairs": len(lines), "registered": int(registered.sum()), "points": len(pids),
-               "components": [r.num_reg_images() for r in comps[:8]], "mapping_s": round(time.time() - t0)}
+    summary = {"frames": n, "pairs": len(lines), "registered": int((component >= 0).sum()), "points": len(points),
+               "mapper": mapper, "global_jumpy": round(jumpy, 3), "components": [r.num_reg_images() for r in comps[:8]],
+               "mapping_s": round(time.time() - t0)}
     (work / "summary.json").write_text(json.dumps(summary))
-    log.info("geometry: model of %d of %d frames, %d points (components %s) in %.0f s", summary["registered"], n,
-             len(pids), summary["components"][:4], time.time() - t0)
+    log.info("geometry: %s model of %d of %d frames in %d pieces (%s), %d points in %.0f s", mapper,
+             summary["registered"], n, len(comps), summary["components"][:4], len(points), time.time() - t0)
     return summary
 
 
@@ -427,13 +484,13 @@ def _check_walk(t: np.ndarray, off: np.ndarray) -> np.ndarray:
         near = np.abs(t - t[i]) <= LOCAL_WINDOW_MS
         if near.sum() >= 3 and np.linalg.norm(off[i] - np.median(off[near], axis=0)) > LOCAL_M:
             keep[i] = False
-    # stretches: split where consecutive trusted frames' offsets jump
+    # stretches: split where consecutive trusted frames' offsets jump (or a long gap leaves it open)
     idx = np.flatnonzero(keep)
     if len(idx) < 2:
         return keep
     stretches, cur = [], [idx[0]]
     for a, b in zip(idx, idx[1:]):
-        if np.linalg.norm(off[b] - off[a]) > LOCAL_M:
+        if np.linalg.norm(off[b] - off[a]) > STEP_M or t[b] - t[a] > STEP_GAP_MS:
             stretches.append(cur)
             cur = []
         cur.append(b)
@@ -449,34 +506,23 @@ def _check_walk(t: np.ndarray, off: np.ndarray) -> np.ndarray:
     return keep
 
 
-def place_in_map(work: Path, tracks: dict, first_rec: str | None = None) -> Geometry | None:
-    """raw.npz -> the model in the map frame (see the module doc). `tracks`: {rec_id: MotionTrack} of the walks
-    (dead reckoning in each walk's own frame, compass-anchored headings). None when too little is posed."""
-    frames, _, _ = job_frames(work)
-    raw = np.load(work / "raw.npz")
-    reg = raw["registered"].copy()
-    n = len(frames)
-    if reg.sum() < max(10, MIN_POSED_SHARE * n):
-        log.warning("geometry: %d of %d frames in the model: not used", reg.sum(), n)
-        return None
-    R0, t0 = raw["R"], raw["t"]
-    C = np.full((n, 3), np.nan)
-    C[reg] = -np.einsum("nji,nj->ni", R0[reg], t0[reg])  # -R^T t
-    # level: the cameras' down (image +y) is gravity
-    down = np.einsum("nji,j->ni", R0[reg], np.array([0.0, 1.0, 0.0]))
+def _orient(C: np.ndarray, R0: np.ndarray, idx: list[int], frames: list[GeoFrame], tracks: dict
+            ) -> tuple[np.ndarray, float, float, np.ndarray]:
+    """For one piece of the model (frames `idx`): (L, scale, yaw radians, Rz) taking it to the map frame up to a
+    shift: levelled by the cameras' down, scaled by walked metres, turned onto the walks' headings."""
+    down = np.einsum("nji,j->ni", R0[idx], np.array([0.0, 1.0, 0.0]))
     L = _rot_to_z_up(np.median(down, axis=0))
     Cl = C @ L.T
-    view = np.einsum("nji,j->ni", R0, np.array([0.0, 0.0, 1.0])) @ L.T  # camera axis, levelled
-    # scale: walked metres (floor odometry) over model metres
+    view = np.einsum("nji,j->ni", R0, np.array([0.0, 0.0, 1.0])) @ L.T
     ratios = []
-    for rec in {f.rec_id for f in frames}:
+    for rec in {frames[i].rec_id for i in idx}:
         tr = tracks.get(rec)
-        idx = sorted((i for i, f in enumerate(frames) if f.rec_id == rec and reg[i]), key=lambda i: frames[i].t_ms)
-        if tr is None or len(idx) < 2:
+        seq = sorted((i for i in idx if frames[i].rec_id == rec), key=lambda i: frames[i].t_ms)
+        if tr is None or len(seq) < 2:
             continue
         a = 0
-        for b in range(1, len(idx)):
-            i, j = idx[a], idx[b]
+        for b in range(1, len(seq)):
+            i, j = seq[a], seq[b]
             if frames[j].t_ms - frames[i].t_ms < SCALE_WINDOW_MS:
                 continue
             walked = abs(tr.at(frames[j].t_ms)["walked_m"] - tr.at(frames[i].t_ms)["walked_m"])
@@ -485,28 +531,79 @@ def place_in_map(work: Path, tracks: dict, first_rec: str | None = None) -> Geom
                 ratios.append(walked / model_m)
             a = b
     scale = float(np.median(ratios)) if ratios else 1.0
-    # yaw: model camera headings onto the walks' headings
     diffs = []
-    for i, f in enumerate(frames):
-        tr = tracks.get(f.rec_id)
-        if reg[i] and tr is not None and (h := tr.at(f.t_ms)["heading_deg"]) is not None:
+    for i in idx:
+        tr = tracks.get(frames[i].rec_id)
+        if tr is not None and (h := tr.at(frames[i].t_ms)["heading_deg"]) is not None:
             diffs.append((h - _heading(view[i:i + 1])[0] + 180) % 360 - 180)
     yaw = math.radians(_circ_median(np.array(diffs))) if diffs else 0.0
     Rz = np.array([[math.cos(yaw), math.sin(yaw), 0], [-math.sin(yaw), math.cos(yaw), 0], [0, 0, 1]])  # clockwise
-    M = Rz @ L  # model -> map rotation
-    Cm = scale * (C @ M.T)
-    # translation: the first posed walk where its dead reckoning puts it; z: 0 at the median camera height
+    return L, scale, yaw, Rz
+
+
+def place_in_map(work: Path, tracks: dict, first_rec: str | None = None) -> Geometry | None:
+    """raw.npz -> the model in the map frame (see the module doc). `tracks`: {rec_id: MotionTrack} of the walks
+    (dead reckoning in each walk's own frame, compass-anchored headings). The largest piece of the model is placed
+    by the first walk's dead reckoning; other pieces (parts of walks the model couldn't join) each by their own
+    walk's, through where that walk is in the largest piece. None when too little is posed."""
+    frames, _, _ = job_frames(work)
+    raw = np.load(work / "raw.npz")
+    comp = raw["component"].copy() if "component" in raw else np.where(raw["registered"], 0, -1)
+    n = len(frames)
+    if (comp >= 0).sum() < max(10, MIN_POSED_SHARE * n):
+        log.warning("geometry: %d of %d frames in the model: not used", (comp >= 0).sum(), n)
+        return None
+    R0, t0 = raw["R"], raw["t"]
+    reg = comp >= 0
+    C = np.full((n, 3), np.nan)
+    C[reg] = -np.einsum("nji,nj->ni", R0[reg], t0[reg])  # -R^T t
     recs = list(dict.fromkeys(f.rec_id for f in frames))
     order = ([first_rec] if first_rec in recs else []) + [r for r in recs if r != first_rec]
-    shift = np.zeros(3)
-    for rec in order:
-        idx = [i for i, f in enumerate(frames) if f.rec_id == rec and reg[i]]
-        if idx and rec in tracks:
-            dr = np.array([[tracks[rec].at(frames[i].t_ms)["x_m"], tracks[rec].at(frames[i].t_ms)["y_m"]] for i in idx])
-            shift[:2] = np.median(dr - Cm[idx, :2], axis=0)
-            break
-    shift[2] = -float(np.nanmedian(Cm[reg, 2]))
-    Cm = Cm + shift
+
+    def dr(i: int) -> np.ndarray:
+        a = tracks[frames[i].rec_id].at(frames[i].t_ms)
+        return np.array([a["x_m"], a["y_m"]])
+
+    Cm = np.full((n, 3), np.nan)
+    Rm = np.zeros((n, 3, 3))
+    heading = np.full(n, np.nan)
+    transforms: dict[int, tuple[float, np.ndarray, np.ndarray]] = {}  # piece -> (scale, M, shift)
+    walk_off: dict[str, np.ndarray] = {}  # dead reckoning - map, per walk, from the largest piece
+    pieces = sorted(set(comp[reg].tolist()))
+    info_pieces = []
+    for c in pieces:
+        idx = [i for i in range(n) if comp[i] == c]
+        L, scale, yaw, Rz = _orient(C, R0, idx, frames, tracks)
+        M = Rz @ L
+        Cc = scale * (C[idx] @ M.T)
+        shift = np.zeros(3)
+        if c == pieces[0]:
+            for rec in order:
+                ii = [k for k, i in enumerate(idx) if frames[i].rec_id == rec]
+                if ii and rec in tracks:
+                    shift[:2] = np.median(np.array([dr(idx[k]) for k in ii]) - Cc[ii, :2], axis=0)
+                    break
+            shift[2] = -float(np.median(Cc[:, 2]))
+        else:
+            target = [(k, dr(i) - walk_off[frames[i].rec_id]) for k, i in enumerate(idx)
+                      if frames[i].rec_id in walk_off and frames[i].rec_id in tracks]
+            if len(target) < MIN_PIECE_FRAMES // 2:
+                comp[idx] = -1  # no walk ties it to the largest piece
+                continue
+            shift[:2] = np.median(np.array([tg for _, tg in target]) - Cc[[k for k, _ in target], :2], axis=0)
+            shift[2] = -float(np.median(Cc[:, 2]))
+        Cm[idx] = Cc + shift
+        Rm[idx] = R0[idx] @ M.T  # cam_from_map = cam_from_model @ model_from_map
+        view = np.einsum("nji,j->ni", R0[idx], np.array([0.0, 0.0, 1.0])) @ M.T
+        heading[idx] = _heading(view)
+        transforms[c] = (scale, M, shift)
+        info_pieces.append({"frames": len(idx), "scale": round(scale, 4), "yaw_deg": round(math.degrees(yaw), 1)})
+        if c == pieces[0]:
+            for rec in recs:
+                ii = [i for i in idx if frames[i].rec_id == rec]
+                if ii and rec in tracks:
+                    walk_off[rec] = np.median(np.array([dr(i) for i in ii]) - Cm[ii, :2], axis=0)
+    reg = comp >= 0
     # check each walk against its own motion
     per_walk = {}
     xyz = np.full((n, 3), np.nan)
@@ -515,12 +612,13 @@ def place_in_map(work: Path, tracks: dict, first_rec: str | None = None) -> Geom
         tr = tracks.get(rec)
         posed_idx = idx[reg[idx]] if len(idx) else idx
         if tr is not None and len(posed_idx):
-            dr = np.array([[tr.at(frames[i].t_ms)["x_m"], tr.at(frames[i].t_ms)["y_m"]] for i in idx])
+            d = np.array([dr(i) for i in idx])
             off_all = np.full((len(idx), 2), np.nan)
             pos_mask = reg[idx]
-            off_all[pos_mask] = dr[pos_mask] - Cm[idx[pos_mask], :2]
+            off_all[pos_mask] = d[pos_mask] - Cm[idx[pos_mask], :2]
             keep = _check_walk(np.array([frames[i].t_ms for i in posed_idx]), off_all[pos_mask])
-            reg[posed_idx[~keep]] = False
+            comp[posed_idx[~keep]] = -1
+            reg = comp >= 0
             ok = reg[idx]
             xyz[idx[ok]] = Cm[idx[ok]]
             # frames without a trusted pose: dead reckoning, by the offset of the nearest trusted frames in time
@@ -529,44 +627,47 @@ def place_in_map(work: Path, tracks: dict, first_rec: str | None = None) -> Geom
                 if not ok.any():
                     break
                 near = np.flatnonzero(ok)[np.argsort(np.abs(tt[ok] - tt[k]))[:6]]
-                o = np.median(off_all[near], axis=0)
-                xyz[idx[k], :2] = dr[k] - o
+                xyz[idx[k], :2] = d[k] - np.median(off_all[near], axis=0)
                 xyz[idx[k], 2] = 0.0
             per_walk[rec] = {"frames": len(idx), "posed": int(ok.sum()), "distrusted": int((~keep).sum())}
         else:
-            reg[idx] = False
+            comp[idx] = -1
+            reg = comp >= 0
             per_walk[rec] = {"frames": len(idx), "posed": 0, "distrusted": 0}
     if reg.sum() < max(10, MIN_POSED_SHARE * n):
         log.warning("geometry: %d of %d frames trusted: not used", reg.sum(), n)
         return None
-    Rm = np.zeros((n, 3, 3))
-    Rm[reg] = R0[reg] @ M.T  # cam_from_map = cam_from_model @ model_from_map
-    heading = np.full(n, np.nan)
-    vm = view @ Rz.T
-    heading[reg] = _heading(vm[reg])
     for i, f in enumerate(frames):  # unposed: the walk's own heading
-        if not reg[i] and (tr := tracks.get(f.rec_id)) is not None and (h := tr.at(f.t_ms)["heading_deg"]) is not None:
-            heading[i] = h
-    # observations of trusted frames only; the points they see
+        if not reg[i]:
+            heading[i] = np.nan
+            if (tr := tracks.get(f.rec_id)) is not None and (h := tr.at(f.t_ms)["heading_deg"]) is not None:
+                heading[i] = h
+    Rm[~reg] = 0.0
+    # observations of trusted frames only; the points they see (each in its piece's transform)
+    pc = raw["point_component"] if "point_component" in raw else np.zeros(len(raw["points"]), np.int32)
     of, ok_, op = raw["obs_frame"], raw["obs_kp"], raw["obs_point"]
     keep_obs = reg[of]
     of, ok_, op = of[keep_obs], ok_[keep_obs], op[keep_obs]
-    seen = np.bincount(op, minlength=len(raw["points"]))
-    good = seen >= 2
+    good = (np.bincount(op, minlength=len(raw["points"])) >= 2) & np.isin(pc, list(transforms))
     keep_obs = good[op]
     of, ok_, op = of[keep_obs], ok_[keep_obs], op[keep_obs]
     new_id = -np.ones(len(raw["points"]), np.int64)
     new_id[good] = np.arange(good.sum())
-    points = scale * (raw["points"][good] @ M.T) + shift
+    points = np.zeros((int(good.sum()), 3))
+    for c, (scale, M, shift) in transforms.items():
+        sel = good & (pc == c)
+        points[new_id[sel]] = scale * (raw["points"][sel] @ M.T) + shift
     kps, koff = raw["kps"], raw["kp_offsets"]
     obs_xy = kps[koff[of] + ok_]
-    focal = raw["focal"].copy()
-    info = {"version": GEOMETRY_VERSION, "frames": n, "posed": int(reg.sum()), "points": int(good.sum()),
-            "scale": round(scale, 4), "yaw_deg": round(math.degrees(yaw), 1), "walks": per_walk,
+    scale0 = transforms[pieces[0]][0] if pieces[0] in transforms else 1.0
+    info = {"version": GEOMETRY_VERSION, "fps": json.loads((work / "job.json").read_text()).get("fps", FPS),
+            "frames": n, "posed": int(reg.sum()), "points": int(good.sum()),
+            "scale": round(scale0, 4), "pieces": info_pieces, "walks": per_walk,
             "summary": json.loads((work / "summary.json").read_text()) if (work / "summary.json").is_file() else {}}
-    log.info("geometry: %d of %d frames posed in the map frame, %d points, scale %.3f", reg.sum(), n, good.sum(), scale)
-    return Geometry(frames, reg, xyz, heading, Rm, focal, points, of.astype(np.int32), obs_xy.astype(np.float32),
-                    new_id[op].astype(np.int32), raw["place"].astype(np.float32), info)
+    log.info("geometry: %d of %d frames posed in the map frame (%d pieces), %d points", reg.sum(), n,
+             len(transforms), good.sum())
+    return Geometry(frames, reg, xyz, heading, Rm, raw["focal"].copy(), points, of.astype(np.int32),
+                    obs_xy.astype(np.float32), new_id[op].astype(np.int32), raw["place"].astype(np.float32), info)
 
 
 # --- in the build ----------------------------------------------------------------------------------------------
@@ -607,10 +708,14 @@ def build_geometry(rec_dirs: list[Path], cache_root: Path, build_dir: Path, plac
 
     work = build_dir / "geometry-job"
     try:
-        if work.exists():
+        done = work / "gpu" / "done.json"
+        before = json.loads((work / "job.json").read_text())["frames"] if done.is_file() else None
+        if work.exists() and before is None:
             shutil.rmtree(work)
-        work.mkdir(parents=True)
+        work.mkdir(parents=True, exist_ok=True)
         frames = prepare_job(work, rec_dirs, cache_root, place_model)
+        if before is not None and before != [asdict(f) for f in frames]:  # other frames: start again
+            shutil.rmtree(work / "gpu")
         if len(frames) < 10:
             warnings.append("geometry: too few frames for a 3D model; positions from dead reckoning")
             return None

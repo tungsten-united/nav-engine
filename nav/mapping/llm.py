@@ -61,6 +61,8 @@ blind person recognises them. You don't decide positions, connections or distanc
   (kitchen, stage, tables), stairs, lifts, destinations, salient landmarks.
 - A node cites the candidates that show it, at least one. Several nearby candidates can be one node (the same area
   from another angle, another walk); they must be within {span:.0f} m of each other (code leaves farther ones out).
+  Two nodes are at least {gap:.1f} m apart: candidates closer than that are one place you stand at, photographed
+  in different directions (code merges closer nodes into the one with more candidates).
   Candidates far apart are different places even when they look alike (the two ends of one row of tables); nearby
   candidates seen from opposite sides are the same place even when they look different.
 - A candidate can show nothing worth naming (blur, a close-up of a person, the middle of a plain corridor): leave
@@ -132,12 +134,12 @@ STAGES = ("places", "routes")
 
 
 def build_prompt(stage: str, place: str, language: str, previous: bool = False) -> str:
-    from nav.mapping.topology import NODE_SPAN_M
+    from nav.mapping.topology import NODE_GAP_M, NODE_SPAN_M
 
     wording = WORDING.format(language=language, language_name=LANGUAGES.get(language, language))
     if stage == "routes":
         return ROUTES_PROMPT.format(place=place, max_chars=MAX_INSTRUCTION_CHARS, wording=wording)
-    prompt = PLACES_PROMPT.format(place=place, span=NODE_SPAN_M, wording=wording)
+    prompt = PLACES_PROMPT.format(place=place, span=NODE_SPAN_M, gap=NODE_GAP_M, wording=wording)
     return prompt.replace("## Output", PLACES_PREVIOUS.lstrip() + "\n## Output") if previous else prompt
 
 

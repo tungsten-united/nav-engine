@@ -27,13 +27,15 @@ from nav.schemas.map import Candidate, Point, SpatialRelation, Step
 FOLD_M = 2.0  # candidates this close are one spot
 NEARBY_M = 8.0  # other spots listed next to each candidate, for the LLM
 NODE_SPAN_M = 6.0  # a node's spots are at most this far from their middle
+NODE_GAP_M = 1.5  # nodes closer than this are one place you stand at (photos the other way): merged
 VISIT_R_M = 2.5  # a walk is at a node within this radius (plus half the node's span)
 MIN_VISIT_MS = 800  # shorter stays near a node are passing glances
 JOIN_GAP_MS = 3000  # a visit interrupted this briefly is one visit
 TURN_WINDOW_MS = 6000  # walking direction after leaving a node: mean heading over this long
-BEND_DEG = 40  # a change of walking direction this large over BEND_SPAN_M is a bend
-BEND_SPAN_M = 2.0
+BEND_DEG = 20  # a change of walking direction this large at a corner of the simplified path is a step
+SIMPLIFY_M = 0.75  # the walked path simplified to within this (Douglas-Peucker): sway and wobble aren't turns
 MIN_STEP_M = 1.0  # shorter stretches between bends are merged
+MEANDER = 1.8  # an edge walked this many times longer than the straight line between its nodes is flagged
 REL_MAX = 6  # relations to other nodes kept per node (the nearest)
 
 
@@ -251,34 +253,39 @@ def _bearing(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.degrees(np.arctan2(b[0] - a[0], b[1] - a[1])) % 360)
 
 
+def _rdp(pts: np.ndarray, eps: float) -> np.ndarray:
+    """Douglas-Peucker: the fewest of the points that keep the line within eps of them."""
+    if len(pts) < 3:
+        return pts
+    a, b = pts[0], pts[-1]
+    ab = b - a
+    n = float(np.hypot(*ab))
+    rel = pts - a
+    d = np.abs(ab[0] * rel[:, 1] - ab[1] * rel[:, 0]) / n if n > 1e-9 else np.hypot(*rel.T)
+    k = int(np.argmax(d))
+    if d[k] <= eps:
+        return np.stack([a, b])
+    return np.concatenate([_rdp(pts[:k + 1], eps)[:-1], _rdp(pts[k:], eps)])
+
+
 def skeleton(xy: np.ndarray, departure_turn: float | None) -> list[Step]:
-    """The edge's steps from its walked path: the turn when leaving, then a step per bend, each with its metres."""
-    pts = _resample(xy)
+    """The edge's steps from its walked path: the turn when leaving, then a step per bend of the path simplified to
+    SIMPLIFY_M, each with its metres."""
+    pts = _resample(xy, 0.25)
     if len(pts) < 2:
         return [Step(action=turn_action(departure_turn), distance_m=None, along=None, until=None)]
-    k = max(1, int(BEND_SPAN_M / 0.5))
-    bends: list[tuple[int, float]] = []
-    i = k
-    while i < len(pts) - k:
-        change = angle_diff(_bearing(pts[i - k], pts[i]), _bearing(pts[i], pts[i + k]))
-        if abs(change) >= BEND_DEG:
-            j = max(range(i, min(i + k, len(pts) - k)),
-                    key=lambda j: abs(angle_diff(_bearing(pts[j - k], pts[j]), _bearing(pts[j], pts[j + k]))))
-            change = angle_diff(_bearing(pts[j - k], pts[j]), _bearing(pts[j], pts[j + k]))
-            bends.append((j, change))
-            i = j + k
+    v = _rdp(pts, SIMPLIFY_M)
+    segs = [(float(np.hypot(*(b - a))), _bearing(a, b)) for a, b in zip(v, v[1:])]
+    steps: list[list] = [[turn_action(departure_turn), segs[0][0], segs[0][1]]]
+    for length, bearing in segs[1:]:
+        change = angle_diff(steps[-1][2], bearing)
+        if abs(change) < BEND_DEG or length < MIN_STEP_M:
+            steps[-1][1] += length  # the same stretch (or too short to say: part of it)
+            if abs(change) < BEND_DEG:
+                steps[-1][2] = bearing
         else:
-            i += 1
-    cuts = [0] + [j for j, _ in bends] + [len(pts) - 1]
-    lengths = [0.5 * (b - a) for a, b in zip(cuts, cuts[1:])]
-    actions = [turn_action(departure_turn)] + [turn_action(c) for _, c in bends]
-    steps: list[tuple[str, float]] = []
-    for action, length in zip(actions, lengths):
-        if steps and length < MIN_STEP_M and action != "turn_around":
-            steps[-1] = (steps[-1][0], steps[-1][1] + length)  # too short to say: part of the previous stretch
-        else:
-            steps.append((action, length))
-    return [Step(action=a, distance_m=round(max(m, 0.5) * 2) / 2, along=None, until=None) for a, m in steps]
+            steps.append([turn_action(change), length, bearing])
+    return [Step(action=a, distance_m=round(max(m, 0.5) * 2) / 2, along=None, until=None) for a, m, _ in steps]
 
 
 @dataclass
@@ -294,6 +301,13 @@ class EdgeGeometry:
     arrival_deg: float | None
     steps: list[Step]
     candidates: list[str] = field(default_factory=list)  # candidate frames along the best pass, in walk order
+
+    @property
+    def meander(self) -> float:
+        """Walked distance over the straight line between the two nodes."""
+        a, b = self.path[0], self.path[-1]
+        straight = math.hypot(b.x_m - a.x_m, b.y_m - a.y_m)
+        return self.distance_m / straight if straight > 0.5 else 1.0
 
     @property
     def walked_forward(self) -> int:

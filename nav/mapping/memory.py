@@ -116,7 +116,7 @@ def build_memory_from_geometry(geo, params: dict, build_dir: Path, recordings_ro
     for rec, idx in by_rec.items():
         rec_dir = recordings_root / rec
         try:
-            fdir, _, _ = sample_walk(rec_dir, cache_root)
+            fdir = sample_walk(rec_dir, cache_root, geo.info.get("fps", 2.0))[0]
             track = load_walk(rec_dir, cache_root, p).track
         except Exception as e:  # a broken recording must not lose the map
             warnings.append(f"memory: recording {rec}: {type(e).__name__}: {e}")

@@ -115,7 +115,11 @@ def select_candidates(place: str, preps: list[Prepared], p: SelectParams, embed_
     for prep in preps:
         mark_usable(prep.frames, p)
         kept += select_in_recording(prep.frames, prep.track, prep.marks, prep.voice, p)
-    sim, same, pairs = match_pairs(kept, p)
+    if geo is not None:  # the model places every frame: spots fold by position below, not by look-alike checks
+        n = len(kept)
+        sim, same, pairs = np.zeros((n, n)), np.zeros((n, n), bool), []
+    else:
+        sim, same, pairs = match_pairs(kept, p)
     (build_dir / "pairs.json").write_text(json.dumps(pairs, indent=1))
     groups, hints = group_frames(kept, p, sim, same)
     tracks = {prep.manifest.rec_id: track_points(prep.track) for prep in preps}

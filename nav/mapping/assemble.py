@@ -95,15 +95,39 @@ def layout_for(build_dir: Path, cset: CandidateSet, places: PlacesDraft) -> Layo
         nodes.append(n.model_copy(update={"candidates": keep}))
         if (pos := topology.node_position(keep, cpos)) is not None:
             positions[n.id] = pos
-            radius[n.id] = topology.node_radius(keep, cpos)
         else:
             warnings.append(f"node {n.id} ({n.name}) has no position: no edges")
+    nodes, positions, radius = _merge_close(nodes, positions, cpos, warnings)
     if unused := [c for c in known if not any(c in n.candidates for n in nodes)]:
         warnings.append(f"candidates not used by any node: {', '.join(sorted(unused))}")
     ps = topology.passes(paths, positions, radius)
     edges = topology.edges_from_passes(ps, paths, positions, cset.candidates)
     edges.sort(key=lambda e: (min(p.rec_id for p in e.passes), min(p.t_leave for p in e.passes)))
     return Layout(nodes, positions, paths, ps, edges, cpos, warnings, info)
+
+
+def _merge_close(nodes: list[MapNode], positions: dict, cpos: dict, warnings: list[str]):
+    """Nodes closer than topology.NODE_GAP_M are one place you stand at (photos taken the other way): the one with
+    fewer candidates is merged into the other, which keeps its words."""
+    order = sorted(nodes, key=lambda n: -len(n.candidates))
+    kept: list[MapNode] = []
+    for n in order:
+        p = positions.get(n.id)
+        host = None if p is None else next(
+            (k for k in kept if k.id in positions and
+             np.hypot(positions[k.id][0] - p[0], positions[k.id][1] - p[1]) < topology.NODE_GAP_M), None)
+        if host is None:
+            kept.append(n)
+            continue
+        d = float(np.hypot(positions[host.id][0] - p[0], positions[host.id][1] - p[1]))
+        warnings.append(f"node {n.id} ({n.name}) is {d:.1f} m from {host.id} ({host.name}): merged into it")
+        i = kept.index(host)
+        kept[i] = host.model_copy(update={"candidates": host.candidates + [c for c in n.candidates
+                                                                             if c not in host.candidates]})
+    kept.sort(key=lambda n: nodes.index(next(x for x in nodes if x.id == n.id)))
+    pos = {n.id: topology.node_position(n.candidates, cpos) for n in kept}
+    pos = {k: v for k, v in pos.items() if v is not None}
+    return kept, pos, {n.id: topology.node_radius(n.candidates, cpos) for n in kept if n.id in pos}
 
 
 def edge_ids(layout: Layout) -> list[str]:
@@ -240,6 +264,11 @@ def finish(draft: MapDraft, cset: CandidateSet, layout: Layout, build: BuildInfo
         pe.status = "observed" if pe.walked_forward else "inferred"
         pe.reverse_status = "observed" if pe.walked_back else "inferred"
         pe.instruction_kind = instruction_kind(pe)
+        if g.meander > topology.MEANDER and g.distance_m > 4:
+            flag = (f"the walk wandered between these two: {g.distance_m:.0f} m walked for "
+                    f"{g.distance_m / g.meander:.0f} m apart")
+            pe.review_flags.append(flag)
+            warnings.append(f"edge {e.id}: {flag}")
         if not pe.walked_forward:
             pe.review_flags.append("only walked from the target to the source")
         elif not pe.walked_back:
