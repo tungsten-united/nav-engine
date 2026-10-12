@@ -42,7 +42,7 @@ def cam_from_map(heading_deg: float) -> np.ndarray:
     return np.stack([np.cross(d, f), d, f])
 
 
-def synthetic_job(tmp_path, flung: dict[int, tuple[float, float]] | None = None):
+def synthetic_job(tmp_path, flung: dict[int, tuple[float, float]] | None = None, track=None, registered=None):
     """A job folder and raw.npz: one walk sampled every 0.5 s; the model frame = map frame rotated 70° about an
     oblique axis, scaled by 0.5 and shifted. `flung`: frame index -> metres added to its model position (a wrong
     join)."""
@@ -59,7 +59,7 @@ def synthetic_job(tmp_path, flung: dict[int, tuple[float, float]] | None = None)
     a = math.radians(70)
     Q = np.eye(3) + math.sin(a) * k + (1 - math.cos(a)) * k @ k  # model <- map rotation
     s_m, o = 0.5, np.array([3.0, -2.0, 7.0])
-    track = Track()
+    track = track or Track()
     n = len(frames)
     R, t = np.zeros((n, 3, 3)), np.zeros((n, 3))
     for i, f in enumerate(frames):
@@ -76,7 +76,8 @@ def synthetic_job(tmp_path, flung: dict[int, tuple[float, float]] | None = None)
     obs_kp = np.zeros(6, np.int32)
     obs_point = np.array([0, 0, 1, 1, 2, 2], np.int32)
     kps = np.tile(np.array([[10.0, 20.0]], np.float32), (n, 1))
-    np.savez(work / "raw.npz", registered=np.ones(n, bool), R=R, t=t, focal=np.full(n, 800.0), points=points,
+    reg = np.ones(n, bool) if registered is None else registered(times)
+    np.savez(work / "raw.npz", registered=reg, R=R, t=t, focal=np.full(n, 800.0), points=points,
              obs_frame=obs_frame, obs_kp=obs_kp, obs_point=obs_point, kps=kps, kp_offsets=np.arange(n + 1),
              place=np.eye(n, 4, dtype=np.float32))
     return work, frames, pts_map
@@ -172,3 +173,22 @@ def test_an_unreachable_host_fails_the_build_other_failures_fall_back(tmp_path, 
     warnings = []
     assert geometry.build_geometry([], tmp_path, tmp_path / "b2", "m", {}, None, warnings) is None
     assert warnings and "dead reckoning" in warnings[0]
+
+
+class OutAndBack(Track):
+    """East 10 m and back (0-20 s), heading east then west."""
+
+    def xy(self, t_s: float) -> tuple[float, float]:
+        return (t_s if t_s <= 10 else 20 - t_s), 0.0
+
+    def at(self, t_ms: float) -> dict:
+        t = t_ms / 1000
+        return {"walked_m": t, "heading_deg": 90.0 if t <= 10 else 270.0, "x_m": self.xy(t)[0], "y_m": 0.0,
+                "pitch_deg": 0.0, "moving": True}
+
+
+def test_the_scale_is_not_measured_across_a_gap(tmp_path):
+    # the model holds the first and last 6 s (near the start, a revisit): walked 14 m between them, moved 0 m
+    work, frames, _ = synthetic_job(tmp_path, track=OutAndBack(), registered=lambda t: (t <= 6) | (t >= 14))
+    geo = geometry.place_in_map(work, {"r1": OutAndBack()}, "r1")
+    assert geo.info["scale"] == pytest.approx(2.0, rel=1e-3)

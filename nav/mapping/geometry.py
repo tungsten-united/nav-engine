@@ -47,7 +47,7 @@ MIN_BRIGHTNESS = 20
 MAX_KEYPOINTS = 2048
 SEQ_S = 2.5
 RETRIEVAL_K = 12
-SCALE_WINDOW_MS = 3000  # model distance vs walked distance over windows this long
+SCALE_WINDOW_MS = 3000  # model displacement vs dead-reckoned displacement over windows 1-2x this long
 SCALE_MIN_WALKED_M = 1.0
 SCALE_MIN_WINDOWS = 3  # a piece with fewer such windows has no scale (each piece of a model has its own): not posed
 LOCAL_WINDOW_MS = 15_000  # a frame's offset from dead reckoning vs its neighbours' within this window ...
@@ -526,12 +526,15 @@ def _orient(C: np.ndarray, R0: np.ndarray, idx: list[int], frames: list[GeoFrame
         a = 0
         for b in range(1, len(seq)):
             i, j = seq[a], seq[b]
-            if frames[j].t_ms - frames[i].t_ms < SCALE_WINDOW_MS:
+            dt = frames[j].t_ms - frames[i].t_ms
+            if dt < SCALE_WINDOW_MS:
                 continue
-            walked = abs(tr.at(frames[j].t_ms)["walked_m"] - tr.at(frames[i].t_ms)["walked_m"])
-            model_m = float(np.linalg.norm(Cl[j, :2] - Cl[i, :2]))
-            if walked >= SCALE_MIN_WALKED_M and model_m > 1e-6:
-                ratios.append(walked / model_m)
+            if dt <= 2 * SCALE_WINDOW_MS:  # not across a gap: a piece can hold a revisit minutes later
+                pi, pj = tr.at(frames[i].t_ms), tr.at(frames[j].t_ms)
+                moved = math.hypot(pj["x_m"] - pi["x_m"], pj["y_m"] - pi["y_m"])  # dead reckoning, not walked
+                model_m = float(np.linalg.norm(Cl[j, :2] - Cl[i, :2]))  # metres: sway and curves aren't moving
+                if moved >= SCALE_MIN_WALKED_M and model_m > 1e-6:
+                    ratios.append(moved / model_m)
             a = b
     scale = float(np.median(ratios)) if len(ratios) >= SCALE_MIN_WINDOWS else None
     diffs = []
