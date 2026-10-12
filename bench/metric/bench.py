@@ -1,23 +1,29 @@
 """Metric localization check: against a 3D model of the place, does PnP pose held-out and live frames correctly where
-today's localizer (embeddings + LightGlue votes) doesn't?
+today's localizer (embeddings + LightGlue votes) doesn't? Results and what they mean: REPORT.md.
 
-    uv run --group bench-metric python bench/metric/bench.py itnig              # held-out walks, with truth
-    uv run --group bench-metric python bench/metric/bench.py nati-house --live  # captured live calls, no truth
+    gpu-run -- uv run --group bench-metric python bench/metric/bench.py itnig --extra 20261010T140614Z_b6a0 --stage prep
+    uv run --group bench-metric python bench/metric/bench.py itnig --extra 20261010T140614Z_b6a0 --stage models
+    gpu-run -- uv run --group bench-metric python bench/metric/bench.py itnig --extra 20261010T140614Z_b6a0
+    # Nati House, captured live calls: the same three stages with  nati-house --live --fps 4 --mapper incremental
 
 Per place, cached under data/bench-metric/<map_id>/ (gitignored: the frames show people and homes), each stage
 once:
 1. frames: every walk's video at FPS, the sharpest frame of each 1/FPS s, long side LONG_SIDE, on the sensor clock
    (load_walk's calibration offset), like the map's 1 fps cache but denser and larger;
 2. ALIKED features (MAX_KEYPOINTS) and MegaLoc embeddings of every frame;
-3. pairs: the next SEQ_WINDOW frames of the same walk + the RETRIEVAL_K most similar frames anywhere (MegaLoc), and
+3. pairs: the frames of the same walk up to SEQ_S ahead + the RETRIEVAL_K most similar frames anywhere (MegaLoc), and
    LightGlue matches for each pair;
 4. a COLMAP model (pycolmap) per set of walks: one camera per walk (SIMPLE_RADIAL; focal length from the walk's
-   calibrated field of view, as a prior), matches geometrically verified, then incremental (or global) mapping;
-5. the model in the map's frame and metres: a similarity from its camera centres to the walks' placed tracks (the
-   review's scale) at the same times.
+   calibrated field of view, as a prior), matches geometrically verified, then global (GLOMAP, default) or
+   incremental mapping. Itnig's 5 walks: global, one model of 1123 of 1124 frames. Nati House's one night walk
+   breaks at its weak links (doorways, fast turns): global joined it wrongly (frames flung metres away), incremental
+   gives consistent pieces, localized against as submaps (at 4 fps, pieces of >= MIN_PIECE_FRAMES);
+5. the model (each piece) in the map's frame and metres: a similarity (Umeyama + RANSAC; the tracks are flat) from
+   its camera centres to the walks' placed tracks (the review's scale) at the same times.
 
 Localizing a frame: the QUERY_K most similar frames of the model (MegaLoc), LightGlue with each, the 3D points of the
-matched keypoints, then PnP + RANSAC (pycolmap; the focal length is estimated, as a live phone's is unknown).
+matched keypoints, then PnP + RANSAC per piece (pycolmap; the focal length is estimated, as a live phone's is
+unknown); the piece with the most inliers answers.
 Posed: at least POSED inliers (the tables also give 20 and 80).
 
 Itnig (--holdout, the default with 2+ walks): each walk is localized against a model built without it, one frame a
@@ -29,8 +35,10 @@ degraded frames; its `position` is a memory frame, scored by that frame's pose i
 Nati House (--live): the walk's model against every frame of every captured live call. No truth: how many are posed,
 whether consecutive poses move as far as the phone's steps say, and overlays to check by eye.
 
-GPU stages wait until the GPU has MIN_FREE_GB free (it is shared) and release it afterwards; frames and mapping run
-on the CPU.
+Stages, so the shared GPU's queue (gpu-run, one job at a time) is never held during CPU work:
+    --stage prep     frames, features, embeddings, matches (GPU: run it with gpu-run)
+    --stage models   the COLMAP models (CPU)
+    --stage all      the rest from the caches: localization and the current localizer (GPU: gpu-run)
 """
 
 from __future__ import annotations
@@ -57,11 +65,11 @@ from nav.schemas.map import PlaceMap  # noqa: E402
 
 log = logging.getLogger("metric")
 
-FPS = 2.0  # model frames per second of video
+FPS = 2.0  # model frames per second of video (--fps)
+SEQ_S = 2.5  # same-walk pairs: the frames this many seconds ahead
 LONG_SIDE = 1024  # px, model frames; queries are resized to it too (ALIKED isn't scale-invariant)
 MIN_BRIGHTNESS = 20  # mean grey level; darker frames are left out
 MAX_KEYPOINTS = 2048
-SEQ_WINDOW = 5  # frames ahead in the same walk (2.5 s at 2 fps)
 RETRIEVAL_K = 12
 QUERY_K = 10
 RANSAC_MAX_ERROR = 12.0  # px at LONG_SIDE
@@ -72,23 +80,26 @@ TRACK_FIT_MAX_ERROR_M = 1.5  # similarity model -> placed tracks: dead reckoning
 MODEL_FIT_MAX_ERROR_M = 0.3  # held-out model -> all-walks model: shared frames
 TRUTH_MAX_DT_MS = 600  # a memory frame's pose: the model frame of its walk at most this far in time
 JUMP_SLACK_M = 2.0  # live: consecutive poses further apart than the steps walked + this are implausible
-MIN_FREE_GB = 6.0
+MIN_FREE_GB = 3.0
+MIN_PIECE_FRAMES = 30  # live: model components localized against (submaps)
 OUT = config.DATA_DIR / "bench-metric"
 
 
 # --- GPU sharing -----------------------------------------------------------------------------------------------
-def wait_gpu(min_free_gb: float = MIN_FREE_GB, every_s: int = 120) -> None:
+class StopStage(Exception):
+    """The requested --stage is done."""
+
+
+def wait_gpu(min_free_gb: float = MIN_FREE_GB) -> None:
+    """A GPU stage needs the GPU: fail fast rather than crawl on the CPU or hold the queue waiting."""
     import torch
 
     if not torch.cuda.is_available():
-        return
-    while True:
-        free = torch.cuda.mem_get_info()[0] / 2**30
-        if free >= min_free_gb:
-            log.info("GPU: %.1f GB free", free)
-            return
-        log.info("GPU: %.1f GB free, waiting for %.1f", free, min_free_gb)
-        time.sleep(every_s)
+        raise RuntimeError("no GPU here: run this stage with gpu-run")
+    free = torch.cuda.mem_get_info()[0] / 2**30
+    log.info("GPU: %.1f GB free", free)
+    if free < min_free_gb:
+        raise RuntimeError(f"GPU: {free:.1f} GB free, {min_free_gb} needed")
 
 
 def release_gpu() -> None:
@@ -270,11 +281,11 @@ def make_pairs(imgs: list[Img], emb: dict[str, np.ndarray]) -> list[tuple[str, s
     for walk in by_rec.values():
         walk.sort(key=lambda i: i.t_ms)
         for a in range(len(walk)):
-            for b in range(a + 1, min(a + 1 + SEQ_WINDOW, len(walk))):
+            for b in range(a + 1, min(a + 1 + round(SEQ_S * FPS), len(walk))):
                 pairs.add((walk[a].name, walk[b].name))
     v = np.stack([emb[i.name] for i in imgs])
     sim = v @ v.T
-    near_s = SEQ_WINDOW / FPS * 1000
+    near_s = SEQ_S * 1000
     for a, im in enumerate(imgs):
         n = 0
         for b in np.argsort(-sim[a]):
@@ -375,16 +386,60 @@ def build_model(place: Path, name: str, imgs: list[Img], walks: dict[str, WalkIn
     return comps[0], summary
 
 
+def load_pieces(place: Path, name: str, min_frames: int = MIN_PIECE_FRAMES) -> list:
+    """Every component of a model with at least min_frames frames, largest first (a walk COLMAP couldn't connect
+    in one piece is localized against each: submaps)."""
+    import pycolmap
+
+    pieces = [pycolmap.Reconstruction(sub) for sub in sorted((place / "models" / name / "sparse").iterdir())]
+    return sorted((r for r in pieces if r.num_reg_images() >= min_frames), key=lambda r: -r.num_reg_images())
+
+
 def centres(model) -> dict[str, np.ndarray]:
     return {model.images[i].name: np.asarray(model.images[i].projection_center(), float).reshape(3)
             for i in model.reg_image_ids()}
 
 
+def _umeyama(src: np.ndarray, tgt: np.ndarray) -> tuple[float, np.ndarray, np.ndarray]:
+    """Least-squares similarity tgt = c R src + t (Umeyama). Works with a flat target (the map's tracks have z = 0),
+    which COLMAP's estimator rejects as degenerate."""
+    ms, mt = src.mean(0), tgt.mean(0)
+    s0, t0 = src - ms, tgt - mt
+    U, D, Vt = np.linalg.svd(t0.T @ s0 / len(src))
+    S = np.eye(3)
+    if np.linalg.det(U) * np.linalg.det(Vt) < 0:
+        S[2, 2] = -1
+    R = U @ S @ Vt
+    c = float(np.trace(np.diag(D) @ S) / ((s0 ** 2).sum() / len(src)))
+    return c, R, mt - c * R @ ms
+
+
+def fit_similarity(src: np.ndarray, tgt: np.ndarray, max_err: float, xy_only: bool, iters: int = 3000):
+    """RANSAC over 4-point samples, then the fit on the inliers (twice). Returns pycolmap.Sim3d, inlier mask."""
+    import pycolmap
+
+    rng = np.random.default_rng(0)
+
+    def errors(c, R, t):
+        d = c * src @ R.T + t - tgt
+        return np.hypot(d[:, 0], d[:, 1]) if xy_only else np.linalg.norm(d, axis=1)
+
+    best = None
+    for _ in range(iters):
+        idx = rng.choice(len(src), 4, replace=False)
+        inl = errors(*_umeyama(src[idx], tgt[idx])) <= max_err
+        if best is None or inl.sum() > best.sum():
+            best = inl
+    for _ in range(2):
+        c, R, t = _umeyama(src[best], tgt[best])
+        best = errors(c, R, t) <= max_err
+    c, R, t = _umeyama(src[best], tgt[best])
+    return pycolmap.Sim3d(c, pycolmap.Rotation3d(R), t), best
+
+
 def to_map_frame(model, pmap: PlaceMap, by_name: dict[str, Img]) -> dict:
     """Move the model into the map's frame and metres: a similarity from its camera centres to the walks' placed
     tracks (published scale) at the same times. Returns the fit's numbers."""
-    import pycolmap
-
     k = pmap.frame.distance_scale if pmap.frame else 1.0
     tracks = {t.rec_id: np.array([p[:3] for p in t.points], float) for t in pmap.tracks}
     names, src, tgt = [], [], []
@@ -396,37 +451,26 @@ def to_map_frame(model, pmap: PlaceMap, by_name: dict[str, Img]) -> dict:
         names.append(n)
         src.append(c)
         tgt.append([np.interp(im.t_ms, tr[:, 0], tr[:, 1]) * k, np.interp(im.t_ms, tr[:, 0], tr[:, 2]) * k, 0.0])
-    ro = pycolmap.RANSACOptions()
-    ro.max_error = TRACK_FIT_MAX_ERROR_M
-    sim = pycolmap.estimate_sim3d_robust(np.array(src), np.array(tgt), ro)
-    if sim is None:
-        log.warning("model -> map frame: no robust similarity, fitting all %d frames", len(src))
-        sim = pycolmap.estimate_sim3d(np.array(src), np.array(tgt))
-    if sim is None:
-        raise RuntimeError("model -> map frame: no similarity")
+    src, tgt = np.array(src), np.array(tgt)
+    sim, inl = fit_similarity(src, tgt, TRACK_FIT_MAX_ERROR_M, xy_only=True)
     model.transform(sim)
     after = centres(model)
-    res = np.array([np.hypot(*(after[n][:2] - np.array(t[:2]))) for n, t in zip(names, tgt)])
-    return {"frames": len(names), "scale": round(float(sim.scale), 4),
+    res = np.array([np.hypot(*(after[n][:2] - t[:2])) for n, t in zip(names, tgt)])
+    return {"frames": len(names), "inliers": int(inl.sum()), "scale": round(float(sim.scale), 4),
             "track_vs_model_median_m": round(float(np.median(res)), 2),
             "track_vs_model_p90_m": round(float(np.percentile(res, 90)), 2)}
 
 
 def align_to(model, ref) -> dict:
     """Move `model` onto `ref` (already in the map frame) through the frames registered in both."""
-    import pycolmap
-
     a, b = centres(model), centres(ref)
     common = sorted(set(a) & set(b))
-    ro = pycolmap.RANSACOptions()
-    ro.max_error = MODEL_FIT_MAX_ERROR_M
-    sim = pycolmap.estimate_sim3d_robust(np.array([a[n] for n in common]), np.array([b[n] for n in common]), ro)
-    if sim is None:
-        raise RuntimeError("no similarity between the models")
+    sim, inl = fit_similarity(np.array([a[n] for n in common]), np.array([b[n] for n in common]),
+                              MODEL_FIT_MAX_ERROR_M, xy_only=False)
     model.transform(sim)
     after = centres(model)
     res = np.array([np.linalg.norm(after[n] - b[n]) for n in common])
-    return {"common": len(common), "median_m": round(float(np.median(res)), 3),
+    return {"common": len(common), "inliers": int(inl.sum()), "median_m": round(float(np.median(res)), 3),
             "p90_m": round(float(np.percentile(res, 90)), 3)}
 
 
@@ -443,21 +487,27 @@ class Pose:
     ms: dict[str, float]
     p2d: np.ndarray | None = None  # inlier correspondences, for overlays
     p3d: np.ndarray | None = None
+    piece: int | None = None  # which model component posed it
 
 
 class Localizer:
-    def __init__(self, model, feats: dict[str, dict], emb: dict[str, np.ndarray], place_model: str):
-        self.model = model
-        self.names = [model.images[i].name for i in model.reg_image_ids()]
+    """Retrieval over the frames of every model piece, LightGlue with the best QUERY_K, then PnP per piece on its
+    own 3D points (pieces don't share a frame exactly); the piece with the most inliers answers."""
+
+    def __init__(self, models: list, feats: dict[str, dict], emb: dict[str, np.ndarray], place_model: str):
+        self.models = models
+        self.where: dict[str, list[tuple[int, np.ndarray]]] = {}  # frame -> [(piece, 3D point id per keypoint)]
+        self.xyz: list[dict[int, np.ndarray]] = []
+        for k, model in enumerate(models):
+            for i in model.reg_image_ids():
+                im = model.images[i]
+                ids = np.array([p.point3D_id if p.has_point3D() else -1 for p in im.points2D], np.int64)
+                self.where.setdefault(im.name, []).append((k, ids))
+            self.xyz.append({pid: np.asarray(p.xyz, float).reshape(3) for pid, p in model.points3D.items()})
+        self.names = sorted(self.where)
         self.emb = np.stack([emb[n] for n in self.names])
         self.feats = feats
         self.place_model = place_model
-        self.p3d_ids = {}
-        for i in model.reg_image_ids():
-            im = model.images[i]
-            self.p3d_ids[im.name] = np.array([p.point3D_id if p.has_point3D() else -1 for p in im.points2D],
-                                             np.int64)
-        self.xyz = {pid: np.asarray(p.xyz, float).reshape(3) for pid, p in model.points3D.items()}
 
     def __call__(self, rgb: np.ndarray) -> Pose:
         import pycolmap
@@ -474,36 +524,42 @@ class Localizer:
         ms["retrieve"] = (time.perf_counter() - t) * 1000
         t = time.perf_counter()
         q = _on_device(fq)
-        pairs: set[tuple[int, int]] = set()
+        per: list[set[tuple[int, int]]] = [set() for _ in self.models]
         for n in top:
             if n not in _gpu_feats:
                 _gpu_feats[n] = _on_device(self.feats[n])
             m = match(q, _gpu_feats[n])
-            ids = self.p3d_ids[n][m[:, 1]] if len(m) else np.zeros(0, np.int64)
-            pairs.update((int(a), int(p)) for a, p in zip(m[:, 0], ids) if p >= 0)
+            if not len(m):
+                continue
+            for k, ids_all in self.where[n]:
+                ids = ids_all[m[:, 1]]
+                per[k].update((int(a), int(p)) for a, p in zip(m[:, 0], ids) if p >= 0)
         ms["match"] = (time.perf_counter() - t) * 1000
         h, w = rgb.shape[:2]
-        if len(pairs) < 6:
-            return Pose(0, len(pairs), None, None, None, None, top, ms)
         t = time.perf_counter()
-        pl = sorted(pairs)
-        p2d = fq["keypoints"][[a for a, _ in pl]].astype(np.float64) + 0.5
-        p3d = np.array([self.xyz[p] for _, p in pl])
-        cam = pycolmap.Camera(model="SIMPLE_PINHOLE", width=w, height=h, params=[1.2 * max(w, h), w / 2, h / 2])
-        est = pycolmap.AbsolutePoseEstimationOptions()
-        est.estimate_focal_length = True
-        est.ransac.max_error = RANSAC_MAX_ERROR
-        ref = pycolmap.AbsolutePoseRefinementOptions()
-        ref.refine_focal_length = True
-        r = pycolmap.estimate_and_refine_absolute_pose(p2d, p3d, cam, est, ref)
+        best = Pose(0, max(len(x) for x in per), None, None, None, None, top, ms)
+        for k, pairs in enumerate(per):
+            if len(pairs) < 6:
+                continue
+            pl = sorted(pairs)
+            p2d = fq["keypoints"][[a for a, _ in pl]].astype(np.float64) + 0.5
+            p3d = np.array([self.xyz[k][p] for _, p in pl])
+            cam = pycolmap.Camera(model="SIMPLE_PINHOLE", width=w, height=h, params=[1.2 * max(w, h), w / 2, h / 2])
+            est = pycolmap.AbsolutePoseEstimationOptions()
+            est.estimate_focal_length = True
+            est.ransac.max_error = RANSAC_MAX_ERROR
+            ref = pycolmap.AbsolutePoseRefinementOptions()
+            ref.refine_focal_length = True
+            r = pycolmap.estimate_and_refine_absolute_pose(p2d, p3d, cam, est, ref)
+            if r is None or r["num_inliers"] <= best.inliers:
+                continue
+            cfw = r["cam_from_world"]
+            R, tr = np.asarray(cfw.rotation.matrix()), np.asarray(cfw.translation, float).reshape(3)
+            mask = np.asarray(r["inlier_mask"], bool)
+            best = Pose(int(r["num_inliers"]), len(pl), -R.T @ tr, R, tr, float(cam.focal_length), top, ms,
+                        p2d[mask], p3d[mask], k)
         ms["pnp"] = (time.perf_counter() - t) * 1000
-        if r is None:
-            return Pose(0, len(pl), None, None, None, None, top, ms)
-        cfw = r["cam_from_world"]
-        R, tr = np.asarray(cfw.rotation.matrix()), np.asarray(cfw.translation, float).reshape(3)
-        mask = np.asarray(r["inlier_mask"], bool)
-        return Pose(int(r["num_inliers"]), len(pl), -R.T @ tr, R, tr, float(cam.focal_length), top, ms,
-                    p2d[mask], p3d[mask])
+        return best
 
 
 def rot_err_deg(R0: np.ndarray, R1: np.ndarray) -> float:
@@ -523,7 +579,7 @@ def pct(a: int, b: int) -> str:
 
 # --- Itnig: held-out walks -------------------------------------------------------------------------------------
 def bench_holdout(map_id: str, pmap: PlaceMap, map_dir: Path, place: Path, extra: list[str], mapper: str,
-                  every_s: float, baseline: bool) -> dict:
+                  every_s: float, baseline: bool, stage: str) -> dict:
     from nav.mapping.inference import place_files
     from nav.navigation.locbench import Query, region, run_sequence, score
     from nav.navigation.localize import VerifyParams
@@ -539,9 +595,15 @@ def bench_holdout(map_id: str, pmap: PlaceMap, map_dir: Path, place: Path, extra
     pair_list = make_pairs(imgs, emb)
     pm = matches(place, pair_list, feats)
     release_gpu()
+    if stage == "prep":
+        raise StopStage
 
     out: dict = {"map": map_id, "walks": recs, "frames": len(imgs), "pairs": len(pair_list), "mapper": mapper}
     full, out["model_all"] = build_model(place, "all", imgs, walks, feats, pm, mapper)
+    held_models = {w: build_model(place, f"without-{w}", [i for i in imgs if i.rec in walks_map and i.rec != w],
+                                  walks, feats, pm, mapper) for w in recs}
+    if stage == "models":
+        raise StopStage
     out["map_fit"] = to_map_frame(full, pmap, by_name)
     truth_c = centres(full)
     truth_R = {full.images[i].name: full.images[i].cam_from_world().rotation.matrix() for i in full.reg_image_ids()}
@@ -559,9 +621,7 @@ def bench_holdout(map_id: str, pmap: PlaceMap, map_dir: Path, place: Path, extra
     index_all = ref_indexes(pmap, map_dir, holdout=False, memory=True) if baseline else None
     thresholds = config.loc_thresholds()
     for w in recs:
-        others = [r for r in walks_map if r != w]
-        model, summ = build_model(place, f"without-{w}", [i for i in imgs if i.rec in others], walks, feats, pm,
-                                  mapper)
+        model, summ = held_models[w]
         fit = align_to(model, full)
         res = {"model": summ, "fit_to_all": fit, "in_map": w in walks_map}
         qdir = place / "queries" / w
@@ -577,7 +637,7 @@ def bench_holdout(map_id: str, pmap: PlaceMap, map_dir: Path, place: Path, extra
             qs.append((im, p))
         t0 = qs[0][0].t_ms if qs else 0
         wait_gpu()
-        loc = Localizer(model, feats, emb, model_name)
+        loc = Localizer([model], feats, emb, model_name)
         rows = []
         for im, p in qs:
             pose = loc(load_rgb(p, LONG_SIDE))
@@ -641,7 +701,7 @@ def summarize_walk(w: str, res: dict) -> str:
 
 # --- Nati House: live calls ------------------------------------------------------------------------------------
 def bench_live(map_id: str, pmap: PlaceMap, map_dir: Path, place: Path, mapper: str, since: str | None,
-               baseline: bool, overlays: int) -> dict:
+               baseline: bool, overlays: int, stage: str) -> dict:
     from nav.navigation.captured import sessions
     from nav.navigation.locbench import bench_sessions, region
     from nav.navigation.localize import VerifyParams
@@ -655,14 +715,19 @@ def bench_live(map_id: str, pmap: PlaceMap, map_dir: Path, place: Path, mapper: 
     pair_list = make_pairs(imgs, emb)
     pm = matches(place, pair_list, feats)
     release_gpu()
-    model, summ = build_model(place, "all", imgs, walks, feats, pm, mapper)
+    if stage == "prep":
+        raise StopStage
+    _, summ = build_model(place, "all", imgs, walks, feats, pm, mapper)
+    if stage == "models":
+        raise StopStage
+    pieces = load_pieces(place, "all")
     out: dict = {"map": map_id, "walks": recs, "frames": len(imgs), "pairs": len(pair_list), "model": summ,
-                 "map_fit": to_map_frame(model, pmap, by_name)}
+                 "map_fit": [{"registered": p.num_reg_images(), **to_map_frame(p, pmap, by_name)} for p in pieces]}
 
     found = sessions(config.LIVE_DIR, map_id, since)
     step = (pmap.frame.live_step_length_m or pmap.frame.step_length_m) if pmap.frame else 0.7
     wait_gpu()
-    loc = Localizer(model, feats, emb, model_name)
+    loc = Localizer(pieces, feats, emb, model_name)
     sess_out, shown = [], 0
     odir = place / "overlays"
     odir.mkdir(exist_ok=True)
@@ -674,7 +739,8 @@ def bench_live(map_id: str, pmap: PlaceMap, map_dir: Path, place: Path, mapper: 
                 rgb = load_rgb(f)
                 pose = loc(load_rgb(f, LONG_SIDE))
                 fr = {"frame": f.name, "size": [rgb.shape[1], rgb.shape[0]], "inliers": pose.inliers,
-                      "matches": pose.matches, "focal": pose.focal, "ms": pose.ms, "top": pose.top[:3]}
+                      "matches": pose.matches, "focal": pose.focal, "ms": pose.ms, "top": pose.top[:3],
+                      "piece": pose.piece}
                 if pose.xyz is not None:
                     fr["xy"] = [round(float(pose.xyz[0]), 2), round(float(pose.xyz[1]), 2)]
                     fr["node"] = region(pmap, *fr["xy"])
@@ -824,28 +890,37 @@ def report_live(r: dict) -> str:
 
 
 def main() -> None:
+    global FPS
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("map_id")
     ap.add_argument("--live", action="store_true", help="Captured live calls instead of held-out walks.")
     ap.add_argument("--since", help="Live sessions from this day (YYYY-MM-DD).")
     ap.add_argument("--extra", default="", help="Comma-separated walks of the place not in the map, also held out.")
-    ap.add_argument("--mapper", choices=["incremental", "global"], default="incremental")
+    ap.add_argument("--mapper", choices=["incremental", "global"], default="global")
     ap.add_argument("--every-s", type=float, default=1.0, help="Held-out query spacing.")
     ap.add_argument("--no-baseline", action="store_true", help="Skip the current localizer.")
     ap.add_argument("--overlays", type=int, default=12)
+    ap.add_argument("--stage", choices=["prep", "models", "all"], default="all")
+    ap.add_argument("--fps", type=float, default=FPS, help="Model frames per second (its own cache folder).")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s", datefmt="%H:%M:%S")
     map_dir = config.MAPS_DIR / a.map_id
     pmap = PlaceMap.model_validate_json((map_dir / "map.json").read_text())
-    place = OUT / a.map_id
+    FPS = a.fps
+    place = OUT / (a.map_id if FPS == 2.0 else f"{a.map_id}-{FPS:g}fps")
     place.mkdir(parents=True, exist_ok=True)
-    if a.live:
-        r = bench_live(a.map_id, pmap, map_dir, place, a.mapper, a.since, not a.no_baseline, a.overlays)
-        text = report_live(r)
-    else:
-        extra = [x for x in a.extra.split(",") if x]
-        r = bench_holdout(a.map_id, pmap, map_dir, place, extra, a.mapper, a.every_s, not a.no_baseline)
-        text = report_holdout(r)
+    try:
+        if a.live:
+            r = bench_live(a.map_id, pmap, map_dir, place, a.mapper, a.since, not a.no_baseline, a.overlays, a.stage)
+            text = report_live(r)
+        else:
+            extra = [x for x in a.extra.split(",") if x]
+            r = bench_holdout(a.map_id, pmap, map_dir, place, extra, a.mapper, a.every_s, not a.no_baseline,
+                              a.stage)
+            text = report_holdout(r)
+    except StopStage:
+        log.info("stage %s done", a.stage)
+        return
     kind = "live" if a.live else "holdout"
     (place / f"results-{kind}.json").write_text(json.dumps(r, indent=1, default=str))
     (HERE / f"results-{a.map_id}-{kind}.md").write_text(text + "\n")
