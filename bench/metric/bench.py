@@ -1,9 +1,9 @@
 """Metric localization check: against a 3D model of the place, does PnP pose held-out and live frames correctly where
 today's localizer (embeddings + LightGlue votes) doesn't? Results and what they mean: REPORT.md.
 
-    gpu-run -- uv run --group bench-metric python bench/metric/bench.py itnig --extra 20261010T140614Z_b6a0 --stage prep
-    uv run --group bench-metric python bench/metric/bench.py itnig --extra 20261010T140614Z_b6a0 --stage models
-    gpu-run -- uv run --group bench-metric python bench/metric/bench.py itnig --extra 20261010T140614Z_b6a0
+    gpu-run -- uv run python bench/metric/bench.py itnig --extra 20261010T140614Z_b6a0 --stage prep
+    uv run python bench/metric/bench.py itnig --extra 20261010T140614Z_b6a0 --stage models
+    gpu-run -- uv run python bench/metric/bench.py itnig --extra 20261010T140614Z_b6a0
     # Nati House, captured live calls: the same three stages with  nati-house --live --fps 4 --mapper incremental
 
 Per place, cached under data/bench-metric/<map_id>/ (gitignored: the frames show people and homes), each stage

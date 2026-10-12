@@ -50,6 +50,16 @@ def infer_serve(host: str = config.INFER_HOST, port: int = config.INFER_PORT) ->
                 limit_concurrency=32, timeout_keep_alive=30, proxy_headers=True, forwarded_allow_ips="127.0.0.1")
 
 
+@infer.command("geometry-gpu")
+def infer_geometry_gpu(work: Path) -> None:
+    """The GPU stage of a geometry job folder (nav/mapping/geometry.py): what a geometry job runs on the shared GPU's
+    queue (gpu-run), apart from the inference host's resident process."""
+    from nav.mapping.geometry import gpu_stage
+
+    _logging()
+    gpu_stage(work)
+
+
 def _store():
     from nav.recorder.store import RecordingStore
 

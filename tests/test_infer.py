@@ -62,14 +62,14 @@ class Stub:
             raise ValueError("unknown language xx")
         return f"heard {path.suffix}" + (f" in {language}" if language else "")
 
-    def map_draft(self, work_dir, place, language, model, effort, budget_usd):
+    def map_draft(self, work_dir, place, language, model, effort, budget_usd, stage="places"):
         self.release.wait(5)
-        job = work_dir / "job"
-        job.mkdir()
+        job = work_dir / "job" / stage
+        job.mkdir(parents=True)
         assert (work_dir / "candidates.json").is_file() and list((work_dir / "frames").glob("*.jpg"))
+        places = draft(edges=[]).model_dump(exclude={"edges"})
         result = {"type": "result", "subtype": "success", "is_error": False, "total_cost_usd": 0.4,
-                  "session_id": "s", "modelUsage": {"claude-x": {"costUSD": 0.4}},
-                  "structured_output": draft(edges=[]).model_dump()}
+                  "session_id": "s", "modelUsage": {"claude-x": {"costUSD": 0.4}}, "structured_output": places}
         (job / "claude.json").write_text(json.dumps(result))
         (job / "prompt.md").write_text(f"{place} in {language}")
 
@@ -206,12 +206,14 @@ def test_map_job_through_the_host_lands_like_a_local_run(host, tmp_path, monkeyp
     monkeypatch.setattr(inference, "remote", lambda: client)
     res = run_llm_on_build(build, llm_model="opus", language="es", budget_usd=1)
     assert res.map.build.llm.model == "claude-x" and res.map.build.llm.effort == "medium"
-    assert (build / "job" / "claude.json").is_file() and (build / "job" / "prompt.md").read_text() == "Test in es"
+    places = build / "job" / "places"
+    assert (places / "claude.json").is_file() and (places / "prompt.md").read_text() == "Test in es"
+    assert res.map.build.pipeline_version == "metric-1"
     assert json.loads((tmp_path / "maps" / "test" / "map.json").read_text())["build"]["build_id"] == "20261010T000000Z"
 
     # resubmitting the same job returns it; a second job while one runs and none may wait is turned away
     files = {"candidates": ("candidates.json", b"{}"), "frames": ("c1.jpg", b"jpg")}
-    data = {"job_id": "test-20261010T000000Z", "place": "Test", "language": "es", "model": "opus",
+    data = {"job_id": "test-20261010T000000Z-places", "place": "Test", "language": "es", "model": "opus",
             "effort": "medium", "budget_usd": "1"}
     assert http.post("/infer/v1/jobs/map-draft", data=data, files=files).json()["status"] == "done"
     stub.release.clear()

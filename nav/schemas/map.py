@@ -89,8 +89,8 @@ class _Closed(BaseModel):
 
 # --- what the LLM writes ------------------------------------------------------------------------------------
 class DraftRelation(_Closed):
-    subject: str = Field(description='A place or fixed object someone may ask for or orient by, as named in the map '
-                                     'where it is a node: "Kitchen", "Bar counter", "Stage".')
+    subject: str = Field(description='A fixed object someone may ask for or orient by that is not a node of the map: '
+                                     '"Bar counter", "Fire exit", "Pillar". (Code adds where the other nodes are.)')
     candidate: str = Field(description="Id of one of this node's candidates, the photo it is judged from.")
     side: Literal["in_photo", "left", "right", "behind"] = Field(
         description="Where it is from where that photo was taken, facing the way the camera faced: in_photo if the "
@@ -184,7 +184,54 @@ def draft_json_schema() -> dict:
     return MapDraft.model_json_schema()
 
 
+# Since pipeline metric-1 the LLM writes in two passes, and only meaning: where things are and how they connect come
+# from code (nav/mapping/topology.py). The places pass names and describes nodes made of code's spots; the routes
+# pass writes what is felt and heard along code's edges, and their spoken form. Code assembles the MapDraft.
+class PlacesDraft(_Closed):
+    place: str
+    language: str = Field(description='Language of all the text in the map, BCP 47 ("en", "es").')
+    summary: str = Field(description="Overview of the place for a blind person, without visual detail: shape and "
+                                     "size, main areas, how they connect, where the entrances are. 2-5 sentences.")
+    nodes: list[MapNode]
+    notes: list[str] = Field(description="Uncertainties, and what should be recorded again.")
+
+
+class RouteStep(_Closed):
+    action: StepAction = Field(description="The step's action as given. A straight step may instead say go_through, "
+                                           "step_up, step_down, stairs_up, stairs_down or lift when that is what it "
+                                           "is; turns and distances are not yours to change.")
+    along: str | None = Field(description="What to keep beside you while walking, with its side, non-visual: "
+                                          "\"stone wall on your left\", \"trail the counter with your right hand\".")
+    until: str | None = Field(description="The non-visual cue that ends this step: \"until the floor turns to "
+                                          "carpet\", \"until your cane finds the bins\". The last step's cue tells "
+                                          "you that you have arrived.")
+
+
+class RouteText(_Closed):
+    id: str = Field(description="The edge's id, as given.")
+    kind: EdgeKind
+    steps: list[RouteStep] = Field(description="One per given step, in the same order.")
+    instruction: str = Field(description="The steps as you would say them to a blind person, egocentric, without "
+                                         "visual detail: the same turns and distances, what you pass and can touch "
+                                         "or hear, how you know you have arrived.")
+    reverse_instruction: str = Field(description="The same route spoken from the target back to the source.")
+    landmarks: list[str] = Field(description="Non-visual things passed along the way that help to keep track.")
+    hazards: list[str]
+    visual_cues: list[str] = Field(description="What a sighted helper or a camera would recognise along the way.")
+    confidence: Confidence
+
+
+class RoutesDraft(_Closed):
+    edges: list[RouteText]
+    notes: list[str] = Field(description="Uncertainties about the routes, and what should be walked again.")
+
+
 # --- what the LLM reads -------------------------------------------------------------------------------------
+class Point(BaseModel):
+    x_m: float
+    y_m: float
+
+
 class Motion(BaseModel):
     """Dead-reckoned motion at a frame, from the IMU (steps x step length) and the fused heading."""
 
@@ -219,6 +266,9 @@ class Candidate(BaseModel):
     reason: list[str]  # why it was kept: start, end, mark, voice, novel, turn, distance
     views: list[View]  # the first one is the frame shown in the image
     possibly_same_as: list[str] = []  # other candidates that look alike but were not merged
+    position: Point | None = None  # where its views were taken, map frame (the 3D model, else dead reckoning)
+    posed: bool = False  # ... from the 3D model
+    nearby: list[dict] = []  # other candidates within a few metres: [{candidate, distance_m}]
 
 
 class TimelineStep(BaseModel):
@@ -273,11 +323,6 @@ class Evidence(BaseModel):
     rec_id: str
     t_ms: float
     image: str
-
-
-class Point(BaseModel):
-    x_m: float
-    y_m: float
 
 
 class ItemQuality(BaseModel):
@@ -348,6 +393,8 @@ class MemoryFrame(BaseModel):
     x_m: float | None  # camera position in the build's map frame (before a review's scale); None: walk not placed
     y_m: float | None
     heading_deg: float | None  # camera heading, map frame
+    posed: bool = False  # the 3D model gives its camera pose (else: dead reckoning)
+    row: int | None = None  # its frame in the build's geometry (geometry.npz observations), for live poses
 
 
 class MemoryInfo(BaseModel):
@@ -359,6 +406,9 @@ class MemoryInfo(BaseModel):
     frames: int
     file: str  # map-relative path of memory.json
     embeddings: str  # map-relative path of memory.npy ([frames, dim] float32 unit vectors)
+    # The build's 3D model (nav/mapping/geometry.py): the points posed frames see, for live poses. None: no model.
+    geometry: str | None = None  # map-relative path of geometry.npz
+    posed: int = 0  # frames posed by the model
 
 
 class MapFrame(BaseModel):
@@ -393,7 +443,7 @@ class PlaceNode(MapNode):
     relations: list[SpatialRelation] = []  # computed from the draft's DraftRelations
     quality: ItemQuality | None = None
     evidence: list[Evidence] = []
-    position: Point | None = None  # dead-reckoned, recordings aligned through shared nodes; approximate
+    position: Point | None = None  # the mean of its spots: the 3D model (dead reckoning where the model has no pose)
     status: Status = "observed"
     review_flags: list[str] = []  # what a reviewer should check
     references: list[str] = []  # ReferenceImage ids
@@ -408,7 +458,7 @@ class PlaceEdge(MapEdge):
     distance_m: float | None = None  # measured if the edge was walked, else the sum of the steps' distances
     measured_distance_m: float | None = None  # walked between the two nodes' frames (centre to centre) in one recording
     reverse_steps: list[Step] = []  # computed from steps: turn around, steps in reverse order, left and right swapped
-    path: list[Point] = []  # the dead-reckoned walk between the two nodes, for drawing (same frame as positions)
+    path: list[Point] = []  # the walk between the two nodes (same frame as positions)
     walked_at_ms: float | None = None  # when the walk that `path` comes from left the source (recording clock)
     walked_in: str | None = None  # ... and which recording that was
     walked: bool = True  # False: no walk went directly between the two nodes (it passed other nodes in between)
@@ -515,6 +565,8 @@ class PlaceMap(MapDraft):
     # Every connection before cleaning (the review applied): localization's walked distances and neighbours, so the
     # cleaner changes routes, never where spots are. [] (maps published before): `edges`.
     links: list[Link] = []
+    # The build's 3D model (nav/mapping/geometry.py): frames posed, points, scale, per walk. None: dead reckoning only.
+    geometry: dict | None = None
 
 
 class MapSummary(BaseModel):

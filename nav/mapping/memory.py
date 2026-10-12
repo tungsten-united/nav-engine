@@ -6,13 +6,17 @@ like, so where am I", which a picture can answer, instead of "which node", which
 area, and in an open hall the same view belongs to several of them (Itnig: one walk's "Stage" frames are another's
 "Stone wall tables", 78 of 84 confident cross-walk matches that "disagreed" with the node were neighbours).
 
-Every usable frame (the per-recording cache: 1 fps, the sharpest of each second; the reference images' quality
-filter) of every walk of the build, with
-- its MegaLoc place embedding (the cache's, prepare.place_embeddings) -> memory.npy, row i = frame i;
-- the camera position in the build's map frame: the walk's track as the build placed it (aligned through nodes,
-  bent by the loop closure), and the camera heading;
-- the image, memory/mNNNN.jpg: what the live verifier (LightGlue on the inference host) matches against, and
-  what the debugging pages show.
+With a 3D model (geometry.py, every build since metric-1), the memory is the model's frames (2 fps, 1024 px): each
+posed frame with the camera pose the model gives it, and the usable unposed ones with their dead-reckoned position
+moved into the map frame. Live localization retrieves memory frames by their MegaLoc embedding, then solves the
+camera pose against the 3D points the posed ones see (`row`: the frame's index in geometry.npz).
+
+Builds without a model keep the older memory: every usable frame of the per-recording cache (1 fps, the sharpest of
+each second; the reference images' quality filter), placed by the walk's track as the build placed it (aligned
+through nodes, bent by the loop closure).
+
+Each frame has its MegaLoc place embedding (memory.npy, row i = frame i), its position and camera heading in the
+build's map frame, and its image (memory/mNNNN.jpg): what live matching uses and what the debugging pages show.
 
 Frames don't name a node. nav-api gives each the node nearest to its position (navigation/localize.py MemoryIndex),
 so a review that moves, merges, hides or rescales nodes moves the regions with it, without rebuilding the memory.
@@ -91,10 +95,71 @@ def build_memory(pmap: PlaceMap, params: dict, build_dir: Path, recordings_root:
                       embeddings=f"{build_rel}/memory.npy")
 
 
+def build_memory_from_geometry(geo, params: dict, build_dir: Path, recordings_root: Path, cache_root: Path,
+                               place_model: str, warnings: list[str]) -> MemoryInfo | None:
+    """The model's frames as the memory (see the module doc): posed frames, and unposed ones that pass the quality
+    filter (sharp enough for their walk, not too dark or bright, not at the floor or ceiling)."""
+    from nav.mapping.geometry import sample_walk
+    from nav.mapping.prepare import load_walk
+
+    p = SelectParams(**{f.name: params[f.name] for f in fields(SelectParams) if f.name in params})
+    build_rel = f"builds/{build_dir.name}"
+    out_dir = build_dir / "memory"
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    out_dir.mkdir(parents=True)
+    by_rec: dict[str, list[int]] = {}
+    for i, f in enumerate(geo.frames):
+        by_rec.setdefault(f.rec_id, []).append(i)
+    frames: list[MemoryFrame] = []
+    rows: list[int] = []
+    for rec, idx in by_rec.items():
+        rec_dir = recordings_root / rec
+        try:
+            fdir, _, _ = sample_walk(rec_dir, cache_root)
+            track = load_walk(rec_dir, cache_root, p).track
+        except Exception as e:  # a broken recording must not lose the map
+            warnings.append(f"memory: recording {rec}: {type(e).__name__}: {e}")
+            continue
+        floor = p.min_sharpness_rel * float(np.median([geo.frames[i].sharpness for i in idx]))
+        for i in sorted(idx, key=lambda i: geo.frames[i].t_ms):
+            f = geo.frames[i]
+            pitch = track.at(f.t_ms)["pitch_deg"]
+            usable = (f.sharpness >= floor and p.min_brightness <= f.brightness <= p.max_brightness
+                      and (pitch is None or abs(pitch) <= p.max_abs_pitch_deg))
+            if not (geo.posed[i] or usable) or np.isnan(geo.xyz[i, 0]):
+                continue
+            fid = f"m{len(frames) + 1:04d}"
+            shutil.copyfile(fdir / f.name.split("/", 1)[1], out_dir / f"{fid}.jpg")
+            h = geo.heading_deg[i]
+            frames.append(MemoryFrame(id=fid, rec_id=rec, t_ms=f.t_ms, image=f"{build_rel}/memory/{fid}.jpg",
+                                      x_m=round(float(geo.xyz[i, 0]), 2), y_m=round(float(geo.xyz[i, 1]), 2),
+                                      heading_deg=None if np.isnan(h) else round(float(h), 1),
+                                      posed=bool(geo.posed[i]), row=i))
+            rows.append(i)
+    if not frames:
+        return None
+    v = geo.place[rows].astype(np.float32)
+    np.save(build_dir / "memory.npy", v)
+    (build_dir / "memory.json").write_text(json.dumps({"frames": [f.model_dump() for f in frames]}))
+    log.info("memory: %d frames of %d walks (%d posed by the 3D model)", len(frames), len(by_rec),
+             sum(f.posed for f in frames))
+    return MemoryInfo(model=place_model, dim=int(v.shape[1]), frames=len(frames), file=f"{build_rel}/memory.json",
+                      embeddings=f"{build_rel}/memory.npy", geometry=f"{build_rel}/geometry.npz",
+                      posed=sum(f.posed for f in frames))
+
+
 def add_memory(pmap: PlaceMap, params: dict, build_dir: Path, recordings_root: Path, cache_root: Path,
                place_model: str) -> PlaceMap:
+    from nav.mapping import geometry
+
     warnings: list[str] = []
-    pmap.memory = build_memory(pmap, params, build_dir, recordings_root, cache_root, place_model, warnings)
+    geo = geometry.load(build_dir)
+    if geo is not None:
+        pmap.memory = build_memory_from_geometry(geo, params, build_dir, recordings_root, cache_root, place_model,
+                                                 warnings)
+    else:
+        pmap.memory = build_memory(pmap, params, build_dir, recordings_root, cache_root, place_model, warnings)
     pmap.warnings += warnings
     return pmap
 

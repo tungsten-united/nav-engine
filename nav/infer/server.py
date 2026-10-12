@@ -19,9 +19,14 @@ It shares one GPU with whatever else runs on this computer, so it protects itsel
                                cached by key; 409 {missing: [key]} asks for the images of the ones not cached
     POST /infer/v1/language    audio, model                    -> {probs: {code: p}}, Whisper's language guess
     POST /infer/v1/transcribe  audio, model, language?         -> {text}
-    POST /infer/v1/jobs/map-draft   job_id, place, language, model, effort, budget_usd, candidates, previous?, frames[]
+    POST /infer/v1/jobs/map-draft   job_id, place, language, model, effort, budget_usd, stage (places | routes),
+                                    candidates (places) or routes (routes), previous?, frames[]
+    POST /infer/v1/jobs/geometry/{job_id}/frames   frames[] named <rec_id>__<t>.jpg (in chunks, before the job)
+    POST /infer/v1/jobs/geometry    job_id, job (job.json): the 3D model of the frames (nav/mapping/geometry.py); its
+                                    GPU stage is a job on the machine's shared GPU queue (gpu-run), the mapping runs here
     GET  /infer/v1/jobs/{job_id}                -> {status: queued|running|done|failed, error, files, ...}
-    GET  /infer/v1/jobs/{job_id}/files/{name}   -> claude.json, claude.log, prompt.md, schema.json, command.txt
+    GET  /infer/v1/jobs/{job_id}/files/{name}   -> claude.json, claude.log, prompt.md, schema.json, command.txt;
+                                                   geometry: raw.npz, summary.json, gpu-run.log
 """
 
 import asyncio
@@ -58,6 +63,9 @@ MAX_JOB_BODY = 96 * 1024 * 1024  # map jobs (candidates + up to MAX_JOB_FRAMES f
 MAX_JOB_FRAMES = 100  # the Messages API limit too, for when the job moves there
 JOB_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$")
 JOB_FILES = ("claude.json", "claude.log", "prompt.md", "schema.json", "command.txt")
+GEOMETRY_FILES = ("raw.npz", "summary.json", "gpu-run.log")
+GEOMETRY_FRAME_RE = re.compile(r"^([A-Za-z0-9-]+(?:_[A-Za-z0-9-]+)*)__([0-9]{1,9}\.jpg)$")
+MAX_GEOMETRY_FRAMES = 8000
 
 
 class Backend(Protocol):
@@ -71,7 +79,9 @@ class Backend(Protocol):
     def verify(self, queries: list[bytes], refs: list[tuple[str, bytes | None]]) -> list[list[int]]: ...
     def detect_language(self, path: Path, model: str) -> dict[str, float]: ...
     def transcribe(self, path: Path, model: str, language: str | None = None) -> str: ...
-    def map_draft(self, work_dir: Path, place: str, language: str, model: str, effort: str, budget_usd: float) -> None: ...
+    def map_draft(self, work_dir: Path, place: str, language: str, model: str, effort: str, budget_usd: float,
+                  stage: str = "places") -> None: ...
+    def geometry(self, work_dir: Path) -> None: ...
 
 
 class LocalBackend:
@@ -115,10 +125,15 @@ class LocalBackend:
 
         return transcribe(path, model, language)
 
-    def map_draft(self, work_dir, place, language, model, effort, budget_usd):
+    def map_draft(self, work_dir, place, language, model, effort, budget_usd, stage="places"):
         from nav.mapping.llm import run_claude_code
 
-        run_claude_code(work_dir, place, language, model, budget_usd, effort)  # writes work_dir/job/*
+        run_claude_code(work_dir, place, language, model, budget_usd, effort, stage=stage)  # work_dir/job/<stage>/
+
+    def geometry(self, work_dir):
+        from nav.mapping.geometry import run_job
+
+        run_job(work_dir, queue=True)  # a resident service: its batch GPU work waits its turn on the queue
 
 
 class Busy(Exception):
@@ -212,13 +227,18 @@ class Jobs:
             raise HTTPException(422, "bad job_id")
         return self.root / job_id
 
+    def _files_dir(self, job_id: str, kind: str, stage: str = "places") -> Path:
+        return self._dir(job_id) / "work" / ("" if kind == "geometry" else f"job/{stage}")
+
     def status(self, job_id: str) -> dict:
         path = self._dir(job_id) / "status.json"
         if not path.is_file():
             raise HTTPException(404, f"no job {job_id}")
         s = json.loads(path.read_text())
-        job_dir = self._dir(job_id) / "work" / "job"
-        s["files"] = [n for n in JOB_FILES if (job_dir / n).is_file()]
+        p = s.get("params", {})
+        kind = p.get("kind", "map-draft")
+        names = GEOMETRY_FILES if kind == "geometry" else JOB_FILES
+        s["files"] = [n for n in names if (self._files_dir(job_id, kind, p.get("stage", "places")) / n).is_file()]
         return s
 
     def _set(self, jid: str, /, **fields) -> None:
@@ -226,6 +246,17 @@ class Jobs:
         s = json.loads(path.read_text()) if path.is_file() else {}
         s.update(fields)
         _write_atomic(path, json.dumps(s).encode())
+
+    def upload(self, job_id: str, files: dict[str, bytes]) -> int:
+        """Frames of a geometry job, before it is submitted (idempotent per name). -> frames there so far."""
+        d = self._dir(job_id)
+        if (d / "status.json").is_file():
+            raise HTTPException(409, f"job {job_id} already submitted")
+        images = d / "work" / "images"
+        for name, data in files.items():
+            (images / name).parent.mkdir(parents=True, exist_ok=True)
+            _write_atomic(images / name, data)
+        return sum(1 for _ in images.glob("*/*.jpg"))
 
     def submit(self, job_id: str, params: dict, files: dict[str, bytes]) -> dict:
         d = self._dir(job_id)
@@ -235,7 +266,7 @@ class Jobs:
             if self.pending >= 1 + self.queue:
                 raise Busy(retry_after=60)
             work = d / "work"
-            (work / "frames").mkdir(parents=True)
+            (work / "frames").mkdir(parents=True, exist_ok=True)
             for name, data in files.items():
                 (work / name).write_bytes(data)
             self._set(job_id, job_id=job_id, status="queued", params=params, error=None,
@@ -245,8 +276,10 @@ class Jobs:
         return self.status(job_id)
 
     def file(self, job_id: str, name: str) -> Path:
-        path = self._dir(job_id) / "work" / "job" / name
-        if name not in JOB_FILES or not path.is_file():
+        p = self.status(job_id).get("params", {})
+        kind = p.get("kind", "map-draft")
+        path = self._files_dir(job_id, kind, p.get("stage", "places")) / name
+        if name not in (GEOMETRY_FILES if kind == "geometry" else JOB_FILES) or not path.is_file():
             raise HTTPException(404, name)
         return path
 
@@ -257,8 +290,11 @@ class Jobs:
             self._set(job_id, status="running", started_at_utc=datetime.now(timezone.utc).isoformat())
             t0 = time.monotonic()
             try:
-                self.backend.map_draft(self._dir(job_id) / "work", p["place"], p["language"], p["model"],
-                                       p["effort"], p["budget_usd"])
+                if p.get("kind") == "geometry":
+                    self.backend.geometry(self._dir(job_id) / "work")
+                else:
+                    self.backend.map_draft(self._dir(job_id) / "work", p["place"], p["language"], p["model"],
+                                           p["effort"], p["budget_usd"], p.get("stage", "places"))
                 result = {"status": "done"}
             except Exception as e:  # the job files (claude.json, claude.log) say more; the client reads them
                 log.warning("map job %s failed: %s", job_id, e)
@@ -289,7 +325,7 @@ def create_infer_app(backend: Backend | None = None, jobs_dir: Path | None = Non
     async def body_limit(request: Request, call_next):
         # Checked before the multipart body is read: oversized requests never reach the models.
         if request.method == "POST":
-            limit = MAX_JOB_BODY if request.url.path.endswith("/jobs/map-draft") else MAX_BODY
+            limit = MAX_JOB_BODY if "/jobs/" in request.url.path else MAX_BODY
             length = request.headers.get("content-length")
             if length is None or int(length) > limit:
                 from fastapi.responses import JSONResponse
@@ -400,11 +436,15 @@ def create_infer_app(backend: Backend | None = None, jobs_dir: Path | None = Non
     @app.post(f"{api}/jobs/map-draft", status_code=202)
     async def map_draft(job_id: str = Form(...), place: str = Form(...), language: str = Form(...),
                         model: str = Form(...), effort: str = Form(...), budget_usd: float = Form(...),
-                        candidates: UploadFile = File(...), previous: UploadFile | None = File(None),
+                        stage: str = Form("places"), candidates: UploadFile | None = File(None),
+                        routes: UploadFile | None = File(None), previous: UploadFile | None = File(None),
                         frames: list[UploadFile] = File(...)) -> dict:
         if len(frames) > MAX_JOB_FRAMES:
             raise HTTPException(422, f"at most {MAX_JOB_FRAMES} frames")
-        files = {"candidates.json": await candidates.read()}
+        if stage not in ("places", "routes") or (candidates if stage == "places" else routes) is None:
+            raise HTTPException(422, "stage places needs candidates (candidates.json), stage routes needs routes")
+        files = {"candidates.json": await candidates.read()} if stage == "places" else \
+            {"routes.json": await routes.read()}
         if previous is not None:
             files["previous.json"] = await previous.read()
         for f in frames:
@@ -412,8 +452,35 @@ def create_infer_app(backend: Backend | None = None, jobs_dir: Path | None = Non
             if not re.fullmatch(r"[A-Za-z0-9_-]+\.jpg", name):
                 raise HTTPException(422, f"bad frame name {f.filename!r}")
             files[f"frames/{name}"] = await f.read()
-        params = {"place": place, "language": language, "model": model, "effort": effort, "budget_usd": budget_usd}
+        params = {"place": place, "language": language, "model": model, "effort": effort, "budget_usd": budget_usd,
+                  "stage": stage}
         return await run_in_threadpool(jobs.submit, job_id, params, files)
+
+    @app.post(f"{api}/jobs/geometry/{{job_id}}/frames")
+    async def geometry_frames(job_id: str, frames: list[UploadFile] = File(...)) -> dict:
+        files = {}
+        for f in frames:
+            m = GEOMETRY_FRAME_RE.match(Path(f.filename or "").name)
+            if not m:
+                raise HTTPException(422, f"bad frame name {f.filename!r}: <rec_id>__<t>.jpg")
+            files[f"{m[1]}/{m[2]}"] = await f.read()
+        return {"frames": await run_in_threadpool(jobs.upload, job_id, files)}
+
+    @app.post(f"{api}/jobs/geometry", status_code=202)
+    async def geometry(job_id: str = Form(...), job: UploadFile = File(...)) -> dict:
+        data = await job.read()
+        try:
+            frames = json.loads(data)["frames"]
+        except (ValueError, KeyError, TypeError):
+            raise HTTPException(422, "job must be job.json (nav/mapping/geometry.py)")
+        if not frames or len(frames) > MAX_GEOMETRY_FRAMES:
+            raise HTTPException(422, f"send 1..{MAX_GEOMETRY_FRAMES} frames")
+        images = jobs._dir(job_id) / "work" / "images"
+        if not (jobs._dir(job_id) / "status.json").is_file():
+            missing = [f["name"] for f in frames if not (images / f["name"]).is_file()]
+            if missing:
+                raise HTTPException(409, f"{len(missing)} frames not uploaded, e.g. {missing[0]}")
+        return await run_in_threadpool(jobs.submit, job_id, {"kind": "geometry"}, {"job.json": data})
 
     @app.get(f"{api}/jobs/{{job_id}}")
     def job_status(job_id: str) -> dict:
