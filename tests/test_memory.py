@@ -67,7 +67,7 @@ class Poser:
     """Stand-in for the inference host's live pose: one answer for every live frame (the last frame's is best)."""
 
     def __init__(self, centre=(9.5, 0.2), inliers: int = 120, fail: Exception | None = None):
-        self.centre, self.inliers, self.fail, self.calls = centre, inliers, fail, []
+        self.centre, self.inliers, self.fail, self.calls, self.focal = centre, inliers, fail, [], 900.0
 
     def __call__(self, images, refs):
         self.calls.append((len(images), [k for k, _, _ in refs], [obs().shape for _, _, obs in refs]))
@@ -75,7 +75,7 @@ class Poser:
             raise self.fail
         out = [None] * (len(images) - 1)
         return out + [{"inliers": self.inliers, "matches": 300, "centre": [*self.centre, 0.1], "heading_deg": 91.0,
-                       "focal": 900.0, "R": [1, 0, 0, 0, 1, 0, 0, 0, 1], "t": [0, 0, 0], "size": [576, 1024],
+                       "focal": self.focal, "R": [1, 0, 0, 0, 1, 0, 0, 0, 1], "t": [0, 0, 0], "size": [576, 1024],
                        "per_ref": [self.inliers, 0]}]
 
 
@@ -177,6 +177,18 @@ def test_a_weak_pose_or_one_between_nodes_confirms_nothing(tmp_path):
         places.answer = axis(6)[None]
         j = localize(c, map_id).json()
         assert j["pose"]["node"] is None and j["status"] == "uncertain" and j["reason"] == "pose between nodes"
+
+
+def test_a_pose_with_an_odd_focal_length_confirms_nothing(tmp_path):
+    map_id = publish(tmp_path / "maps")
+    add_memory(tmp_path / "maps", map_id, geometry=True)
+    poser = Poser(centre=(9.5, 0.2), inliers=150)
+    c, places = client(tmp_path / "maps", pose_fn=poser)
+    with c:
+        places.answer = axis(5)[None]
+        poser.focal = 1400.0  # a plain wall fitted as if seen through a telephoto
+        j = localize(c, map_id).json()
+        assert j["pose"]["focal_px"] == 1400.0 and j["best"] == "n1" and not j["reason"].startswith("pose")
 
 
 def test_a_pose_follows_the_review_scale(tmp_path):

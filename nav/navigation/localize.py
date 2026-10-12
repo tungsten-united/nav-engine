@@ -16,7 +16,8 @@ Pose (`pose`, nav-api: the inference host): with a 3D model (geometry.py), the b
 (`PoseParams.k`, a few seconds apart in their walks) are matched with the camera frames, their keypoints' 3D points
 give 2D-3D correspondences, and PnP gives the camera pose: position to tens of centimetres and heading to a degree on
 held-out walks (bench/metric/REPORT.md). The pose's node is the nearest node within MEMORY_RADIUS_M of it, and a pose
-with at least `confirm_inliers` inliers confirms it (the walked-distance gate still applies). A pose between nodes
+with at least `confirm_inliers` inliers and a phone's focal length (`focal_px`) confirms it (the walked-distance
+gate still applies). A pose between nodes
 leaves the status uncertain, whatever the embeddings say. Scores and candidates stay the embeddings' (the
 orchestrator's belief weighs them). Without an answer in time (`pose` returns None), the result has no pose.
 
@@ -110,7 +111,10 @@ class MemoryIndex:
 @dataclass
 class PoseParams:
     k: int = 8  # posed memory frames matched per call
-    confirm_inliers: int = 40  # a pose with this many PnP inliers confirms the node it is in
+    confirm_inliers: int = 40  # a pose with this many PnP inliers confirms the node it is in ...
+    focal_px: tuple[float, float] = (550.0, 1100.0)  # ... if the focal length it implies (at 1024 px) is a phone's:
+    # 50-85° across the long side. A degenerate fit (a plain wall, a white door frame that repeats around the place)
+    # implies an odd one (Nati House: 1359 px for a blurred door frame, 729-902 for the right poses)
     spread_ms: float = 1500  # two of them from one walk are at least this far apart
 
 
@@ -325,7 +329,9 @@ def localize(index: RefIndex, queries: np.ndarray, thresholds: Thresholds, *, to
                                      node=mem.node_at(x, y), frames=[mem.frames[i].id for i in rows])
     base["position"] = position
     base["pose"] = live_pose
-    pose_node = live_pose.node if live_pose and live_pose.inliers >= pp.confirm_inliers else None
+    strong = live_pose is not None and live_pose.inliers >= pp.confirm_inliers and \
+        pp.focal_px[0] <= live_pose.focal_px <= pp.focal_px[1]
+    pose_node = live_pose.node if strong else None
     if not by_node and pose_node is None:
         return Localization(**base, status="lost", reason="no reference or memory frame belongs to a node",
                             candidates=[])
@@ -364,7 +370,7 @@ def localize(index: RefIndex, queries: np.ndarray, thresholds: Thresholds, *, to
         status, reason = "uncertain", (f"pose at {names.get(pose_node, pose_node)}, "
                                        f"{dist.get(pose_node, math.inf):.0f} m from {names[previous]}, only "
                                        f"{walked:.0f} m walked")
-    elif live_pose is not None and live_pose.inliers >= pp.confirm_inliers:
+    elif strong:
         status, reason = "uncertain", "pose between nodes"
     elif best_score < thresholds.lost_score:
         status, reason = "lost", f"best score {best_score:.2f} < {thresholds.lost_score:.2f}"
