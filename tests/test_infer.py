@@ -55,6 +55,13 @@ class Stub:
         self.calls.append(("pose", len(queries), [k for k, img, _ in refs if img is not None]))
         return [{"inliers": 10 * len(q) + sum(self.cached[k] for k, _, _ in refs)} for q in queries]
 
+    def geometry(self, work_dir):
+        """Checks every frame of job.json arrived, then leaves what map_stage would: raw.npz and summary.json."""
+        frames = json.loads((work_dir / "job.json").read_text())["frames"]
+        assert all((work_dir / "images" / f["name"]).read_bytes() == f["name"].encode() for f in frames)
+        np.savez(work_dir / "raw.npz", registered=np.ones(len(frames), bool))
+        (work_dir / "summary.json").write_text(json.dumps({"frames": len(frames)}))
+
     def detect_language(self, path, model):
         return {"en": 0.8, "es": 0.2}
 
@@ -67,8 +74,18 @@ class Stub:
         self.release.wait(5)
         job = work_dir / "job" / stage
         job.mkdir(parents=True)
-        assert (work_dir / "candidates.json").is_file() and list((work_dir / "frames").glob("*.jpg"))
-        places = draft(edges=[]).model_dump(exclude={"edges"})
+        assert list((work_dir / "frames").glob("*.jpg"))
+        if stage == "routes":
+            routes = json.loads((work_dir / "routes.json").read_text())
+            self.route_frames = sorted(p.stem for p in (work_dir / "frames").glob("*.jpg"))
+            places = {"notes": [], "edges": [{"id": e["id"], "kind": "walk", "instruction": "Go.",
+                                              "reverse_instruction": "Back.", "landmarks": [], "hazards": [],
+                                              "visual_cues": [], "confidence": "high",
+                                              "steps": [{"action": st["action"], "along": None, "until": "x"}
+                                                        for st in e["steps"]]} for e in routes["edges"]]}
+        else:
+            assert (work_dir / "candidates.json").is_file()
+            places = draft(edges=[]).model_dump(exclude={"edges"})
         result = {"type": "result", "subtype": "success", "is_error": False, "total_cost_usd": 0.4,
                   "session_id": "s", "modelUsage": {"claude-x": {"costUSD": 0.4}}, "structured_output": places}
         (job / "claude.json").write_text(json.dumps(result))
@@ -365,3 +382,37 @@ def test_degenerate_matches_have_no_inliers_instead_of_an_error():
     rng = np.random.default_rng(0)
     pts = rng.uniform(0, 500, (60, 2)).astype(np.float32)
     assert geometric_inliers(pts, pts + np.float32([12, -3])) >= 50  # a pure shift fits one geometry
+
+
+def test_a_geometry_job_uploads_in_chunks_runs_and_comes_back(host, tmp_path):
+    stub, client, http = host
+    work = tmp_path / "work"
+    frames = [{"name": f"20261010T195025Z_bf0e/{t:07d}.jpg", "rec_id": "20261010T195025Z_bf0e", "t_ms": float(t),
+               "sharpness": 1.0, "brightness": 1.0} for t in range(0, 5000, 250)]
+    for f in frames:
+        (work / "images" / f["name"]).parent.mkdir(parents=True, exist_ok=True)
+        (work / "images" / f["name"]).write_bytes(f["name"].encode())
+    (work / "job.json").write_text(json.dumps({"frames": frames, "walks": {}, "place_model": "m"}))
+    summary = client.geometry(work, "place-b1", chunk_frames=7)
+    assert summary == {"frames": 20} and np.load(work / "raw.npz")["registered"].all()
+    jobs = http.app.state.jobs.root
+    assert not (jobs / "place-b1" / "work" / "images").exists()  # the uploaded frames are dropped once done
+    # a job submitted before all its frames arrived is refused; bad names too
+    r = http.post("/infer/v1/jobs/geometry", data={"job_id": "other"},
+                  files=[("job", ("job.json", (work / "job.json").read_bytes(), "application/json"))])
+    assert r.status_code == 409 and "not uploaded" in r.json()["detail"]
+    r = http.post("/infer/v1/jobs/geometry/other/frames", files=[("frames", ("../x.jpg", b"x", "image/jpeg"))])
+    assert r.status_code == 422
+
+
+def test_the_routes_pass_through_the_host_sends_routes_and_only_their_frames(host, tmp_path):
+    stub, client, http = host
+    build = tmp_path / "b"
+    (build / "frames").mkdir(parents=True)
+    for cid in ("c1", "c2", "c3"):
+        (build / "frames" / f"{cid}.jpg").write_bytes(b"jpg")
+    (build / "routes.json").write_text(json.dumps({"nodes": [], "edges": [
+        {"id": "e1", "steps": [{"action": "straight", "distance_m": 3.0}], "candidates": [{"id": "c2"}]}]}))
+    routes, run = client.map_draft(build, "t-b-routes", "T", "en", "opus", "medium", 1, stage="routes")
+    assert routes.edges[0].id == "e1" and routes.edges[0].steps[0].until == "x"
+    assert stub.route_frames == ["c2"] and (build / "job" / "routes" / "claude.json").is_file()
