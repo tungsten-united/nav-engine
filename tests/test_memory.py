@@ -3,7 +3,6 @@
 import json
 
 import numpy as np
-import pytest
 from fastapi.testclient import TestClient
 
 from nav.mapping.build import republish

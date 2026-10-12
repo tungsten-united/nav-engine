@@ -23,7 +23,6 @@ that exercise this API (/loc/, /nav/); with NAV_FRONTEND_URL set, page paths her
 import json
 import logging
 import time
-from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.exception_handlers import http_exception_handler
