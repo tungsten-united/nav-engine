@@ -120,24 +120,31 @@ class InferenceClient:
         return self._vectors("place", [(f"live{i}.jpg", b) for i, b in enumerate(images)], model, live=True,
                              deadline_s=deadline_s)
 
-    def verify_live(self, queries: list[bytes], refs: list[tuple[str, Callable[[], bytes]]],
-                    deadline_s: float) -> list[list[int]]:
-        """LightGlue inliers of each camera frame (rows) with each memory frame (columns), for nav-api: refs go by key,
-        and their images only when the host asks for them (409 missing: not cached yet, or evicted)."""
-        keys = [k for k, _ in refs]
+    def pose_live(self, queries: list[bytes], refs: list[tuple[str, Callable[[], bytes], Callable[[], object]]],
+                  deadline_s: float) -> list[dict | None]:
+        """The camera pose of each frame against memory frames, for nav-api: refs go by key, and their image and 3D
+        observations ([K, 5] float32: pixel x, y, map x, y, z) only when the host asks for them (409 missing: not
+        cached yet, or evicted)."""
+        import io
+
+        keys = [k for k, _, _ in refs]
         data = {"refs": json.dumps(keys)}
         files = [("queries", (f"q{i}.jpg", b, "image/jpeg")) for i, b in enumerate(queries)]
         end = time.monotonic() + deadline_s
-        r = self._send("POST", "/infer/v1/verify", deadline_s=deadline_s, accept=(409,), data=data, files=files)
+        r = self._send("POST", "/infer/v1/pose", deadline_s=deadline_s, accept=(409,), data=data, files=files)
         if r.status_code == 409:
             missing = r.json().get("missing")
             if not isinstance(missing, list):
-                raise InferenceError(f"POST /infer/v1/verify: 409 {r.text[:300]}")
-            load = dict(refs)
-            files += [("ref_images", (f"{keys.index(k)}.jpg", load[k](), "image/jpeg")) for k in missing]
-            r = self._send("POST", "/infer/v1/verify", deadline_s=max(0.5, end - time.monotonic()), data=data,
+                raise InferenceError(f"POST /infer/v1/pose: 409 {r.text[:300]}")
+            load = {k: (img, obs) for k, img, obs in refs}
+            for k in missing:
+                buf = io.BytesIO()
+                np.save(buf, np.asarray(load[k][1](), np.float32))
+                files += [("ref_images", (f"{keys.index(k)}.jpg", load[k][0](), "image/jpeg")),
+                          ("ref_obs", (f"{keys.index(k)}.npy", buf.getvalue(), "application/octet-stream"))]
+            r = self._send("POST", "/infer/v1/pose", deadline_s=max(0.5, end - time.monotonic()), data=data,
                            files=files)
-        return r.json()["inliers"]
+        return r.json()["poses"]
 
     def match(self, paths: list[Path], pairs: list[tuple[int, int]]) -> list[int]:
         out = [0] * len(pairs)
@@ -162,33 +169,79 @@ class InferenceClient:
         data = {"model": model} | ({"language": language} if language else {})
         return self._send("POST", "/infer/v1/transcribe", data=data, files=self._audio(path)).json()["text"]
 
+    # --- the geometry job -----------------------------------------------------------------------------------------
+    def geometry(self, work: Path, job_id: str, poll_s: float = 30, deadline_s: float = 12 * 3600,
+                 chunk_frames: int = 48, chunk_bytes: int = 64 * 1024 * 1024) -> dict:
+        """The 3D model of a geometry job folder (job.json + images/, nav/mapping/geometry.py) made on the host:
+        frames uploaded in chunks, the job submitted and polled (its GPU stage waits for the host's GPU queue),
+        raw.npz and summary.json copied back into `work`. -> the summary."""
+        frames = json.loads((work / "job.json").read_text())["frames"]
+        batch, size = [], 0
+
+        def flush():
+            files = [("frames", (f"{rec}__{name}", data, "image/jpeg")) for rec, name, data in batch]
+            self._send("POST", f"/infer/v1/jobs/geometry/{job_id}/frames", files=files)
+            batch.clear()
+
+        for f in frames:
+            data = (work / "images" / f["name"]).read_bytes()
+            if batch and (len(batch) >= chunk_frames or size + len(data) > chunk_bytes):
+                flush()
+                size = 0
+            rec, name = f["name"].split("/", 1)
+            batch.append((rec, name, data))
+            size += len(data)
+        if batch:
+            flush()
+        status = self._send("POST", "/infer/v1/jobs/geometry", data={"job_id": job_id},
+                            files=[("job", ("job.json", (work / "job.json").read_bytes(), "application/json"))]).json()
+        log.info("geometry job %s on %s: %s (%d frames)", job_id, self.base_url, status["status"], len(frames))
+        end = time.monotonic() + deadline_s
+        while status["status"] in ("queued", "running"):
+            if time.monotonic() > end:
+                raise InferenceUnavailable(f"geometry job {job_id} still {status['status']} after {deadline_s:.0f} s")
+            self._sleep(poll_s)
+            status = self._send("GET", f"/infer/v1/jobs/{job_id}").json()
+        for name in status.get("files", []):
+            (work / name).write_bytes(self._send("GET", f"/infer/v1/jobs/{job_id}/files/{name}").content)
+        if status["status"] != "done" or not (work / "raw.npz").is_file():
+            raise InferenceError(f"geometry job {job_id} {status['status']}: {status.get('error')}")
+        return json.loads((work / "summary.json").read_text())
+
     # --- the Claude Code map job ----------------------------------------------------------------------------------
     def map_draft(self, build_dir: Path, job_id: str, place: str, language: str, model: str, effort: str,
-                  budget_usd: float, poll_s: float = 10, deadline_s: float = 2400):
-        """Run the map LLM job on the host for a build folder (candidates.json, frames/, previous.json?) and copy its
-        files into build_dir/job/, as a local run would leave them. -> (MapDraft, LlmRun)."""
+                  budget_usd: float, poll_s: float = 10, deadline_s: float = 2400, stage: str = "places"):
+        """Run one LLM pass on the host for a build folder (candidates.json or routes.json, the frames it cites,
+        previous.json?) and copy its files into build_dir/job/<stage>/, as a local run would leave them.
+        -> (PlacesDraft | RoutesDraft, LlmRun)."""
         from nav.mapping.llm import LlmError, parse_claude_result
 
-        files = [("candidates", ("candidates.json", (build_dir / "candidates.json").read_bytes(), "application/json"))]
+        name = "routes" if stage == "routes" else "candidates"
+        files = [(name, (f"{name}.json", (build_dir / f"{name}.json").read_bytes(), "application/json"))]
         if (build_dir / "previous.json").is_file():
             files.append(("previous", ("previous.json", (build_dir / "previous.json").read_bytes(), "application/json")))
-        files += [("frames", (p.name, p.read_bytes(), "image/jpeg")) for p in sorted((build_dir / "frames").glob("*.jpg"))]
+        wanted = None
+        if stage == "routes":  # only the frames along the edges
+            routes = json.loads((build_dir / "routes.json").read_text())
+            wanted = {c["id"] for e in routes["edges"] for c in e["candidates"]}
+        files += [("frames", (p.name, p.read_bytes(), "image/jpeg")) for p in sorted((build_dir / "frames").glob("*.jpg"))
+                  if wanted is None or p.stem in wanted]
         data = {"job_id": job_id, "place": place, "language": language, "model": model, "effort": effort,
-                "budget_usd": str(budget_usd)}
+                "budget_usd": str(budget_usd), "stage": stage}
         status = self._send("POST", "/infer/v1/jobs/map-draft", data=data, files=files).json()
-        log.info("map job %s on %s: %s", job_id, self.base_url, status["status"])
+        log.info("map job %s (%s) on %s: %s", job_id, stage, self.base_url, status["status"])
         end = time.monotonic() + deadline_s
         while status["status"] in ("queued", "running"):
             if time.monotonic() > end:
                 raise InferenceUnavailable(f"map job {job_id} still {status['status']} after {deadline_s:.0f} s")
             self._sleep(poll_s)
             status = self._send("GET", f"/infer/v1/jobs/{job_id}").json()
-        job = build_dir / "job"
+        job = build_dir / "job" / stage
         job.mkdir(parents=True, exist_ok=True)
-        for name in status.get("files", []):
-            (job / name).write_bytes(self._send("GET", f"/infer/v1/jobs/{job_id}/files/{name}").content)
+        for fname in status.get("files", []):
+            (job / fname).write_bytes(self._send("GET", f"/infer/v1/jobs/{job_id}/files/{fname}").content)
         if not (job / "claude.json").is_file():
             raise LlmError(f"map job {job_id} {status['status']} without a result: {status.get('error')}")
-        draft, run = parse_claude_result(job / "claude.json", model)
+        draft, run = parse_claude_result(job / "claude.json", model, stage)
         run.duration_s, run.effort = status.get("duration_s"), effort
         return draft, run

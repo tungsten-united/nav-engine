@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from nav.mapping.build import finish_map, run_llm_on_build
+from nav.mapping.llm import stage_schema
 from nav.mapping.continuity import previous_context, stabilize
 from nav.mapping.motion import RATE_HZ, angle_diff, load_motion
 from nav.mapping.select import Frame, SelectParams, group_frames, mark_usable, select_in_recording
@@ -287,7 +288,8 @@ def test_llm_job_with_fake_claude(tmp_path, monkeypatch):
     build.mkdir(parents=True)
     (build / "candidates.json").write_text(candidate_set().model_dump_json())
     result = {"type": "result", "subtype": "success", "is_error": False, "total_cost_usd": 0.5, "session_id": "s",
-              "modelUsage": {"claude-x": {"costUSD": 0.5}}, "structured_output": draft(edges=[]).model_dump()}
+              "modelUsage": {"claude-x": {"costUSD": 0.5}},
+              "structured_output": draft(edges=[]).model_dump(exclude={"edges"})}
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     fake = bin_dir / "claude"
@@ -302,7 +304,7 @@ def test_llm_job_with_fake_claude(tmp_path, monkeypatch):
     assert "--json-schema" in args and "--tools Read,Glob" in args and "--safe-mode" in args
     assert "--effort medium" in args and res.map.build.llm.effort == "medium"
     assert "Spanish" in (build / "job" / "stdin.txt").read_text()
-    assert json.loads((build / "job" / "schema.json").read_text()) == draft_json_schema()
+    assert json.loads((build / "job" / "places" / "schema.json").read_text()) == stage_schema("places")
     published = json.loads((tmp_path / "maps" / "test" / "map.json").read_text())
     assert published["build"]["build_id"] == "20261010T000000Z" and len(published["nodes"]) == 2
 
@@ -312,7 +314,7 @@ def test_llm_job_with_fake_claude(tmp_path, monkeypatch):
         assert [m["map_id"] for m in c.get(f"{API}/maps").json()] == ["test"]
         assert c.get(f"{API}/maps/test").json()["place"] == "Test"
         assert c.get(f"{API}/maps/test/builds").json() == ["20261010T000000Z"]
-        assert c.get(f"{API}/maps/test/files/builds/20261010T000000Z/job/schema.json").status_code == 200
+        assert c.get(f"{API}/maps/test/files/builds/20261010T000000Z/job/places/schema.json").status_code == 200
         assert c.get(f"{API}/maps/test/files/../../recordings").status_code == 404
         assert c.get(f"{API}/maps/Test%2F..").status_code == 404
         assert c.get(f"{API}/maps/nope").status_code == 404

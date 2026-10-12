@@ -491,6 +491,23 @@
     "embeddings": {
      "title": "Embeddings",
      "type": "string"
+    },
+    "geometry": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Geometry"
+    },
+    "posed": {
+     "default": 0,
+     "title": "Posed",
+     "type": "integer"
     }
    },
    "required": [
@@ -1619,6 +1636,19 @@
    },
    "title": "Links",
    "type": "array"
+  },
+  "geometry": {
+   "anyOf": [
+    {
+     "additionalProperties": true,
+     "type": "object"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null,
+   "title": "Geometry"
   }
  },
  "required": [

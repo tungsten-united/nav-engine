@@ -232,13 +232,17 @@ function statusBadge(status) {
 }
 // `names`: node id -> name, for previous / expected. `queries`: the Blobs that were sent.
 function resultCard(res, { names = {}, queries = [], compact = false, onZoom } = {}) {
-  const best = res.candidates[0];
+  const best = res.candidates.find((c) => c.node === res.best) || res.candidates[0];
+  const pose = res.pose;
   const timing = [`round trip ${res.roundtrip_ms} ms`, ...Object.entries(res.took_ms).map(([k, v]) => `${k} ${Math.round(v)}`)].join(" · ");
   const card = h("section", { class: `result ${compact ? "compact" : ""}` },
     h("div", { class: "result-head" }, statusBadge(res.status),
       h("strong", {}, best ? best.name : "nothing"),
       best ? h("span", { class: "muted" }, ` score ${fmtScore(best.score)} · margin ${fmtScore(res.margin)}`) : null),
     h("p", { class: "muted small" }, res.reason),
+    pose ? h("p", { class: "small" }, `Pose (3D model): ${pose.inliers} inliers · `,
+      pose.node ? `at ${names[pose.node] || pose.node}` : "between nodes",
+      ` · (${pose.x_m.toFixed(1)}, ${pose.y_m.toFixed(1)}) m · facing ${fmtDeg(pose.heading_deg)}`) : null,
     h("p", { class: "muted small" }, timing, res.frames > 1 ? ` · ${res.frames} frames` : "",
       res.heading_map_deg != null ? ` · facing ${fmtDeg(res.heading_map_deg)} (map)` : ""),
     res.expected ? h("p", { class: "small" }, `Expected ${names[res.expected] || res.expected}: `,

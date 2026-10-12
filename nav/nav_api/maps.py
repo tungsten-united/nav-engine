@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from nav.mapping.memory import load_memory
+from nav.mapping.memory import load_geometry_obs, load_memory
 from nav.mapping.store import MapStore
 from nav.navigation.localize import RefIndex
 from nav.recorder.store import NotFound
@@ -66,16 +66,23 @@ class MapCache:
                 vectors = np.load(self.store.file(map_id, pmap.embedding.file))
             except (NotFound, ValueError, OSError) as e:
                 log.warning("map %s: no reference embeddings (%s)", map_id, e)
-        memory = None
+        memory = geometry = None
         if pmap.memory:
             try:
                 memory = load_memory(self.store.dir(map_id), pmap.memory)
             except (ValueError, OSError) as e:
                 log.warning("map %s: no visual memory (%s)", map_id, e)
-        index = RefIndex.build(pmap, vectors, memory=memory, memory_radius_m=self.memory_radius_m)
-        log.info("map %s: build %s, %d nodes, %d reference images, %d memory frames (%d in a node's region)", map_id,
-                 pmap.build.build_id, len(pmap.nodes), len(index.refs), len(index.memory.frames) if index.memory else 0,
-                 sum(n is not None for n in index.memory.nodes) if index.memory else 0)
+            try:
+                geometry = load_geometry_obs(self.store.dir(map_id), pmap.memory)
+            except (ValueError, OSError, KeyError) as e:
+                log.warning("map %s: no 3D model for live poses (%s)", map_id, e)
+        index = RefIndex.build(pmap, vectors, memory=memory, memory_radius_m=self.memory_radius_m, geometry=geometry)
+        log.info("map %s: build %s, %d nodes, %d reference images, %d memory frames (%d in a node's region, %d posed%s)",
+                 map_id, pmap.build.build_id, len(pmap.nodes), len(index.refs),
+                 len(index.memory.frames) if index.memory else 0,
+                 sum(n is not None for n in index.memory.nodes) if index.memory else 0,
+                 sum(f.posed for f in index.memory.frames) if index.memory else 0,
+                 ", 3D model loaded" if geometry is not None else "")
         return index
 
     def get(self, map_id: str) -> PlaceMap:

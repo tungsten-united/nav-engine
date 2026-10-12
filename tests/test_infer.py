@@ -40,19 +40,27 @@ class Stub:
         self.calls.append(("match", len(images), len(pairs)))
         return [len(images[i]) + len(images[j]) for i, j in pairs]
 
-    def verify(self, queries, refs):
-        """Inliers = query length x 10 + reference length; references by key, cached once seen (as LocalBackend)."""
+    def pose(self, queries, refs):
+        """inliers = query length x 10 + the references' image lengths; references by key, cached once seen with their
+        image and observations (as LocalBackend)."""
         from nav.infer.errors import MissingFeatures
 
         self.cached = getattr(self, "cached", {})
-        missing = [k for k, b in refs if b is None and k not in self.cached]
+        missing = [k for k, img, obs in refs if (img is None or obs is None) and k not in self.cached]
         if missing:
             raise MissingFeatures(missing)
-        for k, b in refs:
-            if b is not None:
-                self.cached[k] = len(b)
-        self.calls.append(("verify", len(queries), [k for k, b in refs if b is not None]))
-        return [[10 * len(q) + self.cached[k] for k, _ in refs] for q in queries]
+        for k, img, obs in refs:
+            if img is not None:
+                self.cached[k] = len(img)
+        self.calls.append(("pose", len(queries), [k for k, img, _ in refs if img is not None]))
+        return [{"inliers": 10 * len(q) + sum(self.cached[k] for k, _, _ in refs)} for q in queries]
+
+    def geometry(self, work_dir):
+        """Checks every frame of job.json arrived, then leaves what map_stage would: raw.npz and summary.json."""
+        frames = json.loads((work_dir / "job.json").read_text())["frames"]
+        assert all((work_dir / "images" / f["name"]).read_bytes() == f["name"].encode() for f in frames)
+        np.savez(work_dir / "raw.npz", registered=np.ones(len(frames), bool))
+        (work_dir / "summary.json").write_text(json.dumps({"frames": len(frames)}))
 
     def detect_language(self, path, model):
         return {"en": 0.8, "es": 0.2}
@@ -62,14 +70,24 @@ class Stub:
             raise ValueError("unknown language xx")
         return f"heard {path.suffix}" + (f" in {language}" if language else "")
 
-    def map_draft(self, work_dir, place, language, model, effort, budget_usd):
+    def map_draft(self, work_dir, place, language, model, effort, budget_usd, stage="places"):
         self.release.wait(5)
-        job = work_dir / "job"
-        job.mkdir()
-        assert (work_dir / "candidates.json").is_file() and list((work_dir / "frames").glob("*.jpg"))
+        job = work_dir / "job" / stage
+        job.mkdir(parents=True)
+        assert list((work_dir / "frames").glob("*.jpg"))
+        if stage == "routes":
+            routes = json.loads((work_dir / "routes.json").read_text())
+            self.route_frames = sorted(p.stem for p in (work_dir / "frames").glob("*.jpg"))
+            places = {"notes": [], "edges": [{"id": e["id"], "kind": "walk", "instruction": "Go.",
+                                              "reverse_instruction": "Back.", "landmarks": [], "hazards": [],
+                                              "visual_cues": [], "confidence": "high",
+                                              "steps": [{"action": st["action"], "along": None, "until": "x"}
+                                                        for st in e["steps"]]} for e in routes["edges"]]}
+        else:
+            assert (work_dir / "candidates.json").is_file()
+            places = draft(edges=[]).model_dump(exclude={"edges"})
         result = {"type": "result", "subtype": "success", "is_error": False, "total_cost_usd": 0.4,
-                  "session_id": "s", "modelUsage": {"claude-x": {"costUSD": 0.4}},
-                  "structured_output": draft(edges=[]).model_dump()}
+                  "session_id": "s", "modelUsage": {"claude-x": {"costUSD": 0.4}}, "structured_output": places}
         (job / "claude.json").write_text(json.dumps(result))
         (job / "prompt.md").write_text(f"{place} in {language}")
 
@@ -206,12 +224,14 @@ def test_map_job_through_the_host_lands_like_a_local_run(host, tmp_path, monkeyp
     monkeypatch.setattr(inference, "remote", lambda: client)
     res = run_llm_on_build(build, llm_model="opus", language="es", budget_usd=1)
     assert res.map.build.llm.model == "claude-x" and res.map.build.llm.effort == "medium"
-    assert (build / "job" / "claude.json").is_file() and (build / "job" / "prompt.md").read_text() == "Test in es"
+    places = build / "job" / "places"
+    assert (places / "claude.json").is_file() and (places / "prompt.md").read_text() == "Test in es"
+    assert res.map.build.pipeline_version == "metric-1"
     assert json.loads((tmp_path / "maps" / "test" / "map.json").read_text())["build"]["build_id"] == "20261010T000000Z"
 
     # resubmitting the same job returns it; a second job while one runs and none may wait is turned away
     files = {"candidates": ("candidates.json", b"{}"), "frames": ("c1.jpg", b"jpg")}
-    data = {"job_id": "test-20261010T000000Z", "place": "Test", "language": "es", "model": "opus",
+    data = {"job_id": "test-20261010T000000Z-places", "place": "Test", "language": "es", "model": "opus",
             "effort": "medium", "budget_usd": "1"}
     assert http.post("/infer/v1/jobs/map-draft", data=data, files=files).json()["status"] == "done"
     stub.release.clear()
@@ -285,32 +305,32 @@ def test_live_frames_go_in_the_live_lane(host):
     assert seen == [(1, 0), (0, 1)]
 
 
-def test_live_verification_sends_memory_frames_only_when_the_host_lacks_them(host):
+def test_live_pose_sends_memory_frames_only_when_the_host_lacks_them(host):
     stub, client, http = host
     gpu, seen = http.app.state.gpu, []
-    verify = stub.verify
+    pose = stub.pose
 
     def spy(queries, refs):
         seen.append(gpu.live_pending)
-        return verify(queries, refs)
+        return pose(queries, refs)
 
-    stub.verify = spy
+    stub.pose = spy
     loads = []
 
     def ref(key, size):
-        return key, lambda: loads.append(key) or b"r" * size
+        return key, (lambda: loads.append(key) or b"r" * size), (lambda: np.ones((3, 5), np.float32))
 
-    got = client.verify_live([b"ab", b"abc"], [ref("m/b/m0001", 5), ref("m/b/m0002", 7)], deadline_s=2)
-    assert got == [[25, 27], [35, 37]] and loads == ["m/b/m0001", "m/b/m0002"]
-    got = client.verify_live([b"a"], [ref("m/b/m0002", 7), ref("m/b/m0003", 1)], deadline_s=2)
-    assert got == [[17, 11]] and loads[2:] == ["m/b/m0003"]  # m0002 was cached: only m0003 travels
-    assert [c for c in stub.calls if c[0] == "verify"] == [("verify", 2, ["m/b/m0001", "m/b/m0002"]),
-                                                            ("verify", 1, ["m/b/m0003"])]
+    got = client.pose_live([b"ab", b"abc"], [ref("m/b/m0001", 5), ref("m/b/m0002", 7)], deadline_s=2)
+    assert got == [{"inliers": 32}, {"inliers": 42}] and loads == ["m/b/m0001", "m/b/m0002"]
+    got = client.pose_live([b"a"], [ref("m/b/m0002", 7), ref("m/b/m0003", 1)], deadline_s=2)
+    assert got == [{"inliers": 18}] and loads[2:] == ["m/b/m0003"]  # m0002 was cached: only m0003 travels
+    assert [c for c in stub.calls if c[0] == "pose"] == [("pose", 2, ["m/b/m0001", "m/b/m0002"]),
+                                                          ("pose", 1, ["m/b/m0003"])]
     assert seen and all(n == 1 for n in seen)  # the live lane
-    r = http.post("/infer/v1/verify", data={"refs": "[]"}, files=[("queries", ("q.jpg", b"x", "image/jpeg"))])
+    r = http.post("/infer/v1/pose", data={"refs": "[]"}, files=[("queries", ("q.jpg", b"x", "image/jpeg"))])
     assert r.status_code == 422
-    r = http.post("/infer/v1/verify", data={"refs": '["k"]'}, files=[("queries", ("q.jpg", b"x", "image/jpeg")),
-                                                                      ("ref_images", ("7.jpg", b"x", "image/jpeg"))])
+    r = http.post("/infer/v1/pose", data={"refs": '["k"]'}, files=[("queries", ("q.jpg", b"x", "image/jpeg")),
+                                                                    ("ref_images", ("7.jpg", b"x", "image/jpeg"))])
     assert r.status_code == 422 and "index" in r.json()["detail"]
 
 
@@ -325,21 +345,32 @@ def test_feature_cache_drops_the_least_recently_used():
     assert c.get("b") is None and c.get("a") and c.get("c") and len(c) == 2
 
 
-def test_verify_asks_for_what_it_has_not_seen(monkeypatch):
-    from nav.infer.errors import MissingFeatures
-    from nav.mapping import models
+def test_the_pose_backend_asks_for_what_it_has_not_seen(monkeypatch):
+    import io
 
-    monkeypatch.setattr(models, "local_features", lambda img: {"n": int(img)})
-    monkeypatch.setattr(models, "_compact", lambda f: f)
-    monkeypatch.setattr(models, "_on_device", lambda c: c)
-    monkeypatch.setattr(models, "fit_long_side", lambda img, n: img)
-    monkeypatch.setattr(models, "count_inliers", lambda a, b: a["n"] * 100 + b["n"])
-    cache = models.FeatureCache()
+    from nav.infer.errors import MissingFeatures
+    from nav.infer.server import LocalBackend
+    from nav.mapping import geometry, inference
+
+    monkeypatch.setattr(inference, "load_rgb", lambda b: int(b.decode()))
+    monkeypatch.setattr(geometry, "pose_ref", lambda img, xy, xyz: (img, len(xy)))
+    monkeypatch.setattr(geometry, "solve_pose", lambda q, refs: {"q": q, "refs": refs})
+    backend = LocalBackend.__new__(LocalBackend)
+    from nav.mapping.models import FeatureCache
+
+    backend.features = FeatureCache()
+
+    def obs(n):
+        buf = io.BytesIO()
+        np.save(buf, np.zeros((n, 5), np.float32))
+        return buf.getvalue()
+
     with pytest.raises(MissingFeatures) as e:
-        models.verify([1], [("k1", None), ("k2", lambda: 2)], cache)
+        backend.pose([b"1"], [("k1", None, None), ("k2", b"2", obs(4))])
     assert e.value.keys == ["k1"]
-    assert models.verify([1, 3], [("k1", lambda: 5), ("k2", lambda: 2)], cache) == [[105, 102], [305, 302]]
-    assert models.verify([4], [("k1", None)], cache) == [[405]]  # from the cache now
+    got = backend.pose([b"1", b"3"], [("k1", b"5", obs(2)), ("k2", b"2", obs(4))])
+    assert got == [{"q": 1, "refs": [(5, 2), (2, 4)]}, {"q": 3, "refs": [(5, 2), (2, 4)]}]
+    assert backend.pose([b"4"], [("k1", None, None)]) == [{"q": 4, "refs": [(5, 2)]}]  # from the cache now
 
 
 def test_degenerate_matches_have_no_inliers_instead_of_an_error():
@@ -351,3 +382,37 @@ def test_degenerate_matches_have_no_inliers_instead_of_an_error():
     rng = np.random.default_rng(0)
     pts = rng.uniform(0, 500, (60, 2)).astype(np.float32)
     assert geometric_inliers(pts, pts + np.float32([12, -3])) >= 50  # a pure shift fits one geometry
+
+
+def test_a_geometry_job_uploads_in_chunks_runs_and_comes_back(host, tmp_path):
+    stub, client, http = host
+    work = tmp_path / "work"
+    frames = [{"name": f"20261010T195025Z_bf0e/{t:07d}.jpg", "rec_id": "20261010T195025Z_bf0e", "t_ms": float(t),
+               "sharpness": 1.0, "brightness": 1.0} for t in range(0, 5000, 250)]
+    for f in frames:
+        (work / "images" / f["name"]).parent.mkdir(parents=True, exist_ok=True)
+        (work / "images" / f["name"]).write_bytes(f["name"].encode())
+    (work / "job.json").write_text(json.dumps({"frames": frames, "walks": {}, "place_model": "m"}))
+    summary = client.geometry(work, "place-b1", chunk_frames=7)
+    assert summary == {"frames": 20} and np.load(work / "raw.npz")["registered"].all()
+    jobs = http.app.state.jobs.root
+    assert not (jobs / "place-b1" / "work" / "images").exists()  # the uploaded frames are dropped once done
+    # a job submitted before all its frames arrived is refused; bad names too
+    r = http.post("/infer/v1/jobs/geometry", data={"job_id": "other"},
+                  files=[("job", ("job.json", (work / "job.json").read_bytes(), "application/json"))])
+    assert r.status_code == 409 and "not uploaded" in r.json()["detail"]
+    r = http.post("/infer/v1/jobs/geometry/other/frames", files=[("frames", ("../x.jpg", b"x", "image/jpeg"))])
+    assert r.status_code == 422
+
+
+def test_the_routes_pass_through_the_host_sends_routes_and_only_their_frames(host, tmp_path):
+    stub, client, http = host
+    build = tmp_path / "b"
+    (build / "frames").mkdir(parents=True)
+    for cid in ("c1", "c2", "c3"):
+        (build / "frames" / f"{cid}.jpg").write_bytes(b"jpg")
+    (build / "routes.json").write_text(json.dumps({"nodes": [], "edges": [
+        {"id": "e1", "steps": [{"action": "straight", "distance_m": 3.0}], "candidates": [{"id": "c2"}]}]}))
+    routes, run = client.map_draft(build, "t-b-routes", "T", "en", "opus", "medium", 1, stage="routes")
+    assert routes.edges[0].id == "e1" and routes.edges[0].steps[0].until == "x"
+    assert stub.route_frames == ["c2"] and (build / "job" / "routes" / "claude.json").is_file()

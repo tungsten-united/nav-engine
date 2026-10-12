@@ -45,9 +45,25 @@ def previous_context(prev: PlaceMap, cset: CandidateSet) -> dict:
                       "candidates": list(dict.fromkeys(c for c in shows if c)),
                       "evidence": [[r, t] for r, t in evidence]})
     return {"build_id": prev.build.build_id, "summary": prev.summary, "nodes": nodes,
-            "edges": [{"id": e.id, "source": e.source, "target": e.target, "kind": e.kind, "basis": e.basis}
+            "edges": [{"id": e.id, "source": e.source, "target": e.target, "kind": e.kind, "basis": e.basis,
+                       "instruction": e.instruction, "reverse_instruction": e.reverse_instruction}
                       for e in prev.edges],
             "retired": [r.model_dump() for r in prev.retired]}
+
+
+def match_previous(draft_nodes: list, cset: CandidateSet, prev: dict) -> dict[str, str]:
+    """New node id -> the previous node whose evidence frames it shares most (greedy, one to one), as stabilize."""
+    cands = {c.id: c for c in cset.candidates}
+    new_views = {n.id: [(v.rec_id, v.t_ms) for c in n.candidates if c in cands for v in cands[c].views]
+                 for n in draft_nodes}
+    old_views = {n["id"]: [(r, t) for r, t in n["evidence"]] for n in prev["nodes"]}
+    scores = sorted(((_overlap(new_views[a], old_views[b]), a, b) for a in new_views for b in old_views),
+                    key=lambda s: -s[0])
+    out: dict[str, str] = {}
+    for score, a, b in scores:
+        if score and a not in out and b not in out.values():
+            out[a] = b
+    return out
 
 
 def _numbers(prefix: str, ids) -> count:
@@ -66,16 +82,8 @@ def _turned(e):
 
 def stabilize(draft: MapDraft, cset: CandidateSet, prev: dict, build_id: str) -> tuple[MapDraft, list[Retired]]:
     """The draft with ids carried over from the previous map, and the updated retired list."""
-    cands = {c.id: c for c in cset.candidates}
-    new_views = {n.id: [(v.rec_id, v.t_ms) for c in n.candidates if c in cands for v in cands[c].views]
-                 for n in draft.nodes}
     old_views = {n["id"]: [(r, t) for r, t in n["evidence"]] for n in prev["nodes"]}
-    scores = sorted(((_overlap(new_views[a], old_views[b]), a, b) for a in new_views for b in old_views),
-                    key=lambda s: -s[0])
-    node_map: dict[str, str] = {}
-    for score, a, b in scores:
-        if score and a not in node_map and b not in node_map.values():
-            node_map[a] = b
+    node_map = match_previous(draft.nodes, cset, prev)
     retired = [Retired.model_validate(r) for r in prev["retired"]]
     fresh = _numbers("n", list(old_views) + [r.id for r in retired if r.kind == "node"])
     for n in draft.nodes:

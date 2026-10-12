@@ -6,8 +6,8 @@
 - Place embeddings: MegaLoc (NAV_PLACE_MODEL, torch.hub "owner/repo:commit"), a model trained to recognise the
   same place across viewpoint and lighting. Preprocessed as in its README (squashed to 322x322). Unit vectors.
 - Local features: ALIKED keypoints + LightGlue matching; `count_inliers` is the number of matches consistent
-  with one fundamental matrix, i.e. whether two frames really see the same structure. `verify` does that live, for
-  nav-api: the camera frames against a few visual-memory frames, whose features stay in a `FeatureCache`.
+  with one fundamental matrix, i.e. whether two frames really see the same structure (select.py's same-place check).
+  Live poses (geometry.solve_pose) match against memory frames whose features stay in a `FeatureCache`.
 - Voice transcription: Whisper (NAV_TRANSCRIBE_MODEL) through the transformers ASR pipeline; clips are decoded
   to 16 kHz mono with ffmpeg. `detect_language` gives a clip's language probabilities, so the caller can decide one
   language for a whole walk (a short clip on its own is often misdetected) and pass it to `transcribe`.
@@ -16,7 +16,6 @@
 import subprocess
 import threading
 from collections import OrderedDict
-from collections.abc import Callable
 from functools import cache
 from pathlib import Path
 
@@ -145,8 +144,8 @@ def geometric_inliers(p0: np.ndarray, p1: np.ndarray) -> int:
 
 
 class FeatureCache:
-    """Local features of images matched again and again (the visual memory's frames), by key; the least recently used
-    go first. Kept on the CPU, descriptors in half precision: ~0.25 MB a frame."""
+    """What live poses match against again and again (the visual memory's frames: geometry.PoseRef), by key; the
+    least recently used go first. Kept on the CPU, descriptors in half precision: ~0.6 MB a frame."""
 
     def __init__(self, size: int = 3000):
         self.size = size
@@ -169,56 +168,6 @@ class FeatureCache:
 
     def __len__(self) -> int:
         return len(self._d)
-
-
-def _compact(f: dict) -> dict:
-    return {"keypoints": f["keypoints"].cpu(), "descriptors": f["descriptors"].half().cpu(),
-            "image_size": f["image_size"].cpu()}
-
-
-def _on_device(c: dict) -> dict:
-    d = _device()
-    return {"keypoints": c["keypoints"].to(d), "descriptors": c["descriptors"].float().to(d),
-            "image_size": c["image_size"].to(d)}
-
-
-def verify(queries: list[np.ndarray], refs: list[tuple[str, Callable[[], np.ndarray] | None]],
-           cache: FeatureCache) -> list[list[int]]:
-    """Inliers (count_inliers) of each query image (rows) with each reference (columns). A reference is a key and,
-    when its features may not be cached, a loader of its RGB image. MissingFeatures(keys) when neither is there."""
-    from nav.infer.errors import MissingFeatures
-
-    missing = [k for k, load in refs if load is None and cache.get(k) is None]
-    if missing:
-        raise MissingFeatures(missing)
-    feats = []
-    for k, load in refs:
-        c = cache.get(k)
-        if c is None:
-            if load is None:  # dropped from the cache since the check
-                raise MissingFeatures([k])
-            c = _compact(local_features(load()))
-            cache.put(k, c)
-        feats.append(c)
-    out = []
-    for q in queries:
-        fq = local_features(fit_long_side(q, MATCH_LONG_SIDE))
-        out.append([count_inliers(fq, _on_device(c)) for c in feats])
-    return out
-
-
-MATCH_LONG_SIDE = 768  # the memory frames' size (SelectParams.image_long_side): ALIKED isn't scale-invariant
-
-
-def fit_long_side(image: np.ndarray, long_side: int) -> np.ndarray:
-    """The image shrunk so its longer side is at most long_side (live frames come at up to 1280 px)."""
-    import cv2
-
-    h, w = image.shape[:2]
-    if max(h, w) <= long_side:
-        return image
-    k = long_side / max(h, w)
-    return cv2.resize(image, (round(w * k), round(h * k)), interpolation=cv2.INTER_AREA)
 
 
 @cache

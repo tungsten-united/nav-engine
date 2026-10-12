@@ -102,3 +102,22 @@ it: fewer frames (5) or batched matching would roughly halve it.
   another aspect ratio) has no truth, only the overlays and the step check.
 - One run, two places, five held-out walks and 161 live frames. The thresholds (40 inliers, 12 px) weren't tuned,
   and the tables give 20 and 80 too.
+
+## In the pipeline (metric-1, 2026-10-12)
+
+The model and the pose are now part of the build and of nav-api (`nav/mapping/geometry.py`, `localize.py`). Local
+builds of both places, with the GPU stage's features and matches taken from this bench (the same settings), and the
+two LLM passes:
+
+- **Itnig** (5 walks): global mapping posed 1122 of 1124 frames in one piece. The places pass named 13 nodes, and
+  code drew 12 edges of 1.8-4 m with their steps ($1.30 of LLM for both passes). A sample of walk ddb1 against the
+  map without its frames: 18 of 18 posed, 18 of 18 nodes right, 4 cm median. That is optimistic, since the walk
+  helped make the 3D points; the held-out numbers above are the honest ones.
+- **Nati House** (one night walk): the global model flung 4% of the frames, so incremental mapping ran instead; 430
+  to 546 of 719 frames were posed, depending on the run, in 4-5 pieces. Nodes 9-12, $0.74-0.91. The captured live
+  calls (daylight, 480x640):
+  - The study and doorway frames confirm the right node with 117-305 inliers, where live they were all `lost`.
+  - The corridor-end frames, in a piece whose scale couldn't be measured, stay uncertain. They used to land 3 m
+    off, with a piece scale read across a gap.
+  - A blurred pan across a white door frame gathered 104 inliers with an implied focal length of 1359 px (the right
+    poses: 729-902). Only a phone's focal length (550-1100 px at 1024 px) now confirms a node.

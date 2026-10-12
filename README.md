@@ -124,8 +124,9 @@ helium-nav's own API (behind Cloudflare Access: send `CF-Access-Client-Id/Secret
 - Uploads waiting in the queue live in page memory: don't close or reload the tab until it says "Recording saved".
 - map-api on Cloud Run writes recordings straight to the team bucket. A recorder run elsewhere (`nav serve`, e.g.
   helium-nav) writes to local disk, and sharing those is a manual `nav rec push`.
-- Maps: positions come from dead reckoning, so they drift over long walks. Distances come from the floor seen in the
-  video where possible; their scale rests on an assumed phone height until a distance measured on site is entered.
+- Maps: positions come from a 3D model of the walks' video (since pipeline metric-1); where it has no pose (a stretch
+  of a walk the model couldn't join), from dead reckoning moved into its frame. Its scale comes from the floor seen in
+  the video, which rests on an assumed phone height until a distance measured on site is entered.
 
 ## Maps
 
@@ -172,7 +173,7 @@ uv run nav live logs nati-house 2026-10-11 <session>  # its Cloud Logging entrie
 Replay them (or the map's own walks, with the truth) through today's localizer, method by method:
 ```sh
 uv run nav map memory nati-house                       # a published build from before the visual memory: add it
-uv run nav map loc-bench nati-house [--methods refs,memory,verify] [--exclude-s 3]   # the walks, with the truth
+uv run nav map loc-bench nati-house [--methods refs,memory,pose] [--exclude-s 3]   # the walks, with the truth
 uv run nav map loc-bench nati-house --live [--since 2026-10-11]                     # the captured sessions
 ```
 
@@ -199,43 +200,56 @@ uv run nav map loc-bench nati-house --live [--since 2026-10-11]                 
      1536-d, cosine similarity), for "does this look new";
    - **place embeddings** with [**MegaLoc**](https://github.com/gmberton/MegaLoc) (DINOv2 + SALAD head trained for
      visual place recognition, 8448-d, torch.hub at a pinned commit), for "is this the same place".
-2. **Select candidates**: drop blurry, dark or floor/ceiling frames; per walk keep the start and end, frames at tags
+2. **3D model** ([`geometry.py`](nav/mapping/geometry.py)): every walk's video at 2 fps (4 fps for a place walked
+   once or briefly), 1024 px; **ALIKED** (2048 keypoints) + **MegaLoc**, **LightGlue** on each frame's next frames
+   (2.5 s) and its 12 most similar anywhere; **COLMAP global mapping** (GLOMAP, pycolmap), or incremental mapping when
+   the global model flings frames (a weak single walk: Nati House), keeping every piece of ≥ 20 frames. The model is
+   levelled (the phone is upright), scaled by the walks' floor odometry, turned to their compass headings and placed
+   where the first walk's dead reckoning starts: the **map frame**. Each walk is checked against its own motion:
+   frames or stretches that disagree are not posed and keep dead reckoning, moved into that frame. The GPU part is a
+   job on helium's shared GPU queue (`gpu-run`), the mapping runs on the CPU (Itnig: ~4 min of GPU, 2.5 min of CPU;
+   bench/metric/REPORT.md: poses within 1 m and 10° on 90% of held-out frames). `NAV_GEOMETRY=0` builds without it.
+3. **Select candidates**: drop blurry, dark or floor/ceiling frames; per walk keep the start and end, frames at tags
    and voice notes, frames that look new once the walker moved ≥ 2 m or turned ≥ 60°, and one every 10 m; drop
-   near-duplicates of a recent frame (DINOv2 cosine ≥ 0.92). Then **same place** ([`verify.py`](nav/mapping/verify.py)):
-   MegaLoc retrieves each keyframe's look-alikes (cosine ≥ 0.45, top 10) and **ALIKED + LightGlue** checks each
-   pair (matches fitting one fundamental matrix). Pairs with ≥ 300 inliers (the same spot, not just the same room)
-   across walks or revisits fold into one candidate with several views; the other look-alikes are flagged as
-   possibly the same place; at most 60. Every checked pair goes to `pairs.json` in the build, for tuning.
+   near-duplicates of a recent frame (DINOv2 cosine ≥ 0.92). Each candidate gets the **position** of its views from
+   the model, and candidates of any walk within 2 m of each other are **one spot** (complete linkage;
+   [`topology.py`](nav/mapping/topology.py)), however different they look (the other side of a door, another walk's
+   direction); at most 60. Without a model, look-alikes are folded as before: MegaLoc retrieval (cosine ≥ 0.45, top 10)
+   and ALIKED + LightGlue (≥ 300 inliers) ([`verify.py`](nav/mapping/verify.py)), positions by dead reckoning.
    Thresholds: `SelectParams` in [`nav/mapping/select.py`](nav/mapping/select.py).
-3. **LLM**: a headless **Claude Code** job (Opus, medium effort) runs in the build folder with read-only tools (`Read`, `Glob`), opens
-   `candidates.json` and every frame, and must answer in the `MapDraft` JSON Schema (`claude -p --json-schema`).
-   Each edge comes as `steps` (an action enum: straight, bear/turn left/right, turn around, go through, step/stairs
-   up/down, lift; with distance, what to keep beside you and the cue that ends the step) plus their spoken form, and
-   says whether it was `walked` or `inferred`. Distances are code's: measured, or the steps' sum if not walked.
+4. **LLM, meaning only**: a headless **Claude Code** job (Opus, medium effort) in the build folder with read-only tools
+   (`Read`, `Glob`), in two passes ([`llm.py`](nav/mapping/llm.py)), each answering in its JSON Schema
+   (`claude -p --json-schema`). Where things are, how they connect, the turns and the distances are code's:
+   - **places** (`candidates.json` + every frame -> `PlacesDraft`): which spots are worth naming as nodes (a node's
+     spots within 6 m of each other), their names, kinds, descriptions, arrival cues, hazards and visual cues, and
+     relations to fixed things that aren't nodes;
+   - code lays the map out ([`assemble.py`](nav/mapping/assemble.py)): nodes at their spots, an edge wherever a walk went
+     from one node to the next, and each edge's steps from the walked path: the turn when leaving, then a step per
+     bend, with metres (`routes.json`);
+   - **routes** (`routes.json` + the frames along each edge -> `RoutesDraft`): per edge, what to keep beside you and
+     the cue that ends each step (a straight step may become a door, a step or stairs; turns and metres stay code's),
+     and its spoken form both ways. Step actions: straight, bear/turn left/right, turn around, go through, step/stairs
+     up/down, lift.
    Everything meant to be spoken (summary, descriptions, landmarks, instructions; Orient's orchestrator speaks a
    route hop's `instruction`) is written without visual detail, for someone who cannot see; colours, signs, screens and the like go into `visual_cues`, for sighted helpers and
    camera-based localization. The prompt is in [`nav/mapping/llm.py`](nav/mapping/llm.py). The schema is written to also be valid for the
    Anthropic structured-outputs API (closed objects, all fields required, no numeric/length constraints), which can
    replace the job later.
    When the place already has a map, it goes into the build as `previous.json` (each old node with the new
-   candidates that show its frames) and the LLM is told to keep it where the evidence holds: same nodes, names and
-   connections, adding what is new and explaining any merge, split or drop in `notes`.
-   **More walks of a place** improve the same map rather than making a new one. Walks are aligned before the LLM
-   (`map_x_m` / `map_y_m` on each view) through candidates folded across them; a walk in the opposite direction
-   usually shares none (spots seen from the other side don't look alike), so the LLM joins its frames to the
-   existing nodes from the walker's words, the reverse order of places on its timeline, distances and turns, and is
-   told to keep every previous edge's direction (code turns an edge written the other way back).
-4. **Finish**: **stable ids** ([`continuity.py`](nav/mapping/continuity.py)): code, not the LLM, assigns them. A node
+   candidates that show its frames) and the places pass is told to keep its nodes and names where the evidence holds;
+   the routes pass gets each connection's previous instruction to keep its wording where it still fits.
+   **More walks of a place** improve the same map rather than making a new one: the model places every walk in one
+   frame, so a walk in the opposite direction lands on the same spots.
+5. **Finish**: **stable ids** ([`continuity.py`](nav/mapping/continuity.py)): code, not the LLM, assigns them. A node
    that shares the most evidence frames with a previous node (same recording, within 3 s) keeps its id, new nodes
    get the next unused number, edges keep theirs when they join the same two nodes, and ids that disappear go to
    `retired` (never reused). Then check node, edge and candidate ids and flag visual words left in spoken text (both go into
    `warnings`), attach evidence (recording, time,
-   frame) to every node, place nodes at their first pass by dead reckoning (walks aligned through shared nodes),
-   bend each walk so every later pass of a node lands on it (loop closure: the drift is spread over the stretch in
-   between; passes far off are flagged in `warnings`), measure each edge's walked distance and keep its walked path
-   for drawing. Edges no walk went along directly (it passed other nodes in between) are marked inferred. Code
-   derives each edge's reverse steps and checks its first step against the turn the walk made leaving the source
-   (heading at the end of the source pass vs the next 6 s of walking).
+   frame) to every node, place it at the mean of its spots, give each edge the walked path, distance (node middle to
+   node middle, the shortest pass), departure turn (how the walk arrived at the source vs the next 6 s of walking) and
+   headings of the walks that went along it, and every node the bearings of the nearest other nodes (relations, from
+   the way walks arrived). Code derives each edge's reverse steps. Builds before metric-1 (one LLM pass that also drew
+   the edges) refinish as before: dead-reckoned positions aligned through shared nodes, bent by loop closure.
    Edges use **every walk** that went directly between their nodes: `walked_forward` / `walked_back` counts, each
    direction `observed` once walked, the measured distance is the shortest pass, the path and headings come from
    the best one. A rebuild that drops a previous node says so in `warnings`.
@@ -244,17 +258,17 @@ uv run nav map loc-bench nati-house --live [--since 2026-10-11]                 
    when leaving the source and reaching the target (map frame, compass-referenced: `frame`); **relations** (the
    LLM says where other places are in a node's photos, `x` across the photo; code makes that a bearing with the
    calibrated field of view and the photo's heading); and `review_flags`, what a reviewer should check.
-5. **Reference images** ([`references.py`](nav/mapping/references.py)): per node, up to 3 sharp frames each while
+6. **Reference images** ([`references.py`](nav/mapping/references.py)): per node, up to 3 sharp frames each while
    approaching, at, and leaving along each edge, from every walk that passed (the 1 fps cache), with their camera
    heading, plus their **MegaLoc** place embeddings in `embeddings.npy`, for live visual place recognition.
-6. **Quality check** (cheap, optional): TypeSafe's **Jev** asks a few narrow questions about every node and edge, in
+7. **Quality check** (cheap, optional): TypeSafe's **Jev** asks a few narrow questions about every node and edge, in
    parallel: does the spoken text point to something only visible, can a blind person tell they arrived / follow
    the instruction, and does the spoken instruction turn the same way as its first step. Benchmark and the
    justification for it: [`bench/quality/REPORT.md`](bench/quality/REPORT.md). Raw answers are stored per item
    (`quality`), flagged items go into `warnings` and are marked in the viewer. A map costs ~13k input tokens
    (well under a cent) and a second. Needs `TYPESAFE_API_KEY` (in `.env`; also a repo secret); otherwise skipped.
    Questions and thresholds: [`nav/mapping/quality.py`](nav/mapping/quality.py).
-7. **Review** ([`review.py`](nav/mapping/review.py)): a person walks the map and verifies what holds (per edge
+8. **Review** ([`review.py`](nav/mapping/review.py)): a person walks the map and verifies what holds (per edge
    direction), renames, fixes instructions or hides what is wrong, with `nav map review` or the viewer's buttons
    (`PUT /api/v1/maps/<map_id>/review`). The review is `review.json` next to the builds, keyed by stable ids, so it
    survives rebuilds; the published `map.json` is the latest build with it applied (the build's own copy keeps
@@ -266,7 +280,7 @@ uv run nav map loc-bench nati-house --live [--since 2026-10-11]                 
    reports each one's residual. `nav map measure` edits a local map folder; for the team's maps, add the entry to
    `distances` with map-api's `PUT /api/v1/maps/<map_id>/review`, and nav-api serves the rescaled map. On a build whose distances came from steps it can only rescale uniformly (step
    errors aren't uniform), so rebuild first.
-8. **Clean** ([`clean.py`](nav/mapping/clean.py)): the published map keeps only what the walks back up. The LLM's
+9. **Clean** ([`clean.py`](nav/mapping/clean.py)): the published map keeps only what the walks back up. The LLM's
    `confidence` doesn't follow the evidence (Itnig: a "high" bathroom seen once by one walk), so code decides:
    inferred edges go; one edge per pair of spots, the strongest; edges walked by
    at least 2 walks (either way) are the core, and weaker ones come back only where the map would otherwise fall
@@ -303,9 +317,11 @@ data/maps/<map_id>/              map_id = slug of the place, e.g. "itnig"
   map.json                       latest build's PlaceMap, with review.json applied
   review.json                    human review (approvals, fixes, hidden items), keyed by stable ids
   builds/<build_id>/             one per build
-    map.json  candidates.json  tracks.json  frames/c01.jpg …
+    map.json  candidates.json  routes.json  tracks.json  frames/c01.jpg …
+    geometry.json  geometry.npz       the 3D model: every model frame's pose; the points posed frames see
+    memory/m0001.jpg …  memory.json  memory.npy   the visual memory (the model's frames) and their embeddings
     refs/r001.jpg …  embeddings.npy   reference images and their place embeddings
-    job/  prompt.md  schema.json  command.txt  claude.json  claude.log
+    job/places/  job/routes/          prompt.md  schema.json  command.txt  claude.json  claude.log, per LLM pass
 ```
 
 ### Viewer
@@ -358,6 +374,15 @@ the matched references (role, heading, and the difference with the live compass 
 GPU (plus the network). Those frames are in the map, so that shows the plumbing and the speed, not accuracy: no
 held-out walk has been tested and the thresholds are untuned. The first frame after nav-infer restarts can get a 503 while MegaLoc loads (live calls give up after 8 s,
 `NAV_LIVE_INFER_DEADLINE_S`).
+
+**Pose** (maps with a 3D model): nav-api has the inference host match the camera frames with the
+`NAV_LOC_POSE_K` (8) best posed memory frames (ALIKED + LightGlue; their features stay cached there by map, build and
+frame, and their images and 3D observations travel only when it asks), lift the matches to the model's 3D points and
+solve the camera pose (PnP + RANSAC, the focal length estimated: a live phone's is unknown; `/infer/v1/pose`). The
+result's `pose` says where the camera is and which way it faces, how many inliers, and the node whose region it is in;
+from `NAV_LOC_POSE_INLIERS` (40) inliers it confirms that node, through the walked-distance gate below. About 250 ms
+on the GPU (`NAV_LIVE_POSE_DEADLINE_S`, 3 s: then no pose). Scores and candidates stay the embeddings', for the
+orchestrator's belief, which puts all of itself on a pose-confirmed node.
 
 **With the phone's motion** (optional, [contract](https://github.com/tungsten-united/project-description/blob/main/docs/contracts.md#post-mapsmap_idlocalize)):
 one `motion` part per image, in the same order, the Orient app's `Motion` JSON (`null` for a frame without one),

@@ -16,10 +16,6 @@ dependencies = [
 nav = "nav.cli:app"
 
 [dependency-groups]
-# bench/metric (3D model + PnP localization check), not installed by default: uv run --group bench-metric
-bench-metric = [
-    "pycolmap>=4.2",
-]
 dev = ["pytest>=8", "httpx>=0.27"]
 # Map pipeline (nav map build): video decoding, IMU signal processing, selection, the quality check, and the client
 # of the inference host. No torch: this is what the Cloud Run worker installs.
@@ -41,6 +37,8 @@ models = [
     "accelerate>=1.0",
     # Same-place check between frames (ALIKED + LightGlue). Not on PyPI; pinned commit.
     "lightglue @ git+https://github.com/cvg/LightGlue@eb42fee2d71449efb0aa5c10549752b5d75384d8",
+    # The 3D model of a place (geometry.py: COLMAP global mapping) and live poses (PnP).
+    "pycolmap>=4.2",
 ]
 
 [tool.uv]

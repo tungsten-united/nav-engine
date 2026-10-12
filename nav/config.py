@@ -51,6 +51,9 @@ MAP_LANGUAGE = os.environ.get("NAV_MAP_LANGUAGE", "en")
 MAP_LLM_BUDGET_USD = float(os.environ.get("NAV_MAP_LLM_BUDGET_USD", "5"))
 # map-api rebuilds a place's map when one of its walks finalizes (same map, improved: ids and review carry over).
 AUTO_BUILD = os.environ.get("NAV_AUTO_BUILD", "1") != "0"
+# Builds make a 3D model of the place from the walks' video (nav/mapping/geometry.py): the map's positions and live
+# poses. 0 builds from dead reckoning only.
+GEOMETRY = os.environ.get("NAV_GEOMETRY", "1") != "0"
 # The published map keeps only what the walks back up (nav/mapping/clean.py); 0 publishes the reviewed build as is.
 MAP_CLEAN = os.environ.get("NAV_MAP_CLEAN", "1") != "0"
 
@@ -92,24 +95,19 @@ LOC_GATE_SLACK_FRAC = float(os.environ.get("NAV_LOC_GATE_SLACK_FRAC", "0.35"))
 # Visual memory (nav/mapping/memory.py): a frame belongs to the nearest node within this many metres of where it was
 # taken (Nati House: nodes 1-4 m apart; Itnig 3-7 m).
 LOC_MEMORY_RADIUS_M = float(os.environ.get("NAV_LOC_MEMORY_RADIUS_M", "5.0"))
-# Live verification (localize.py VerifyParams): LightGlue on the inference host between the camera frames and the
-# NAV_LOC_VERIFY_K best memory frames (0: off); inliers from LOW to HIGH add up to GAIN to that frame's score.
-# Itnig, cross-walk: >= 300 inliers put the camera within 3 m of the matched frame 80% of the time. Defaults from
-# `nav map loc-bench` on Itnig and Nati House with degraded frames: every walk located (memory alone: 3 of 4 Itnig
-# walks, Nati House after 31 s), 95-100% of the belief's commits within 3 m of the truth; a stronger gain commits
-# faster and strays more.
-LOC_VERIFY_K = int(os.environ.get("NAV_LOC_VERIFY_K", "6"))
-LOC_VERIFY_LOW = int(os.environ.get("NAV_LOC_VERIFY_LOW", "150"))
-LOC_VERIFY_HIGH = int(os.environ.get("NAV_LOC_VERIFY_HIGH", "500"))
-LOC_VERIFY_GAIN = float(os.environ.get("NAV_LOC_VERIFY_GAIN", "0.3"))
-LIVE_VERIFY_DEADLINE_S = float(os.environ.get("NAV_LIVE_VERIFY_DEADLINE_S", "3"))  # then the answer goes unverified
+# Live poses (localize.py PoseParams): with a 3D model, the camera frames posed against the NAV_LOC_POSE_K best posed
+# memory frames on the inference host (0: off); a pose with NAV_LOC_POSE_INLIERS PnP inliers confirms its node
+# (bench/metric/REPORT.md: at 40, 90% of held-out Itnig frames within 1 m and 10°).
+LOC_POSE_K = int(os.environ.get("NAV_LOC_POSE_K", "8"))
+LOC_POSE_INLIERS = int(os.environ.get("NAV_LOC_POSE_INLIERS", "40"))
+LIVE_POSE_DEADLINE_S = float(os.environ.get("NAV_LIVE_POSE_DEADLINE_S", "3"))  # then the answer has no pose
 
 
-def verify_params():
-    """nav-api's live verification settings from the environment (NAV_LOC_VERIFY_*)."""
-    from nav.navigation.localize import VerifyParams
+def pose_params():
+    """nav-api's live pose settings from the environment (NAV_LOC_POSE_*)."""
+    from nav.navigation.localize import PoseParams
 
-    return VerifyParams(k=LOC_VERIFY_K, low=LOC_VERIFY_LOW, high=LOC_VERIFY_HIGH, gain=LOC_VERIFY_GAIN)
+    return PoseParams(k=LOC_POSE_K, confirm_inliers=LOC_POSE_INLIERS)
 
 
 def loc_thresholds():

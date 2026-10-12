@@ -30,14 +30,19 @@ calls map-api directly. `frontend/` here is a debugging frontend, not Orient's a
 - `nav/schemas/map.py` — the map format: `MapDraft` (what the LLM writes; its JSON Schema must stay valid for
   Anthropic structured outputs) and `PlaceMap` (stored: draft + evidence, positions, distances, build info).
 - `nav/mapping/` — map pipeline: `prepare.py` (per-recording cache: frames, embeddings, transcripts), `frames.py`,
-  `motion.py`, `models.py` (DINOv2, MegaLoc, ALIKED+LightGlue, Whisper), `select.py` (candidates), `verify.py`
-  (same-place pairs: MegaLoc retrieval + LightGlue check), `llm.py` (Claude Code job + prompt),
-  `build.py` (orchestration + finish), `quality.py` (TypeSafe Jev check), `store.py`, `calibrate.py` (video yaw,
+  `motion.py`, `models.py` (DINOv2, MegaLoc, ALIKED+LightGlue, Whisper), `geometry.py` (the 3D model: COLMAP global
+  mapping of every walk's video, or incremental when global flings frames; put in the map frame and checked against
+  each walk's motion; the GPU stage a job on helium's queue via gpu-run; live `solve_pose`), `topology.py` (code's
+  layout: spots by position, nodes kept to nearby spots, visits, edges where the walks went, steps from the paths,
+  node relations), `assemble.py` (layout + the two LLM passes -> MapDraft -> PlaceMap), `select.py` (candidates),
+  `verify.py` (same-place pairs: MegaLoc retrieval + LightGlue check, only for builds without a model), `llm.py`
+  (Claude Code job, two passes that only add meaning: places, routes), `build.py` (orchestration; `finish_map` is the
+  pre-metric-1 finish for refinishing old builds), `quality.py` (TypeSafe Jev check), `store.py`, `calibrate.py` (video yaw,
   sensor-to-video offset, FOV), `odometry.py` (metres walked from the floor seen in the video, fused with steps),
   `references.py` (reference images + embeddings for live VPR), `memory.py` (the visual memory, localization's
-  "where": every usable frame of every walk with its MegaLoc embedding and where it was taken, positions from the
-  placed tracks; nodes stay the "what" and get frames by position at load, so a review moves regions with it;
-  `nav map memory` adds it to a build made before), `review.py` (human review overlay
+  "where": the model's frames with their poses and MegaLoc embeddings, or for builds without a model every usable
+  frame placed by the tracks; nodes stay the "what" and get frames by position at load, so a review moves regions
+  with it; `GeometryObs`: posed frames' 3D observations for live poses; `nav map memory` adds a memory to an old build), `review.py` (human review overlay
   `maps/<id>/review.json`, incl. distances measured on site that set the scale, and `merge_into` to fold nodes into
   one area), `clean.py` (only what the walks back up is published: ≥ 2 walks, weaker edges only to keep the map
   walkable; nodes and edges kept or left out whole; `pruned` says why; `links` keeps the connections from before it
@@ -45,10 +50,10 @@ calls map-api directly. `frontend/` here is a debugging frontend, not Orient's a
 - `nav/navigation/` — the live side, small and causal: `route.py` (routes over verified edges by default) and
   `localize.py` (VPR against reference embeddings and the visual memory → ranked nodes, confirmed/uncertain/lost,
   and `position`: where the best memory frame was taken; a memory frame scores for the nearest node within
-  `NAV_LOC_MEMORY_RADIUS_M`; with `verify`, nav-api has the inference host match the camera frames with the best
-  `NAV_LOC_VERIFY_K` memory frames (ALIKED + LightGlue, `/infer/v1/verify`, live lane, the frames' features cached
-  there by map/build/frame key; images sent only when it asks) and inliers add to their scores), both served by
-  nav-api;
+  `NAV_LOC_MEMORY_RADIUS_M`; with a 3D model, `pose`: nav-api has the inference host pose the camera frames against
+  the best `NAV_LOC_POSE_K` posed memory frames (`/infer/v1/pose`, live lane, features cached there by
+  map/build/frame key, images and 3D observations sent only when it asks), and 40+ inliers confirm the pose's node),
+  both served by nav-api;
   `pdr.py` (causal step detector + GraphTracker, `nav map pdr-replay`) and `arrival.py` (node confirmer, ported 1:1
   to `frontend/nav/arrival.js`: /nav's auto-confirm, where a rule is tried before the orchestrator copies it),
   reference code that nothing live runs. `replay.py` replays walks through the orchestrator's loop (`Track`,
@@ -59,14 +64,16 @@ calls map-api directly. `frontend/` here is a debugging frontend, not Orient's a
   references only).
 - `docs/` — the navigation-side design (`main_idea.md`, `navigation_stack.md`, by LPA, from
   tungsten-united/demo-repository@navigation, aligned with Orient's architecture) and `map.schema.json` (regenerate: `nav map schema --out ...`; a test checks it).
-- `nav/navigation/locbench.py` — `nav map loc-bench`: localization method by method (refs / memory / verify) on the
+- `nav/navigation/locbench.py` — `nav map loc-bench`: localization method by method (refs / memory / pose) on the
   map's walks (each against the others; a single walk minus `--exclude-s` around the query) with the truth, or on
   captured live sessions (`--live`) without it; every answer sequence through the belief at the orchestrator's live
   temperature: when it locates, how often it commits, how far from the truth. The scoreboard for localization changes.
 - `nav/mapping/inference.py` — every model call on files: local models, or the inference host when `NAV_INFER_URL` is set.
-- `nav/infer/` — inference host: `server.py` (`nav infer serve`: models + Claude Code map job over HTTP, one GPU slot
-  where nav-api's live frames go ahead of queued batch calls, bounded queues, 503 + Retry-After), `client.py`
-  (chunking, retries, deadlines, Cloudflare service token).
+- `nav/infer/` — inference host: `server.py` (`nav infer serve`: models, live poses, the Claude Code map job (a pass
+  per call) and geometry jobs over HTTP, one GPU slot where nav-api's live frames go ahead of queued batch calls,
+  bounded queues, 503 + Retry-After; a geometry job's GPU stage is `nav infer geometry-gpu` queued with gpu-run, since
+  nav-infer is a resident service of helium's GPU queue and batch work must wait its turn), `client.py` (chunking,
+  retries, deadlines, Cloudflare service token).
 - `nav/cli.py` — `nav serve [--app nav-api]`, `nav infer serve`, `nav rec list|show|finalize|import|push|pull`,
   `nav live pull|sessions|logs` (captured live calls; `logs` saves the session's Cloud Logging entries, the
   orchestrator's included, as `logs.jsonl`),
@@ -205,16 +212,34 @@ the live inference host out of it.
   the stage is the stage). As a strong vote (gain 0.5 from 60 inliers) it made the belief commit 4x as often and
   wrongly (Itnig replays: 56% of commits right vs 73% without it). Conservative (0.3, from 150 to 500), on degraded
   frames, it is what makes every walk locate (memory alone: 3 of 4 Itnig walks; Nati House after 31 s instead of
-  2 s) with 95-100% of commits within 3 m. `nav map loc-bench` measures this; tune there, then on captured sessions.
+  2 s) with 95-100% of commits within 3 m. It is gone since metric-1: the same matches lifted to the 3D model's
+  points give a pose (PnP), which says "same spot" (bench/metric: 90% within 1 m and 10° on held-out walks).
 - `cv2.findFundamentalMat` raises on degenerate matches (a few on one line) instead of returning no model:
   `models.geometric_inliers` turns that into 0 inliers, else a blurred live frame is a 500.
-- Orient sends live frames at up to 1280 px (JPEG 0.7); the memory is 768 px and ALIKED isn't scale-invariant, so
-  the verifier shrinks live frames to 768 first.
+- Orient sends live frames at up to 1280 px (JPEG 0.7, 480x640 at Nati House); ALIKED isn't scale-invariant, so
+  live poses resize them to the model frames' 1024 px first (geometry.fit_long_side).
 - A problem found live becomes a test made from its real data, not only a fix: `tests/fixtures/itnig` (the map
   that stalled guidance after cleaning), `tests/fixtures/glories-basement` (a place walked once: no way back over
   `observed`), `tests/fixtures/voice-languages.json` (Whisper's guesses for short notes that alone came out Spanish
   or Icelandic), `tests/fixtures/sensors` (a minute of an iPhone and an Android walk). Each says in its docstring or
   `about` where it came from.
+
+- The GPU on helium is shared through a queue (managed with `gpu-run` and `gpuq`): agent sessions see no GPU,
+  nav-infer is a resident service next to the one queued job, and an agent's exclusive service can hold the job slot
+  for hours. Batch GPU work (a build's geometry stage) goes through `gpu-run`; CPU work (COLMAP mapping) stays outside
+  the queue so the slot isn't held. `tests/conftest.py` sets `NAV_GEOMETRY=0`: a test build must never queue a job.
+- Global mapping (GLOMAP) joins Itnig's 5 walks into one model (1123 of 1124 frames, 2.5 min) where incremental
+  mapping didn't finish in an hour; on Nati House's one night walk it joined everything wrongly (frames flung 20 m,
+  a stretch glued elsewhere) while incremental gave consistent pieces (544 of 719 frames at 4 fps). So: global first,
+  incremental when the global model flings frames (`_jumpy`), every piece kept, each walk checked against its own
+  motion (a 1 m jump between consecutive offsets splits stretches; only the main stretch and those within drift of it
+  stay posed). A low mean reprojection error (1 px) says nothing about such joins.
+- COLMAP's similarity estimator rejects a flat target (the walks' tracks have z = 0): fit the map frame with Umeyama.
+- With the model, spots fold by position, so the LightGlue same-place check (and its 300-inlier threshold) is only
+  for builds without one. A node's spots must be within 6 m of each other; the LLM no longer decides what is one
+  place, nor edges, turns or distances.
+- Measure an edge's departure turn from how the walk arrived at the source: by the time it leaves the node's radius
+  it already faces the new way, so "heading when leaving the radius" read every turn at a node as straight.
 
 ## Product decisions
 - A recording is a **free walk through a place**, not a route. `place` (required, whitespace-normalised,

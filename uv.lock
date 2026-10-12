@@ -519,9 +519,6 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
-bench-metric = [
-    { name = "pycolmap" },
-]
 dev = [
     { name = "httpx" },
     { name = "pytest" },
@@ -538,6 +535,7 @@ map = [
 models = [
     { name = "accelerate" },
     { name = "lightglue" },
+    { name = "pycolmap" },
     { name = "torch" },
     { name = "torchvision" },
     { name = "transformers" },
@@ -554,7 +552,6 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-bench-metric = [{ name = "pycolmap", specifier = ">=4.2" }]
 dev = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "pytest", specifier = ">=8" },
@@ -571,6 +568,7 @@ map = [
 models = [
     { name = "accelerate", specifier = ">=1.0" },
     { name = "lightglue", git = "https://github.com/cvg/LightGlue?rev=eb42fee2d71449efb0aa5c10549752b5d75384d8" },
+    { name = "pycolmap", specifier = ">=4.2" },
     { name = "torch", specifier = ">=2.8", index = "https://download.pytorch.org/whl/cu128" },
     { name = "torchvision", specifier = ">=0.23", index = "https://download.pytorch.org/whl/cu128" },
     { name = "transformers", specifier = ">=4.56" },

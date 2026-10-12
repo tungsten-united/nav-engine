@@ -50,6 +50,16 @@ def infer_serve(host: str = config.INFER_HOST, port: int = config.INFER_PORT) ->
                 limit_concurrency=32, timeout_keep_alive=30, proxy_headers=True, forwarded_allow_ips="127.0.0.1")
 
 
+@infer.command("geometry-gpu")
+def infer_geometry_gpu(work: Path) -> None:
+    """The GPU stage of a geometry job folder (nav/mapping/geometry.py): what a geometry job runs on the shared GPU's
+    queue (gpu-run), apart from the inference host's resident process."""
+    from nav.mapping.geometry import gpu_stage
+
+    _logging()
+    gpu_stage(work)
+
+
 def _store():
     from nav.recorder.store import RecordingStore
 
@@ -519,8 +529,8 @@ def map_tune(map_id: str,
 
 @maps.command("loc-bench")
 def map_loc_bench(map_id: str,
-                  methods: str = typer.Option("refs,memory,verify", help="Comma-separated: refs (reference images "
-                                              "only), memory (+ the visual memory), verify (+ LightGlue)."),
+                  methods: str = typer.Option("refs,memory,pose", help="Comma-separated: refs (reference images "
+                                              "only), memory (+ the visual memory), pose (+ the 3D model's pose)."),
                   exclude_s: float = typer.Option(3.0, help="Map walked once: leave out its frames this close to "
                                                   "the query (more than one walk: each is matched against the others)."),
                   live: bool = typer.Option(False, help="Replay the captured live sessions (`nav live pull`) instead "
@@ -542,10 +552,10 @@ def map_loc_bench(map_id: str,
 
         found = sessions(live_root or config.LIVE_DIR, map_id, since)
         print(f"{map_id}: {len(found)} live sessions")
-        scores = bench_sessions(pmap, d, found, config.loc_thresholds(), ms, config.verify_params())
+        scores = bench_sessions(pmap, d, found, config.loc_thresholds(), ms, config.pose_params())
     else:
         scores = bench_walks(pmap, d, config.RECORDINGS_DIR, config.CACHE_DIR, config.loc_thresholds(), ms,
-                             exclude_s=exclude_s, verify_params=config.verify_params())
+                             exclude_s=exclude_s, pose_params=config.pose_params())
     for sc in scores:
         print(sc.line())
 

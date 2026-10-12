@@ -1,12 +1,16 @@
-"""Map pipeline for one place: prepare every walk -> select candidates -> LLM draft -> checked, enriched PlaceMap.
+"""Map pipeline for one place: prepare every walk -> 3D model -> select candidates -> LLM (meaning only) -> PlaceMap.
 
     prepare (cached per recording)   frames at 1 fps (sharpest per second), motion, voice transcripts, embeddings
+    geometry                         a 3D model of every walk's video (geometry.py): the positions of the map
     select                           quality filter, keyframes per walk, fold same-place frames across walks
-                                     (MegaLoc retrieval + LightGlue check, verify.py)
-    LLM                              Claude Code job (nav/mapping/llm.py) -> MapDraft
-    finish                           check ids, attach evidence (recording + time + image), dead-reckoned
-                                     positions aligned through shared nodes, measured walking distances, headings,
-                                     status (observed / inferred), spatial relations as bearings
+                                     (MegaLoc retrieval + LightGlue check, verify.py), then every candidate placed
+                                     by the model and nearby ones folded into one spot (topology.py)
+    LLM, places                      which spots are nodes, their names and descriptions (llm.py)
+    layout                           code: nodes at their spots, edges where the walks went, steps from the paths
+    LLM, routes                      what is felt and heard along each edge, and its spoken form
+    finish                           evidence, positions, distances, turns, headings, status, relations
+                                     (assemble.py); builds before metric-1 (one LLM pass that also drew the edges)
+                                     refinish with finish_map below
     publish                          reference images + their embeddings for live localization (references.py),
                                      the visual memory: every frame of every walk, where it was taken (memory.py),
                                      quality check (quality.py), human review overlay (review.py), then only what
@@ -57,7 +61,7 @@ from nav.schemas.map import (
 from nav.schemas.recording import Manifest
 
 log = logging.getLogger(__name__)
-PIPELINE_VERSION = "mvp-2"  # mvp-2: relations, references, status, headings, calibration
+PIPELINE_VERSION = "metric-1"  # metric-1: 3D model positions, the LLM only names and describes; mvp-2 before
 USABLE_STATUS = ("complete", "incomplete")
 VISIT_S = 15  # views of a node within this long of each other are one visit
 
@@ -86,17 +90,47 @@ def track_points(tr) -> list[list]:
              None if np.isnan(tr.heading_deg[i]) else round(float(tr.heading_deg[i]), 1)] for i in idx]
 
 
+def _fold_spots(groups: list, paths: dict) -> list:
+    """Groups placed by the walks' paths and folded when they are one spot (topology.fold_by_position)."""
+    from nav.mapping.select import Group, _rep_first
+    from nav.mapping.topology import fold_by_position
+
+    points = []
+    for g in groups:
+        got = [q for f in g.frames if f.rec_id in paths and (q := paths[f.rec_id].at(f.t_ms)) is not None]
+        points.append((float(np.mean([q[0] for q in got])), float(np.mean([q[1] for q in got]))) if got else None)
+    folded = fold_by_position(points)
+    out = [Group(_rep_first([f for i in idx for f in groups[i].frames])) for idx in folded]
+    out.sort(key=lambda g: min((f.rec_id, f.t_ms) for f in g.frames))
+    return out
+
+
 def select_candidates(place: str, preps: list[Prepared], p: SelectParams, embed_model: str, place_model: str,
-                      build_dir: Path) -> CandidateSet:
-    """Run selection and write candidates.json + pairs.json (same-place checks, for tuning) + frames/ into build_dir."""
+                      build_dir: Path, geo=None) -> CandidateSet:
+    """Run selection and write candidates.json + pairs.json (same-place checks, for tuning) + frames/ into build_dir.
+    `geo`: the build's 3D model (geometry.py), which places the candidates; without it, dead reckoning does."""
+    from nav.mapping import topology
+
     kept = []
     for prep in preps:
         mark_usable(prep.frames, p)
         kept += select_in_recording(prep.frames, prep.track, prep.marks, prep.voice, p)
-    sim, same, pairs = match_pairs(kept, p)
+    if geo is not None:  # the model places every frame: spots fold by position below, not by look-alike checks
+        n = len(kept)
+        sim, same, pairs = np.zeros((n, n)), np.zeros((n, n), bool), []
+    else:
+        sim, same, pairs = match_pairs(kept, p)
     (build_dir / "pairs.json").write_text(json.dumps(pairs, indent=1))
     groups, hints = group_frames(kept, p, sim, same)
-    groups, hints = cap_groups(groups, hints, p)
+    tracks = {prep.manifest.rec_id: track_points(prep.track) for prep in preps}
+    if geo is not None:
+        paths = topology.paths_from_geometry(geo)
+    else:
+        views = {str(i): [View(rec_id=f.rec_id, t_ms=f.t_ms, sharpness=f.sharpness, motion=Motion(**f.motion))
+                          for f in g.frames] for i, g in enumerate(groups)}
+        paths = topology.paths_from_tracks(tracks, align_recordings(views)[0])
+    groups = _fold_spots(groups, paths)
+    groups, hints = cap_groups(groups, {}, p)
     width = max(2, len(str(len(groups))))
     ids = [f"c{i + 1:0{width}d}" for i in range(len(groups))]
 
@@ -111,15 +145,14 @@ def select_candidates(place: str, preps: list[Prepared], p: SelectParams, embed_
             views=[View(rec_id=f.rec_id, t_ms=f.t_ms, sharpness=f.sharpness, motion=Motion(**f.motion),
                         marks=f.marks, voice=f.voice) for f in g.frames],
             possibly_same_as=sorted(set(same))))
-
-    # Positions comparable across walks, where walks share a folded candidate (for the LLM; finish aligns again
-    # through the nodes it makes).
-    offsets, _ = align_recordings({c.id: c.views for c in candidates})
+    pos = topology.candidate_positions(candidates, paths)
     for c in candidates:
-        for v in c.views:
-            if v.rec_id in offsets:
-                v.motion.map_x_m = round(v.motion.x_m + float(offsets[v.rec_id][0]), 2)
-                v.motion.map_y_m = round(v.motion.y_m + float(offsets[v.rec_id][1]), 2)
+        if c.id in pos:
+            c.position = Point(x_m=round(pos[c.id][0], 2), y_m=round(pos[c.id][1], 2))
+            c.posed = all(paths[v.rec_id].posed[int(np.argmin(np.abs(paths[v.rec_id].t - v.t_ms)))]
+                          for v in c.views if v.rec_id in paths)
+        c.nearby = topology.nearby(c.id, pos)
+    offsets = {rec: None for rec in paths}
 
     recordings = []
     for prep in preps:
@@ -153,7 +186,6 @@ def select_candidates(place: str, preps: list[Prepared], p: SelectParams, embed_
                         params=p.as_dict(), embed_model=embed_model,
                         embed_dim=int(kept[0].emb.shape[0]) if kept else None, place_model=place_model)
     (build_dir / "candidates.json").write_text(cset.model_dump_json(indent=1))
-    tracks = {prep.manifest.rec_id: track_points(prep.track) for prep in preps}
     (build_dir / "tracks.json").write_text(json.dumps(tracks))
     return cset
 
@@ -652,7 +684,16 @@ def build_map(place: str, *, recordings_root: Path, maps_root: Path, cache_root:
     build_id = build_id or f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}"
     build_dir = maps_root / slugify(place) / "builds" / build_id
     build_dir.mkdir(parents=True, exist_ok=given)
-    cset = select_candidates(place, preps, params, embed_model, place_model, build_dir)
+    from nav.mapping.geometry import build_geometry
+
+    from nav import config
+
+    geo_warnings: list[str] = []
+    geo = build_geometry(rec_dirs, cache_root, build_dir, place_model, {p.manifest.rec_id: p.track for p in preps},
+                         preps[0].manifest.rec_id, geo_warnings) if config.GEOMETRY else None
+    cset = select_candidates(place, preps, params, embed_model, place_model, build_dir, geo)
+    if geo_warnings:
+        (build_dir / "geometry-warnings.json").write_text(json.dumps(geo_warnings))
     languages = {p.manifest.rec_id: p.voice_language for p in preps if p.voice_language}
     (build_dir / "build.json").write_text(json.dumps({"transcribe_model": transcribe_model,
                                                       "transcribe_languages": languages}))
@@ -687,30 +728,97 @@ def fork_build(build_dir: Path) -> Path:
     return new
 
 
-def run_llm_on_build(build_dir: Path, *, llm_model: str, language: str, budget_usd: float,
-                     effort: str = "medium") -> BuildResult:
-    """LLM + finish for a build folder that has candidates.json; publishes its map as the place's map.json.
-    The Claude Code job runs here, or on the inference host when NAV_INFER_URL is set (same job, same files)."""
+def _llm_pass(build_dir: Path, cset: CandidateSet, stage: str, llm_model: str, language: str, budget_usd: float,
+              effort: str):
+    """One LLM pass, here or on the inference host when NAV_INFER_URL is set (same job, same files)."""
     from nav import config
     from nav.mapping.llm import run_claude_code
 
-    cset = CandidateSet.model_validate_json((build_dir / "candidates.json").read_text())
     if config.INFER_URL:
         from nav.mapping.inference import remote
 
-        draft, run = remote().map_draft(build_dir, f"{cset.map_id}-{build_dir.name}", cset.place, language,
-                                         llm_model, effort, budget_usd)
-    else:
-        draft, run = run_claude_code(build_dir, cset.place, language, llm_model, budget_usd, effort)
-    return publish(build_dir, cset, draft, run)
+        return remote().map_draft(build_dir, f"{cset.map_id}-{build_dir.name}-{stage}", cset.place, language,
+                                  llm_model, effort, budget_usd, stage=stage)
+    return run_claude_code(build_dir, cset.place, language, llm_model, budget_usd, effort, stage=stage)
+
+
+def _sum_runs(a, b):
+    """One LlmRun for the build from its two passes."""
+    if b is None:
+        return a
+    total = lambda x, y: None if x is None and y is None else round((x or 0) + (y or 0), 4)  # noqa: E731
+    return a.model_copy(update={"cost_usd": total(a.cost_usd, b.cost_usd),
+                                "duration_s": total(a.duration_s, b.duration_s)})
+
+
+def run_llm_on_build(build_dir: Path, *, llm_model: str, language: str, budget_usd: float,
+                     effort: str = "medium") -> BuildResult:
+    """The two LLM passes and finish for a build folder that has candidates.json; publishes its map as the place's
+    map.json: places (nodes) -> layout (code: edges, steps) -> routes (the words along them)."""
+    from nav.mapping.assemble import layout_for, routes_input
+
+    cset = CandidateSet.model_validate_json((build_dir / "candidates.json").read_text())
+    places, run = _llm_pass(build_dir, cset, "places", llm_model, language, budget_usd, effort)
+    layout = layout_for(build_dir, cset, places)
+    prev = json.loads((build_dir / "previous.json").read_text()) if (build_dir / "previous.json").is_file() else None
+    (build_dir / "routes.json").write_text(json.dumps(routes_input(layout, cset, prev), ensure_ascii=False, indent=1))
+    routes = run2 = None
+    if layout.edges:
+        routes, run2 = _llm_pass(build_dir, cset, "routes", llm_model, language, budget_usd, effort)
+    return publish_metric(build_dir, cset, places, routes, layout, _sum_runs(run, run2))
+
+
+def publish_metric(build_dir: Path, cset: CandidateSet, places, routes, layout, run,
+                   recordings_root: Path | None = None, cache_root: Path | None = None) -> BuildResult:
+    from nav.mapping.assemble import assemble, finish
+
+    warnings: list[str] = []
+    if (build_dir / "geometry-warnings.json").is_file():
+        warnings += json.loads((build_dir / "geometry-warnings.json").read_text())
+    draft = assemble(places, routes, layout, warnings)
+    tracks = json.loads((build_dir / "tracks.json").read_text()) if (build_dir / "tracks.json").is_file() else {}
+
+    def finish_fn(d, cs, info, rel, tr):
+        pm = finish(d, cs, layout, info, rel, tr)
+        pm.warnings = warnings + pm.warnings
+        return pm
+    return publish(build_dir, cset, draft, run, recordings_root, cache_root, finish_fn=finish_fn, tracks=tracks)
 
 
 def refinish_build(build_dir: Path, recordings_root: Path | None = None, cache_root: Path | None = None) -> BuildResult:
-    """Redo the finish step from the LLM answer saved in job/claude.json (no new LLM call), e.g. after changing
-    post-processing. Rebuilds tracks.json from the per-recording cache if the build predates it."""
+    """Redo the finish step from the LLM answers saved in the build (no new LLM call), e.g. after changing
+    post-processing. metric-1 builds: job/places/ and job/routes/ (the routes answer is reused while code's edges
+    stay the same). Older builds: job/claude.json, the one pass; tracks.json is rebuilt from the per-recording cache
+    if the build predates it."""
     from nav.mapping.llm import parse_claude_result
 
     cset = CandidateSet.model_validate_json((build_dir / "candidates.json").read_text())
+    if (build_dir / "job" / "places" / "claude.json").is_file():
+        from nav.mapping.assemble import edge_ids, layout_for, routes_input
+
+        places, run = parse_claude_result(build_dir / "job" / "places" / "claude.json", stage="places")
+        layout = layout_for(build_dir, cset, places)
+        prev = json.loads((build_dir / "previous.json").read_text()) if (build_dir / "previous.json").is_file() else None
+        now = routes_input(layout, cset, prev)
+        routes = run2 = None
+        saved = build_dir / "job" / "routes" / "claude.json"
+        old_input = build_dir / "routes.json"
+        if saved.is_file() and old_input.is_file():
+            before = json.loads(old_input.read_text())
+            same = [(e["id"], e["source"], e["target"], e["steps"]) for e in before["edges"]] == \
+                   [(e["id"], e["source"], e["target"], e["steps"]) for e in now["edges"]]
+            if same:
+                routes, run2 = parse_claude_result(saved, stage="routes")
+            else:
+                log.warning("refinish: code's edges changed since the routes pass: plain instructions instead")
+        (build_dir / "routes.json").write_text(json.dumps(now, ensure_ascii=False, indent=1))
+        old = build_dir / "map.json"
+        total = _sum_runs(run, run2)
+        if old.is_file():
+            prev_run = PlaceMap.model_validate_json(old.read_text()).build.llm
+            total.duration_s, total.effort = prev_run.duration_s, prev_run.effort
+        del edge_ids
+        return publish_metric(build_dir, cset, places, routes, layout, total, recordings_root, cache_root)
     tracks_file = build_dir / "tracks.json"
     old_tracks = json.loads(tracks_file.read_text()) if tracks_file.is_file() else {}
     if not old_tracks or any(len(pts[0]) < 4 for pts in old_tracks.values() if pts):  # missing, or no headings
@@ -751,12 +859,16 @@ def _fill_recording_info(cset: CandidateSet, recordings_root: Path | None, cache
 
 
 def publish(build_dir: Path, cset: CandidateSet, draft: MapDraft, run, recordings_root: Path | None = None,
-            cache_root: Path | None = None) -> BuildResult:
-    tracks = json.loads((build_dir / "tracks.json").read_text()) if (build_dir / "tracks.json").is_file() else {}
+            cache_root: Path | None = None, finish_fn=None, tracks: dict | None = None) -> BuildResult:
+    """Stable ids, finish (`finish_fn`, default finish_map: builds before metric-1), references, memory, quality
+    check, then the place's map.json."""
+    if tracks is None:
+        tracks = json.loads((build_dir / "tracks.json").read_text()) if (build_dir / "tracks.json").is_file() else {}
     extra = json.loads((build_dir / "build.json").read_text()) if (build_dir / "build.json").is_file() else {}
     build_id = build_dir.name
     built_at = datetime.strptime(build_id, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
-    info = BuildInfo(build_id=build_id, built_at_utc=built_at, pipeline_version=PIPELINE_VERSION,
+    info = BuildInfo(build_id=build_id, built_at_utc=built_at,
+                     pipeline_version=PIPELINE_VERSION if finish_fn else "mvp-2",
                      params=cset.params, embed_model=cset.embed_model, embed_dim=cset.embed_dim,
                      place_model=cset.place_model,
                      transcribe_model=extra.get("transcribe_model"),
@@ -765,7 +877,7 @@ def publish(build_dir: Path, cset: CandidateSet, draft: MapDraft, run, recording
     retired = []
     if (build_dir / "previous.json").is_file():
         draft, retired = stabilize(draft, cset, json.loads((build_dir / "previous.json").read_text()), build_id)
-    pmap = finish_map(draft, cset, info, f"builds/{build_id}", tracks)
+    pmap = (finish_fn or finish_map)(draft, cset, info, f"builds/{build_id}", tracks)
     pmap.retired = retired
     if dropped := [f"{r.id} ({r.name})" for r in retired if r.build_id == build_id and r.kind == "node"]:
         pmap.warnings.append(f"previous nodes not in this build (retired; their review entries wait): "

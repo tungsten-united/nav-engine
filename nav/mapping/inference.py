@@ -5,7 +5,7 @@ so a remote call gives what the local one would. Callers keep their caches keyed
 """
 
 import io
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from functools import cache
 from pathlib import Path
 
@@ -66,15 +66,26 @@ def _features():
     return FeatureCache(config.INFER_FEATURE_CACHE)
 
 
-def verify_live(queries: Sequence[bytes], refs: Sequence[tuple[str, Path]], deadline_s: float) -> list[list[int]]:
-    """LightGlue inliers of each camera frame (rows, JPEG bytes) with each memory frame (columns: a cache key and its
-    image file), for nav-api; on the inference host when NAV_INFER_URL is set (it keeps the frames' features)."""
+def pose_live(queries: Sequence[bytes], refs: Sequence[tuple[str, Path, Callable[[], np.ndarray]]],
+              deadline_s: float) -> list[dict | None]:
+    """The camera pose of each live frame (JPEG bytes) against memory frames: refs are (cache key, image file, a
+    loader of its 3D observations [K, 5]: pixel x, y and map-frame x, y, z), for nav-api; on the inference host when
+    NAV_INFER_URL is set (it keeps the frames' features). -> geometry.solve_pose's dict or None per frame."""
     if client := remote():
-        return client.verify_live(list(queries), [(k, (lambda p=p: Path(p).read_bytes())) for k, p in refs],
-                                  deadline_s)
-    from nav.mapping.models import verify
+        return client.pose_live(list(queries), [(k, (lambda p=p: Path(p).read_bytes()), obs) for k, p, obs in refs],
+                                deadline_s)
+    from nav.mapping.geometry import pose_ref, solve_pose
 
-    return verify([load_rgb(b) for b in queries], [(k, (lambda p=p: load_rgb(p))) for k, p in refs], _features())
+    cache = _features()
+    rs = []
+    for key, path, obs in refs:
+        r = cache.get(key)
+        if r is None:
+            o = obs()
+            r = pose_ref(load_rgb(path), o[:, :2], o[:, 2:5])
+            cache.put(key, r)
+        rs.append(r)
+    return [solve_pose(load_rgb(q), rs) for q in queries]
 
 
 def local_pair_inliers(images: Sequence[ImageSource], pairs: Sequence[tuple[int, int]]) -> list[int]:
