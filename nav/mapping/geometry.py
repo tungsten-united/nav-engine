@@ -49,6 +49,7 @@ SEQ_S = 2.5
 RETRIEVAL_K = 12
 SCALE_WINDOW_MS = 3000  # model distance vs walked distance over windows this long
 SCALE_MIN_WALKED_M = 1.0
+SCALE_MIN_WINDOWS = 3  # a piece with fewer such windows has no scale (each piece of a model has its own): not posed
 LOCAL_WINDOW_MS = 15_000  # a frame's offset from dead reckoning vs its neighbours' within this window ...
 LOCAL_M = 2.5  # ... may differ by this much (dead reckoning drifts little in 15 s)
 STEP_M = 1.0  # consecutive frames' offsets differing more than this split the walk into stretches ...
@@ -435,6 +436,7 @@ class Geometry:
     obs_point: np.ndarray  # [K] ... and its 3D point
     place: np.ndarray  # [F, D] MegaLoc embeddings
     info: dict = field(default_factory=dict)
+    piece: np.ndarray | None = None  # [F] the model piece a posed frame is in (-1: not posed)
 
     def position(self, rec_id: str, t_ms: float, max_dt_ms: float = 700) -> tuple[float, float] | None:
         """Where the walk was at t_ms: its nearest frame within max_dt_ms with a position."""
@@ -507,9 +509,10 @@ def _check_walk(t: np.ndarray, off: np.ndarray) -> np.ndarray:
 
 
 def _orient(C: np.ndarray, R0: np.ndarray, idx: list[int], frames: list[GeoFrame], tracks: dict
-            ) -> tuple[np.ndarray, float, float, np.ndarray]:
+            ) -> tuple[np.ndarray, float | None, float, np.ndarray]:
     """For one piece of the model (frames `idx`): (L, scale, yaw radians, Rz) taking it to the map frame up to a
-    shift: levelled by the cameras' down, scaled by walked metres, turned onto the walks' headings."""
+    shift: levelled by the cameras' down, scaled by walked metres, turned onto the walks' headings. Scale None: too
+    little walking in the piece to measure it (a pause looking around)."""
     down = np.einsum("nji,j->ni", R0[idx], np.array([0.0, 1.0, 0.0]))
     L = _rot_to_z_up(np.median(down, axis=0))
     Cl = C @ L.T
@@ -530,7 +533,7 @@ def _orient(C: np.ndarray, R0: np.ndarray, idx: list[int], frames: list[GeoFrame
             if walked >= SCALE_MIN_WALKED_M and model_m > 1e-6:
                 ratios.append(walked / model_m)
             a = b
-    scale = float(np.median(ratios)) if ratios else 1.0
+    scale = float(np.median(ratios)) if len(ratios) >= SCALE_MIN_WINDOWS else None
     diffs = []
     for i in idx:
         tr = tracks.get(frames[i].rec_id)
@@ -574,6 +577,12 @@ def place_in_map(work: Path, tracks: dict, first_rec: str | None = None) -> Geom
     for c in pieces:
         idx = [i for i in range(n) if comp[i] == c]
         L, scale, yaw, Rz = _orient(C, R0, idx, frames, tracks)
+        if scale is None:
+            if c != pieces[0] or len(pieces) > 1:
+                comp[idx] = -1  # its metres are unknown: dead reckoning there
+                info_pieces.append({"frames": len(idx), "scale": None})
+                continue
+            scale = 1.0
         M = Rz @ L
         Cc = scale * (C[idx] @ M.T)
         shift = np.zeros(3)
@@ -667,7 +676,8 @@ def place_in_map(work: Path, tracks: dict, first_rec: str | None = None) -> Geom
     log.info("geometry: %d of %d frames posed in the map frame (%d pieces), %d points", reg.sum(), n,
              len(transforms), good.sum())
     return Geometry(frames, reg, xyz, heading, Rm, raw["focal"].copy(), points, of.astype(np.int32),
-                    obs_xy.astype(np.float32), new_id[op].astype(np.int32), raw["place"].astype(np.float32), info)
+                    obs_xy.astype(np.float32), new_id[op].astype(np.int32), raw["place"].astype(np.float32), info,
+                    np.where(reg, comp, -1).astype(np.int32))
 
 
 # --- in the build ----------------------------------------------------------------------------------------------
@@ -677,6 +687,7 @@ def write(geo: Geometry, build_dir: Path) -> None:
     for i, f in enumerate(geo.frames):
         x, y, z = (None if np.isnan(v) else round(float(v), 3) for v in geo.xyz[i])
         frames.append({**asdict(f), "posed": bool(geo.posed[i]), "x_m": x, "y_m": y, "z_m": z,
+                       "piece": None if geo.piece is None or geo.piece[i] < 0 else int(geo.piece[i]),
                        "heading_deg": None if np.isnan(geo.heading_deg[i]) else round(float(geo.heading_deg[i]), 1)})
     (build_dir / "geometry.json").write_text(json.dumps({"info": geo.info, "frames": frames}))
     np.savez_compressed(build_dir / "geometry.npz", R=geo.R.astype(np.float32), focal=geo.focal.astype(np.float32),
@@ -696,8 +707,10 @@ def load(build_dir: Path) -> Geometry | None:
     heading = np.array([np.nan if f["heading_deg"] is None else f["heading_deg"] for f in j["frames"]], float)
     posed = np.array([f["posed"] for f in j["frames"]], bool)
     place = np.load(build_dir / "geometry-place.npy")
+    piece = np.array([-1 if f.get("piece") is None else f["piece"] for f in j["frames"]], np.int32)
     return Geometry(frames, posed, xyz, heading, z["R"].astype(np.float64), z["focal"].astype(np.float64),
-                    z["points"].astype(np.float64), z["obs_frame"], z["obs_xy"], z["obs_point"], place, j["info"])
+                    z["points"].astype(np.float64), z["obs_frame"], z["obs_xy"], z["obs_point"], place, j["info"],
+                    piece)
 
 
 def build_geometry(rec_dirs: list[Path], cache_root: Path, build_dir: Path, place_model: str, tracks: dict,

@@ -64,7 +64,7 @@ calls map-api directly. `frontend/` here is a debugging frontend, not Orient's a
   references only).
 - `docs/` — the navigation-side design (`main_idea.md`, `navigation_stack.md`, by LPA, from
   tungsten-united/demo-repository@navigation, aligned with Orient's architecture) and `map.schema.json` (regenerate: `nav map schema --out ...`; a test checks it).
-- `nav/navigation/locbench.py` — `nav map loc-bench`: localization method by method (refs / memory / verify) on the
+- `nav/navigation/locbench.py` — `nav map loc-bench`: localization method by method (refs / memory / pose) on the
   map's walks (each against the others; a single walk minus `--exclude-s` around the query) with the truth, or on
   captured live sessions (`--live`) without it; every answer sequence through the belief at the orchestrator's live
   temperature: when it locates, how often it commits, how far from the truth. The scoreboard for localization changes.
@@ -212,11 +212,12 @@ the live inference host out of it.
   the stage is the stage). As a strong vote (gain 0.5 from 60 inliers) it made the belief commit 4x as often and
   wrongly (Itnig replays: 56% of commits right vs 73% without it). Conservative (0.3, from 150 to 500), on degraded
   frames, it is what makes every walk locate (memory alone: 3 of 4 Itnig walks; Nati House after 31 s instead of
-  2 s) with 95-100% of commits within 3 m. `nav map loc-bench` measures this; tune there, then on captured sessions.
+  2 s) with 95-100% of commits within 3 m. It is gone since metric-1: the same matches lifted to the 3D model's
+  points give a pose (PnP), which says "same spot" (bench/metric: 90% within 1 m and 10° on held-out walks).
 - `cv2.findFundamentalMat` raises on degenerate matches (a few on one line) instead of returning no model:
   `models.geometric_inliers` turns that into 0 inliers, else a blurred live frame is a 500.
-- Orient sends live frames at up to 1280 px (JPEG 0.7); the memory is 768 px and ALIKED isn't scale-invariant, so
-  the verifier shrinks live frames to 768 first.
+- Orient sends live frames at up to 1280 px (JPEG 0.7, 480x640 at Nati House); ALIKED isn't scale-invariant, so
+  live poses resize them to the model frames' 1024 px first (geometry.fit_long_side).
 - A problem found live becomes a test made from its real data, not only a fix: `tests/fixtures/itnig` (the map
   that stalled guidance after cleaning), `tests/fixtures/glories-basement` (a place walked once: no way back over
   `observed`), `tests/fixtures/voice-languages.json` (Whisper's guesses for short notes that alone came out Spanish
