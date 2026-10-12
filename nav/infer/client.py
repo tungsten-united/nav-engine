@@ -120,24 +120,31 @@ class InferenceClient:
         return self._vectors("place", [(f"live{i}.jpg", b) for i, b in enumerate(images)], model, live=True,
                              deadline_s=deadline_s)
 
-    def verify_live(self, queries: list[bytes], refs: list[tuple[str, Callable[[], bytes]]],
-                    deadline_s: float) -> list[list[int]]:
-        """LightGlue inliers of each camera frame (rows) with each memory frame (columns), for nav-api: refs go by key,
-        and their images only when the host asks for them (409 missing: not cached yet, or evicted)."""
-        keys = [k for k, _ in refs]
+    def pose_live(self, queries: list[bytes], refs: list[tuple[str, Callable[[], bytes], Callable[[], object]]],
+                  deadline_s: float) -> list[dict | None]:
+        """The camera pose of each frame against memory frames, for nav-api: refs go by key, and their image and 3D
+        observations ([K, 5] float32: pixel x, y, map x, y, z) only when the host asks for them (409 missing: not
+        cached yet, or evicted)."""
+        import io
+
+        keys = [k for k, _, _ in refs]
         data = {"refs": json.dumps(keys)}
         files = [("queries", (f"q{i}.jpg", b, "image/jpeg")) for i, b in enumerate(queries)]
         end = time.monotonic() + deadline_s
-        r = self._send("POST", "/infer/v1/verify", deadline_s=deadline_s, accept=(409,), data=data, files=files)
+        r = self._send("POST", "/infer/v1/pose", deadline_s=deadline_s, accept=(409,), data=data, files=files)
         if r.status_code == 409:
             missing = r.json().get("missing")
             if not isinstance(missing, list):
-                raise InferenceError(f"POST /infer/v1/verify: 409 {r.text[:300]}")
-            load = dict(refs)
-            files += [("ref_images", (f"{keys.index(k)}.jpg", load[k](), "image/jpeg")) for k in missing]
-            r = self._send("POST", "/infer/v1/verify", deadline_s=max(0.5, end - time.monotonic()), data=data,
+                raise InferenceError(f"POST /infer/v1/pose: 409 {r.text[:300]}")
+            load = {k: (img, obs) for k, img, obs in refs}
+            for k in missing:
+                buf = io.BytesIO()
+                np.save(buf, np.asarray(load[k][1](), np.float32))
+                files += [("ref_images", (f"{keys.index(k)}.jpg", load[k][0](), "image/jpeg")),
+                          ("ref_obs", (f"{keys.index(k)}.npy", buf.getvalue(), "application/octet-stream"))]
+            r = self._send("POST", "/infer/v1/pose", deadline_s=max(0.5, end - time.monotonic()), data=data,
                            files=files)
-        return r.json()["inliers"]
+        return r.json()["poses"]
 
     def match(self, paths: list[Path], pairs: list[tuple[int, int]]) -> list[int]:
         out = [0] * len(pairs)

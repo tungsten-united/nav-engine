@@ -11,7 +11,9 @@ Each sequence of answers also goes through the orchestrator's belief (belief.Nod
 the thing that has to commit: when it first gets a node to `reach`, and how often that node was the true one.
 
     method   refs: the map's reference images only (as before the memory); memory: + every frame of every walk;
-             verify: + LightGlue on the best memory frames (nav-api's verifier, when the map has a memory)
+             pose: + the camera pose from the map's 3D model (nav-api's, when the build has one); the model was
+                   built with every walk, so a held-out walk's poses use points it helped triangulate (optimistic;
+                   bench/metric does it with a model per held-out walk)
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from pathlib import Path
 import numpy as np
 
 from nav.navigation.belief import BeliefParams, NodeBelief
-from nav.navigation.localize import MEMORY_RADIUS_M, MemoryIndex, RefIndex, VerifyParams, localize
+from nav.navigation.localize import MEMORY_RADIUS_M, MemoryIndex, PoseParams, RefIndex, localize
 from nav.schemas.map import PlaceMap
 from nav.schemas.navigation import Localization, Thresholds
 
@@ -36,7 +38,7 @@ class Query:
     rec_id: str  # the walk, or the live session
     t_ms: float
     q: np.ndarray  # [F, D] place embeddings of the burst
-    image: Path | list[Path]  # the frame(s), for the verifier
+    image: Path | list[Path]  # the frame(s), for the pose
     walked_m: float  # since the walk started (dead reckoning / floor odometry)
     x_m: float | None = None  # truth, when known (walks)
     y_m: float | None = None
@@ -135,29 +137,31 @@ def _without_window(index: RefIndex, rec: str, t_ms: float, exclude_s: float) ->
     return RefIndex(index.pmap, index.vectors[keep], [index.refs[i] for i in keep], mem)
 
 
-def local_verifier(map_dir: Path, index: RefIndex, image: Path):
-    """localize's `verify` for a replayed frame: LightGlue here (nav/mapping/inference.verify_live, the inference
-    host's code), memory frames cached by path."""
-    from nav.mapping.inference import verify_live
+def local_poser(map_dir: Path, index: RefIndex, image: Path):
+    """localize's `pose` for a replayed frame: here (nav/mapping/inference.pose_live, the inference host's code),
+    memory frames cached by path."""
+    from nav.mapping.inference import pose_live
 
     images = image if isinstance(image, list) else [image]
 
-    def verify(rows: list[int], frames: list[int]) -> dict[int, int]:
-        refs = [(str(map_dir / index.memory.frames[i].image), map_dir / index.memory.frames[i].image) for i in rows]
-        got = verify_live([images[k].read_bytes() for k in frames if k < len(images)] or [images[-1].read_bytes()],
-                          refs, deadline_s=30)
-        return {i: max(int(row[c]) for row in got) for c, i in enumerate(rows)}
-    return verify
+    def pose(rows: list[int], frames: list[int]) -> dict | None:
+        mem = index.memory
+        refs = [(str(map_dir / mem.frames[i].image), map_dir / mem.frames[i].image,
+                 (lambda r=mem.frames[i].row: mem.geometry.obs(r))) for i in rows]
+        got = pose_live([images[k].read_bytes() for k in frames if k < len(images)] or [images[-1].read_bytes()],
+                        refs, deadline_s=30)
+        return max((g for g in got if g), key=lambda g: g["inliers"], default=None)
+    return pose
 
 
 def run_sequence(index_for, queries: list[Query], thresholds: Thresholds, map_dir: Path | None = None,
-                 verify: VerifyParams | None = None) -> list[Row]:
+                 pose: PoseParams | None = None) -> list[Row]:
     rows = []
     for q in queries:
         index = index_for(q)
         kw = {}
-        if verify is not None and index.memory:
-            kw |= {"verify": local_verifier(map_dir, index, q.image), "verify_params": verify}
+        if pose is not None and index.memory and index.memory.geometry is not None:
+            kw |= {"pose": local_poser(map_dir, index, q.image), "pose_params": pose}
         t = time.perf_counter()
         loc = localize(index, q.q, thresholds, top_k=20, **kw)
         rows.append(Row(q, loc, (time.perf_counter() - t) * 1000))
@@ -208,7 +212,7 @@ def score(method: str, pmap: PlaceMap, sequences: list[list[Row]], reach: float 
 
 
 def bench_walks(pmap: PlaceMap, map_dir: Path, recordings_root: Path, cache_root: Path, thresholds: Thresholds,
-                methods: list[str], exclude_s: float = 10.0, verify_params: VerifyParams | None = None) -> list[Score]:
+                methods: list[str], exclude_s: float = 10.0, pose_params: PoseParams | None = None) -> list[Score]:
     from nav.navigation.replay import ref_indexes
 
     walks = walk_queries(pmap, recordings_root, cache_root)
@@ -221,8 +225,8 @@ def bench_walks(pmap: PlaceMap, map_dir: Path, recordings_root: Path, cache_root
             index_for = lambda q: indexes[q.rec_id]  # noqa: E731
         else:
             index_for = lambda q: _without_window(indexes, q.rec_id, q.t_ms, exclude_s)  # noqa: E731
-        verify = (verify_params or VerifyParams()) if method.startswith("verify") else None
-        out.append(score(method, pmap, [run_sequence(index_for, w, thresholds, map_dir, verify)
+        pose = (pose_params or PoseParams()) if method.startswith("pose") else None
+        out.append(score(method, pmap, [run_sequence(index_for, w, thresholds, map_dir, pose)
                                         for w in walks if w]))
     return out
 
@@ -252,7 +256,7 @@ def session_queries(pmap: PlaceMap, session) -> list[Query]:
 
 
 def bench_sessions(pmap: PlaceMap, map_dir: Path, sessions, thresholds: Thresholds, methods: list[str],
-                   verify_params: VerifyParams | None = None) -> list[Score]:
+                   pose_params: PoseParams | None = None) -> list[Score]:
     """Captured live sessions of the map replayed through today's localizer, method by method (no truth: how often
     it is decisive, how soon the belief commits and how often it changes its mind)."""
     from nav.navigation.replay import ref_indexes
@@ -261,7 +265,7 @@ def bench_sessions(pmap: PlaceMap, map_dir: Path, sessions, thresholds: Threshol
     out = []
     for method in methods:
         index = ref_indexes(pmap, map_dir, holdout=False, memory=method != "refs")
-        verify = (verify_params or VerifyParams()) if method.startswith("verify") else None
-        out.append(score(method, pmap, [run_sequence(lambda q: index, qs, thresholds, map_dir, verify)
+        pose = (pose_params or PoseParams()) if method.startswith("pose") else None
+        out.append(score(method, pmap, [run_sequence(lambda q: index, qs, thresholds, map_dir, pose)
                                         for qs in queries]))
     return out

@@ -172,3 +172,23 @@ def load_memory(map_dir: Path, info: MemoryInfo) -> tuple[list[MemoryFrame], np.
     if len(vectors) != len(frames):
         raise ValueError(f"memory: {len(frames)} frames but {len(vectors)} embeddings")
     return frames, vectors
+
+
+class GeometryObs:
+    """The 3D observations of the build's posed frames (geometry.npz), by frame row: what a live pose matches."""
+
+    def __init__(self, path: Path):
+        z = np.load(path)
+        order = np.argsort(z["obs_frame"], kind="stable")
+        self.frame = z["obs_frame"][order]
+        self.xy = z["obs_xy"][order].astype(np.float32)
+        self.xyz = z["points"][z["obs_point"][order]].astype(np.float32)
+
+    def obs(self, row: int) -> np.ndarray:
+        """[K, 5]: pixel x, y (at the model frames' size) and map-frame x, y, z of the frame's observations."""
+        a, b = np.searchsorted(self.frame, [row, row + 1])
+        return np.concatenate([self.xy[a:b], self.xyz[a:b]], axis=1)
+
+
+def load_geometry_obs(map_dir: Path, info: MemoryInfo) -> GeometryObs | None:
+    return GeometryObs(map_dir / info.geometry) if info.geometry else None

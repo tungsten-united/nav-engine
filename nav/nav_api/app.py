@@ -56,10 +56,10 @@ def live_place(images: list[bytes], model: str):
     return place_live(images, model, config.LIVE_INFER_DEADLINE_S)
 
 
-def live_verify(images: list[bytes], refs: list[tuple[str, Path]]) -> list[list[int]]:
-    from nav.mapping.inference import verify_live
+def live_pose(images: list[bytes], refs: list) -> list[dict | None]:
+    from nav.mapping.inference import pose_live
 
-    return verify_live(images, refs, config.LIVE_VERIFY_DEADLINE_S)
+    return pose_live(images, refs, config.LIVE_POSE_DEADLINE_S)
 
 
 def failure(e: HTTPException | NotFound) -> tuple[int, str]:
@@ -80,12 +80,13 @@ def infer_health() -> dict:
 
 def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_fn=None, api_token=_DEFAULT,
                    cors_origins=_DEFAULT, cors_origin_regex=_DEFAULT, frontend_url=_DEFAULT,
-                   thresholds: Thresholds | None = None, capture=_DEFAULT, verify_fn=_DEFAULT,
-                   verify_params=None) -> FastAPI:
+                   thresholds: Thresholds | None = None, capture=_DEFAULT, pose_fn=_DEFAULT,
+                   pose_params=None) -> FastAPI:
     """Settings default to nav/config.py (environment); tests pass them explicitly. `place_fn(images, model)` gives
     the place embeddings of JPEG frames (default: the inference host, live priority, short deadline). `capture`: where
-    every call is recorded (a Capture, or None: nowhere; default NAV_CAPTURE_DIR). `verify_fn(images, refs)`: LightGlue
-    inliers of the frames with memory frames ([(cache key, image path)]), default the inference host; None: off."""
+    every call is recorded (a Capture, or None: nowhere; default NAV_CAPTURE_DIR). `pose_fn(images, refs)`: the camera
+    pose of each frame against memory frames ([(cache key, image path, loader of its 3D observations)]), default the
+    inference host; None: off."""
     maps = maps or MapCache(config.MAPS_DIR, config.MAP_RELOAD_S)
     place_fn = place_fn or live_place
     infer_health_fn = infer_health_fn or infer_health
@@ -94,8 +95,8 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
     cors_origin_regex = config.CORS_ORIGIN_REGEX if cors_origin_regex is _DEFAULT else cors_origin_regex
     frontend_url = config.FRONTEND_URL if frontend_url is _DEFAULT else frontend_url
     thresholds = thresholds or config.loc_thresholds()
-    verify_fn = live_verify if verify_fn is _DEFAULT else verify_fn
-    verify_params = verify_params or config.verify_params()
+    pose_fn = live_pose if pose_fn is _DEFAULT else pose_fn
+    pose_params = pose_params or config.pose_params()
     if capture is _DEFAULT:
         capture = Capture(config.CAPTURE_DIR) if config.CAPTURE_DIR else None
     app = FastAPI(title="nav-engine nav-api", version=f"map-schema-{MAP_SCHEMA_VERSION}",
@@ -266,32 +267,32 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
             except InferenceError as e:
                 raise HTTPException(502, f"inference host: {e}")
             took["embed"] = round((time.perf_counter() - t) * 1000, 1)
-        verify = None
-        if verify_fn and verify_params.k > 0 and index.memory and index.memory.frames:
-            def verify(rows: list[int], frames: list[int]) -> dict[int, int] | None:
-                """LightGlue on the inference host; an answer without it beats none (logged, then unverified)."""
+        pose = None
+        if pose_fn and pose_params.k > 0 and index.memory and index.memory.geometry is not None:
+            def pose(rows: list[int], frames: list[int]) -> dict | None:
+                """The best frame's pose from the inference host; an answer without one beats none (logged)."""
                 mem, build = index.memory, index.pmap.build.build_id
-                refs = [(f"{map_id}/{build}/{mem.frames[i].id}", maps.store.dir(map_id) / mem.frames[i].image)
-                        for i in rows]
+                refs = [(f"{map_id}/{build}/{mem.frames[i].id}", maps.store.dir(map_id) / mem.frames[i].image,
+                         (lambda r=mem.frames[i].row: mem.geometry.obs(r))) for i in rows]
                 t = time.perf_counter()
                 try:
-                    got = verify_fn([data[k] for k in frames], refs)
+                    got = pose_fn([data[k] for k in frames], refs)
                 except (InferenceError, OSError) as e:
-                    took["verify_failed"] = 1
-                    logger.warning("verify %s: %s", map_id, e)
+                    took["pose_failed"] = 1
+                    logger.warning("pose %s: %s", map_id, e)
                     return None
                 finally:
-                    took["verify"] = round((time.perf_counter() - t) * 1000, 1)
-                return {i: max(int(row[c]) for row in got) for c, i in enumerate(rows)}
+                    took["pose"] = round((time.perf_counter() - t) * 1000, 1)
+                return max((g for g in got if g), key=lambda g: g["inliers"], default=None)
 
         t = time.perf_counter()
         res = await run_in_threadpool(
             lambda: localize(index, queries if queries is not None else [[0.0]], thresholds, top_k=top_k,
                              previous=previous, expected=expected, heading_abs_deg=heading_deg, model=model,
-                             motions=motions or None, previous_step_count=previous_step_count, verify=verify,
-                             verify_params=verify_params))
+                             motions=motions or None, previous_step_count=previous_step_count, pose=pose,
+                             pose_params=pose_params))
         res.frames = len(data)
-        took["match"] = round((time.perf_counter() - t) * 1000 - took.get("verify", 0.0), 1)
+        took["match"] = round((time.perf_counter() - t) * 1000 - took.get("pose", 0.0), 1)
         took["total"] = round((time.perf_counter() - t0) * 1000, 1)
         res.took_ms = took
         return res

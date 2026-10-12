@@ -12,14 +12,16 @@ whose region it is in (the nearest node to where it was taken, within `MEMORY_RA
 best reference or memory frame. Regions come from positions, not from what the frame shows, so one view can't
 belong to two nodes in two walks (Itnig's area nodes did, which kept every lead small).
 
-Verification (`verify`, nav-api: LightGlue on the inference host): the best few memory frames (`VerifyParams.k`, a
-few seconds apart in their walks) are matched with the camera frames, and the inliers that fit one geometry add up to
-`gain` to that frame's score (from `low` to `high` inliers; live frames are matched at the memory's 768 px). A cosine lead of 0.03 is a guess; 300 inliers on the
-same structure is not (Itnig, cross-walk: within 3 m of the matched frame 80% of the time). The belief downstream
-reads score differences, so a verified frame moves it in one or two calls instead of never. Without an answer in
-time (`verify` returns None), the result is the unverified one.
+Pose (`pose`, nav-api: the inference host): with a 3D model (geometry.py), the best few posed memory frames
+(`PoseParams.k`, a few seconds apart in their walks) are matched with the camera frames, their keypoints' 3D points
+give 2D-3D correspondences, and PnP gives the camera pose: position to tens of centimetres and heading to a degree on
+held-out walks (bench/metric/REPORT.md). The pose's node is the nearest node within MEMORY_RADIUS_M of it, and a pose
+with at least `confirm_inliers` inliers confirms it (the walked-distance gate still applies). A pose between nodes
+leaves the status uncertain, whatever the embeddings say. Scores and candidates stay the embeddings' (the
+orchestrator's belief weighs them). Without an answer in time (`pose` returns None), the result has no pose.
 
 Status, preferring a missed confirmation to a false one:
+- confirmed by the pose (above), or else:
 - lost: the best score is under `lost_score` (nothing recognised);
 - confirmed: best score >= `confirm_score`, margin >= `confirm_margin`, and, when the last confirmed node is known,
   the best node is that node or one edge away from it (graph consistency);
@@ -46,7 +48,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from nav.schemas.map import MemoryFrame, PlaceMap
-from nav.schemas.navigation import LiveMotion, LivePosition, Localization, NodeMatch, RefMatch, Thresholds
+from nav.schemas.navigation import LiveMotion, LivePose, LivePosition, Localization, NodeMatch, RefMatch, Thresholds
 
 HEADING_MAX_ACCURACY_DEG = 45.0  # a compass reporting a worse accuracy is not used
 MEMORY_RADIUS_M = 5.0  # a memory frame belongs to the nearest node within this distance (else to none)
@@ -61,10 +63,21 @@ class MemoryIndex:
     frames: list[MemoryFrame]
     vectors: np.ndarray  # [M, D] float32 unit rows
     nodes: list[str | None]
+    placed: list[tuple[str, float, float]] = None  # node positions (published frame): (id, x, y)
+    radius_m: float = MEMORY_RADIUS_M
+    scale: float = 1.0  # the review's distance scale: geometry (unscaled) -> published frame
+    geometry: object = None  # memory.GeometryObs: the 3D observations of posed frames, for live poses
+
+    def node_at(self, x: float, y: float) -> str | None:
+        """The nearest node within the radius (the region rule frames follow)."""
+        if not self.placed:
+            return None
+        d, nid = min((math.hypot(px - x, py - y), n) for n, px, py in self.placed)
+        return nid if d <= self.radius_m else None
 
     @classmethod
     def build(cls, pmap: PlaceMap, frames: list[MemoryFrame], vectors: np.ndarray, radius_m: float = MEMORY_RADIUS_M,
-              exclude_rec: str | None = None) -> "MemoryIndex":
+              exclude_rec: str | None = None, geometry=None) -> "MemoryIndex":
         k = pmap.frame.distance_scale if pmap.frame else 1.0
         placed = [(n.id, n.position.x_m, n.position.y_m) for n in pmap.nodes if n.position is not None]
         xy = np.array([(x, y) for _, x, y in placed], float).reshape(-1, 2)
@@ -91,19 +104,14 @@ class MemoryIndex:
         rows = [i for _, i in keep]
         dim = vectors.shape[1] if vectors.ndim == 2 else 0
         return cls([f for f, _ in keep], vectors[rows].astype(np.float32) if rows else np.zeros((0, dim), np.float32),
-                   nodes)
+                   nodes, placed, radius_m, k, geometry)
 
 
 @dataclass
-class VerifyParams:
-    k: int = 6  # memory frames verified per call
-    low: int = 150  # inliers below this add nothing ...
-    high: int = 500  # ... and from this on the whole gain
-    gain: float = 0.3
-    spread_ms: float = 2000  # two verified frames of one walk are at least this far apart
-
-    def confidence(self, inliers: int) -> float:
-        return min(max((inliers - self.low) / max(self.high - self.low, 1), 0.0), 1.0)
+class PoseParams:
+    k: int = 8  # posed memory frames matched per call
+    confirm_inliers: int = 40  # a pose with this many PnP inliers confirms the node it is in
+    spread_ms: float = 1500  # two of them from one walk are at least this far apart
 
 
 def _diverse_top(scores: np.ndarray, frames: list[MemoryFrame], k: int, spread_ms: float) -> list[int]:
@@ -158,7 +166,7 @@ class RefIndex:
     @classmethod
     def build(cls, pmap: PlaceMap, embeddings: np.ndarray | None, exclude_rec: str | None = None,
               memory: tuple[list[MemoryFrame], np.ndarray] | None = None,
-              memory_radius_m: float = MEMORY_RADIUS_M) -> "RefIndex":
+              memory_radius_m: float = MEMORY_RADIUS_M, geometry=None) -> "RefIndex":
         """Keep the references with an embedding row (hidden nodes are already out of a published map); without
         those taken from `exclude_rec` (replaying that walk against the others' references only). `memory`: the
         map's visual memory as nav/mapping/memory.load_memory gives it."""
@@ -172,7 +180,8 @@ class RefIndex:
                     rows.append(r.embedding_row)
         dim = embeddings.shape[1] if embeddings is not None and embeddings.ndim == 2 else 0
         vectors = embeddings[rows].astype(np.float32) if rows else np.zeros((0, dim), np.float32)
-        mem = MemoryIndex.build(pmap, *memory, radius_m=memory_radius_m, exclude_rec=exclude_rec) if memory else None
+        mem = MemoryIndex.build(pmap, *memory, radius_m=memory_radius_m, exclude_rec=exclude_rec,
+                                geometry=geometry) if memory else None
         return cls(pmap, vectors, refs, mem)
 
     def distances_from(self, node: str, unknown_m: float = 10.0) -> dict[str, float]:
@@ -240,11 +249,12 @@ def _usable_heading(m: LiveMotion | None) -> float | None:
 def localize(index: RefIndex, queries: np.ndarray, thresholds: Thresholds, *, top_k: int = 5, refs_per_node: int = 3,
              previous: str | None = None, expected: str | None = None, heading_abs_deg: float | None = None,
              model: str = "", took_ms: dict[str, float] | None = None, motions: list[LiveMotion | None] | None = None,
-             previous_step_count: int | None = None, verify=None,
-             verify_params: VerifyParams | None = None) -> Localization:
+             previous_step_count: int | None = None, pose=None,
+             pose_params: PoseParams | None = None) -> Localization:
     """`queries`: [F, D] unit place embeddings of the live frames (a burst of F >= 1), oldest first; `motions`: the
-    phone's motion for each frame, aligned with `queries` (shorter or None: unknown). `verify(rows, frames)`: LightGlue
-    inliers of the live frames (indexes into the burst) with those memory rows, {row: inliers}, or None."""
+    phone's motion for each frame, aligned with `queries` (shorter or None: unknown). `pose(rows, frames)`: the camera
+    pose of the live frames (indexes into the burst) against those memory rows: geometry.solve_pose's dict for the
+    best frame, or None."""
     pmap = index.pmap
     q = np.atleast_2d(np.asarray(queries, dtype=np.float32))
     names = {n.id: n.name for n in pmap.nodes}
@@ -288,19 +298,11 @@ def localize(index: RefIndex, queries: np.ndarray, thresholds: Thresholds, *, to
         for s, r in zip(sims.tolist(), index.refs):
             by_node.setdefault(r.node, []).append((s, r))
     position = None
+    live_pose = None
+    pp = pose_params or PoseParams()
     mem = index.memory
-    verified: dict[int, int] = {}
     if mem and mem.frames:
         msims = (mem.vectors @ q[keep].T).mean(axis=1)  # [M]
-        cos = msims
-        if verify is not None:
-            vp = verify_params or VerifyParams()
-            got = verify(_diverse_top(msims, mem.frames, vp.k, vp.spread_ms), keep) if vp.k > 0 else None
-            if got:
-                verified = {int(i): int(k) for i, k in got.items()}
-                msims = msims.copy()
-                for i, k in verified.items():
-                    msims[i] += vp.gain * vp.confidence(k)
         for i in np.argsort(-msims):
             node = mem.nodes[i]
             if node is not None and node in names:
@@ -310,14 +312,25 @@ def localize(index: RefIndex, queries: np.ndarray, thresholds: Thresholds, *, to
         f = mem.frames[best_i]
         if f.x_m is not None:
             position = LivePosition(x_m=f.x_m, y_m=f.y_m, heading_deg=f.heading_deg, frame=f.id, rec_id=f.rec_id,
-                                    t_ms=f.t_ms, score=round(float(cos[best_i]), 4), node=mem.nodes[best_i],
-                                    inliers=verified.get(best_i))
+                                    t_ms=f.t_ms, score=round(float(msims[best_i]), 4), node=mem.nodes[best_i])
+        posed = np.array([fr.posed and fr.row is not None for fr in mem.frames])
+        if pose is not None and pp.k > 0 and mem.geometry is not None and posed.any():
+            rows = _diverse_top(np.where(posed, msims, -np.inf), mem.frames, pp.k, pp.spread_ms)
+            rows = [i for i in rows if posed[i]]
+            got = pose(rows, keep) if rows else None
+            if got:
+                x, y = got["centre"][0] * mem.scale, got["centre"][1] * mem.scale
+                live_pose = LivePose(x_m=round(x, 2), y_m=round(y, 2), heading_deg=round(got["heading_deg"], 1),
+                                     inliers=got["inliers"], matches=got["matches"], focal_px=round(got["focal"], 1),
+                                     node=mem.node_at(x, y), frames=[mem.frames[i].id for i in rows])
     base["position"] = position
-    base["verified"] = {mem.frames[i].id: k for i, k in verified.items()} if verified else {}
-    if not by_node:
+    base["pose"] = live_pose
+    pose_node = live_pose.node if live_pose and live_pose.inliers >= pp.confirm_inliers else None
+    if not by_node and pose_node is None:
         return Localization(**base, status="lost", reason="no reference or memory frame belongs to a node",
                             candidates=[])
-    ranked = sorted(((max(s for s, _ in v), node) for node, v in by_node.items()), reverse=True)
+    ranked = sorted(((max(s for s, _ in v), node) for node, v in by_node.items()), reverse=True) or \
+        [(0.0, pose_node)]
 
     dist = index.distances_from(previous) if walked is not None and previous in names else None
 
@@ -343,7 +356,17 @@ def localize(index: RefIndex, queries: np.ndarray, thresholds: Thresholds, *, to
 
     best_score, best = ranked[0]
     margin = best_score - ranked[1][0] if len(ranked) > 1 else best_score
-    if best_score < thresholds.lost_score:
+    gate = "" if dist is None else f", {walked:.0f} m walked from the last confirmed node"
+    if pose_node is not None and plausible(pose_node) is not False:
+        best = pose_node
+        status, reason = "confirmed", f"pose: {live_pose.inliers} inliers at {names.get(best, best)}" + gate
+    elif pose_node is not None:
+        status, reason = "uncertain", (f"pose at {names.get(pose_node, pose_node)}, "
+                                       f"{dist.get(pose_node, math.inf):.0f} m from {names[previous]}, only "
+                                       f"{walked:.0f} m walked")
+    elif live_pose is not None and live_pose.inliers >= pp.confirm_inliers:
+        status, reason = "uncertain", "pose between nodes"
+    elif best_score < thresholds.lost_score:
         status, reason = "lost", f"best score {best_score:.2f} < {thresholds.lost_score:.2f}"
     elif best_score < thresholds.confirm_score:
         status, reason = "uncertain", f"best score {best_score:.2f} < {thresholds.confirm_score:.2f}"

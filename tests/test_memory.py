@@ -10,7 +10,7 @@ from nav.mapping.build import republish
 from nav.nav_api.app import create_nav_app
 from nav.nav_api.maps import MapCache
 from nav.infer.errors import InferenceUnavailable
-from nav.navigation.localize import MemoryIndex, VerifyParams
+from nav.navigation.localize import MemoryIndex, PoseParams
 from nav.schemas.map import MemoryFrame, MemoryInfo, PlaceMap
 from test_nav_api import API, DIM, JPEG, MODEL, THRESHOLDS, Places, axis, localize, publish
 from test_navigation import BUILD
@@ -19,24 +19,33 @@ from test_navigation import BUILD
 MEMORY = {"m0001": (0.5, 0.0, 5), "m0002": (9.0, 0.5, 6), "m0003": (5.0, -1.0, 7)}
 
 
-def add_memory(root, map_id: str, scale: float = 1.0, refs: bool = True) -> None:
+def add_memory(root, map_id: str, scale: float = 1.0, refs: bool = True, geometry: bool = False) -> None:
     """Give the published lshape map a visual memory (MEMORY); `scale`: as a review with a measured distance would
-    leave the published map (positions x scale), the memory staying in the build's frame."""
+    leave the published map (positions x scale), the memory staying in the build's frame. `geometry`: its frames
+    posed by a 3D model (geometry.npz: two observations per frame), for live poses."""
     build_rel = f"builds/{BUILD.build_id}"
     d = root / map_id / build_rel
     (d / "memory").mkdir(parents=True, exist_ok=True)
     frames, vectors = [], np.zeros((len(MEMORY), DIM), np.float32)
     for row, (fid, (x, y, ax)) in enumerate(MEMORY.items()):
         frames.append(MemoryFrame(id=fid, rec_id="r1", t_ms=row * 5000.0, image=f"{build_rel}/memory/{fid}.jpg",
-                                  x_m=x, y_m=y, heading_deg=90.0).model_dump())
+                                  x_m=x, y_m=y, heading_deg=90.0, posed=geometry,
+                                  row=row if geometry else None).model_dump())
         (d / "memory" / f"{fid}.jpg").write_bytes(JPEG)
         vectors[row] = axis(ax)
     (d / "memory.json").write_text(json.dumps({"frames": frames}))
     np.save(d / "memory.npy", vectors)
+    if geometry:
+        n = len(MEMORY)
+        np.savez(d / "geometry.npz", obs_frame=np.repeat(np.arange(n), 2).astype(np.int32),
+                 obs_xy=np.arange(4 * n, dtype=np.float32).reshape(2 * n, 2), obs_point=np.arange(2 * n, dtype=np.int32),
+                 points=np.arange(6 * n, dtype=np.float32).reshape(2 * n, 3))
     for path in (d / "map.json", root / map_id / "map.json"):
         m = PlaceMap.model_validate_json(path.read_text())
         m.memory = MemoryInfo(model=MODEL, dim=DIM, frames=len(MEMORY), file=f"{build_rel}/memory.json",
-                              embeddings=f"{build_rel}/memory.npy")
+                              embeddings=f"{build_rel}/memory.npy",
+                              geometry=f"{build_rel}/geometry.npz" if geometry else None,
+                              posed=len(MEMORY) if geometry else 0)
         if not refs:
             m.references, m.embedding = [], None
         if path.parent == root / map_id and scale != 1.0:
@@ -46,25 +55,28 @@ def add_memory(root, map_id: str, scale: float = 1.0, refs: bool = True) -> None
         path.write_text(m.model_dump_json())
 
 
-def client(root, verify_fn=None, **kw):
+def client(root, pose_fn=None, **kw):
     places = Places()
     app = create_nav_app(MapCache(root, reload_s=0, **kw), place_fn=places, api_token=None, cors_origins=[],
                          cors_origin_regex=None, frontend_url=None, thresholds=THRESHOLDS, capture=None,
-                         verify_fn=verify_fn, verify_params=VerifyParams(k=2, low=50, high=350, gain=0.5))
+                         pose_fn=pose_fn, pose_params=PoseParams(k=2, confirm_inliers=40))
     return TestClient(app), places
 
 
-class Verifier:
-    """Stand-in for LightGlue on the inference host: inliers per memory frame id, the same for every live frame."""
+class Poser:
+    """Stand-in for the inference host's live pose: one answer for every live frame (the last frame's is best)."""
 
-    def __init__(self, inliers: dict[str, int] | Exception):
-        self.inliers, self.calls = inliers, []
+    def __init__(self, centre=(9.5, 0.2), inliers: int = 120, fail: Exception | None = None):
+        self.centre, self.inliers, self.fail, self.calls = centre, inliers, fail, []
 
     def __call__(self, images, refs):
-        self.calls.append((len(images), [k for k, _ in refs]))
-        if isinstance(self.inliers, Exception):
-            raise self.inliers
-        return [[self.inliers.get(k.rsplit("/", 1)[1], 0) for k, _ in refs] for _ in images]
+        self.calls.append((len(images), [k for k, _, _ in refs], [obs().shape for _, _, obs in refs]))
+        if self.fail:
+            raise self.fail
+        out = [None] * (len(images) - 1)
+        return out + [{"inliers": self.inliers, "matches": 300, "centre": [*self.centre, 0.1], "heading_deg": 91.0,
+                       "focal": 900.0, "R": [1, 0, 0, 0, 1, 0, 0, 0, 1], "t": [0, 0, 0], "size": [576, 1024],
+                       "per_ref": [self.inliers, 0]}]
 
 
 def test_a_frame_like_a_memory_frame_gives_its_position_and_the_node_whose_region_it_is_in(tmp_path):
@@ -76,7 +88,8 @@ def test_a_frame_like_a_memory_frame_gives_its_position_and_the_node_whose_regio
         j = localize(c, map_id).json()
         assert j["best"] == "n2" and j["status"] == "confirmed"
         assert j["position"] == {"x_m": 9.0, "y_m": 0.5, "heading_deg": 90.0, "frame": "m0002", "rec_id": "r1",
-                                 "t_ms": 5000.0, "score": 1.0, "node": "n2", "inliers": None}
+                                 "t_ms": 5000.0, "score": 1.0, "node": "n2"}
+        assert j["pose"] is None  # no 3D model
         top = j["candidates"][0]["refs"][0]
         assert top["role"] == "memory" and top["id"] == "m0002"
         assert top["image"] == f"builds/{BUILD.build_id}/memory/m0002.jpg"
@@ -133,31 +146,57 @@ def test_republishing_keeps_the_memory(tmp_path):
     assert out.memory and out.memory.frames == 3
 
 
-def test_verified_frames_decide_what_the_embedding_leaves_open(tmp_path):
+def test_a_pose_confirms_the_node_it_is_in_over_what_the_embeddings_say(tmp_path):
     map_id = publish(tmp_path / "maps")
-    add_memory(tmp_path / "maps", map_id)
-    v = Verifier({"m0002": 350, "m0001": 40})
-    c, places = client(tmp_path / "maps", verify_fn=v)
+    add_memory(tmp_path / "maps", map_id, geometry=True)
+    poser = Poser(centre=(9.5, 0.2), inliers=120)
+    c, places = client(tmp_path / "maps", pose_fn=poser)
     with c:
-        places.answer = np.stack([unit_of(5, 6), unit_of(5, 6)])  # as much like m0001 (n1) as m0002 (n2)
+        places.answer = np.stack([axis(5), axis(5)])  # looks like m0001, at n1 ...
         j = localize(c, map_id, n=2).json()
-        assert v.calls == [(2, [f"{map_id}/{BUILD.build_id}/m0001", f"{map_id}/{BUILD.build_id}/m0002"])] or \
-            v.calls == [(2, [f"{map_id}/{BUILD.build_id}/m0002", f"{map_id}/{BUILD.build_id}/m0001"])]
-        assert j["best"] == "n2" and j["margin"] == pytest.approx(0.5, abs=1e-3) and j["status"] == "confirmed"
-        assert j["position"]["frame"] == "m0002" and j["position"]["inliers"] == 350
-        assert j["position"]["score"] == pytest.approx(0.7071, abs=1e-3)  # the cosine, not the verified score
-        assert j["verified"] == {"m0002": 350, "m0001": 40} and "verify" in j["took_ms"]
+        assert j["candidates"][0]["node"] == "n1"  # ... so the embeddings lead with n1 (the belief still sees that)
+        assert j["best"] == "n2" and j["status"] == "confirmed" and j["reason"].startswith("pose: 120 inliers at")
+        assert j["pose"] == {"x_m": 9.5, "y_m": 0.2, "heading_deg": 91.0, "inliers": 120, "matches": 300,
+                             "focal_px": 900.0, "node": "n2", "frames": j["pose"]["frames"]}
+        n, keys, shapes = poser.calls[0]
+        assert n == 2 and j["pose"]["frames"][0] == "m0001" and len(keys) == 2  # the best posed frames
+        assert keys == [f"{map_id}/{BUILD.build_id}/{f}" for f in j["pose"]["frames"]]
+        assert shapes == [(2, 5), (2, 5)] and "pose" in j["took_ms"]
 
 
-def test_without_the_verifier_the_answer_is_the_unverified_one(tmp_path):
+def test_a_weak_pose_or_one_between_nodes_confirms_nothing(tmp_path):
     map_id = publish(tmp_path / "maps")
-    add_memory(tmp_path / "maps", map_id)
-    c, places = client(tmp_path / "maps", verify_fn=Verifier(InferenceUnavailable("host down")))
+    add_memory(tmp_path / "maps", map_id, geometry=True)
+    c, places = client(tmp_path / "maps", pose_fn=Poser(centre=(9.5, 0.2), inliers=20))
+    with c:
+        places.answer = axis(5)[None]
+        j = localize(c, map_id).json()
+        assert j["pose"]["inliers"] == 20 and j["best"] == "n1" and not j["reason"].startswith("pose")
+    c, places = client(tmp_path / "maps", pose_fn=Poser(centre=(5.0, -5.0), inliers=200))
     with c:
         places.answer = axis(6)[None]
         j = localize(c, map_id).json()
-        assert j["best"] == "n2" and j["verified"] == {} and j["position"]["inliers"] is None
-        assert j["took_ms"]["verify_failed"] == 1
+        assert j["pose"]["node"] is None and j["status"] == "uncertain" and j["reason"] == "pose between nodes"
+
+
+def test_a_pose_follows_the_review_scale(tmp_path):
+    map_id = publish(tmp_path / "maps")
+    add_memory(tmp_path / "maps", map_id, scale=2.0, geometry=True)
+    c, places = client(tmp_path / "maps", pose_fn=Poser(centre=(9.5, 0.2)), memory_radius_m=3.0)
+    with c:
+        places.answer = axis(6)[None]
+        j = localize(c, map_id).json()
+        assert (j["pose"]["x_m"], j["pose"]["y_m"], j["pose"]["node"]) == (19.0, 0.4, "n2")
+
+
+def test_without_the_pose_host_the_answer_has_no_pose(tmp_path):
+    map_id = publish(tmp_path / "maps")
+    add_memory(tmp_path / "maps", map_id, geometry=True)
+    c, places = client(tmp_path / "maps", pose_fn=Poser(fail=InferenceUnavailable("host down")))
+    with c:
+        places.answer = axis(6)[None]
+        j = localize(c, map_id).json()
+        assert j["best"] == "n2" and j["pose"] is None and j["took_ms"]["pose_failed"] == 1
 
 
 def unit_of(*axes: int) -> np.ndarray:

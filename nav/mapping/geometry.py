@@ -639,3 +639,86 @@ def build_geometry(rec_dirs: list[Path], cache_root: Path, build_dir: Path, plac
             warnings.append(f"geometry: walk {rec} has {w['posed']} of {w['frames']} frames posed by the 3D model; "
                             f"the rest is placed by dead reckoning")
     return geo
+
+
+# --- live poses (the inference host) -----------------------------------------------------------------------------
+POSE_MATCH_PX = 1.0  # a matched model-frame keypoint is the one of its 3D observations this close
+RANSAC_MAX_ERROR_PX = 12.0  # at LONG_SIDE
+
+
+@dataclass
+class PoseRef:
+    """A memory frame ready to match live frames against: its ALIKED features (CPU, half precision) and the 3D points
+    its keypoints see (pixel xy at LONG_SIDE, map-frame xyz)."""
+
+    feats: dict
+    obs_xy: np.ndarray  # [K, 2]
+    obs_xyz: np.ndarray  # [K, 3]
+
+
+def pose_ref(image: np.ndarray, obs_xy: np.ndarray, obs_xyz: np.ndarray) -> PoseRef:
+    f = extract(fit_long_side(image))
+    return PoseRef({k: v.cpu() for k, v in f.items()}, np.asarray(obs_xy, np.float32), np.asarray(obs_xyz, np.float64))
+
+
+def fit_long_side(image: np.ndarray, long_side: int = LONG_SIDE) -> np.ndarray:
+    """The image at long_side px (live frames come smaller or larger; ALIKED isn't scale-invariant)."""
+    import cv2
+
+    h, w = image.shape[:2]
+    k = long_side / max(h, w)
+    if abs(k - 1) < 1e-3:
+        return image
+    return cv2.resize(image, (round(w * k), round(h * k)), interpolation=cv2.INTER_AREA if k < 1 else cv2.INTER_CUBIC)
+
+
+def solve_pose(query: np.ndarray, refs: list[PoseRef]) -> dict | None:
+    """The camera pose of a live frame against memory frames: LightGlue with each, the matched keypoints' 3D points,
+    PnP + RANSAC with the focal length estimated (a live phone's is unknown). -> {inliers, matches, R, t, centre,
+    focal, per_ref} in the map frame, or None without enough correspondences."""
+    import pycolmap
+    from scipy.spatial import cKDTree
+
+    from nav.mapping.models import _device
+
+    img = fit_long_side(query)
+    h, w = img.shape[:2]
+    fq = extract(img)
+    p2d, p3d, per_ref = [], [], []
+    for r in refs:
+        if not len(r.obs_xy):
+            per_ref.append(0)
+            continue
+        fr = {k: v.to(_device()) for k, v in r.feats.items()}
+        m = match(fq, fr)
+        if not len(m):
+            per_ref.append(0)
+            continue
+        kq = fq["keypoints"][0].cpu().numpy()[m[:, 0]]
+        kr = fr["keypoints"][0].cpu().numpy()[m[:, 1]]
+        d, j = cKDTree(r.obs_xy).query(kr, distance_upper_bound=POSE_MATCH_PX)
+        ok = np.isfinite(d)
+        p2d.append(kq[ok])
+        p3d.append(r.obs_xyz[j[ok]])
+        per_ref.append(int(ok.sum()))
+    if not p2d or sum(len(a) for a in p2d) < 6:
+        return None
+    p2d = np.concatenate(p2d).astype(np.float64) + 0.5
+    p3d = np.concatenate(p3d)
+    cam = pycolmap.Camera(model="SIMPLE_PINHOLE", width=w, height=h, params=[1.2 * max(w, h), w / 2, h / 2])
+    est = pycolmap.AbsolutePoseEstimationOptions()
+    est.estimate_focal_length = True
+    est.ransac.max_error = RANSAC_MAX_ERROR_PX
+    ref = pycolmap.AbsolutePoseRefinementOptions()
+    ref.refine_focal_length = True
+    got = pycolmap.estimate_and_refine_absolute_pose(p2d, p3d, cam, est, ref)
+    if got is None:
+        return None
+    cfw = got["cam_from_world"]
+    R = np.asarray(cfw.rotation.matrix())
+    t = np.asarray(cfw.translation, float).reshape(3)
+    centre = -R.T @ t
+    axis = R.T @ np.array([0.0, 0.0, 1.0])
+    return {"inliers": int(got["num_inliers"]), "matches": int(len(p2d)), "centre": centre.tolist(),
+            "heading_deg": float(np.degrees(np.arctan2(axis[0], axis[1])) % 360), "R": R.ravel().tolist(),
+            "t": t.tolist(), "focal": float(cam.focal_length), "size": [w, h], "per_ref": per_ref}

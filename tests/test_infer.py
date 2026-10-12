@@ -40,19 +40,20 @@ class Stub:
         self.calls.append(("match", len(images), len(pairs)))
         return [len(images[i]) + len(images[j]) for i, j in pairs]
 
-    def verify(self, queries, refs):
-        """Inliers = query length x 10 + reference length; references by key, cached once seen (as LocalBackend)."""
+    def pose(self, queries, refs):
+        """inliers = query length x 10 + the references' image lengths; references by key, cached once seen with their
+        image and observations (as LocalBackend)."""
         from nav.infer.errors import MissingFeatures
 
         self.cached = getattr(self, "cached", {})
-        missing = [k for k, b in refs if b is None and k not in self.cached]
+        missing = [k for k, img, obs in refs if (img is None or obs is None) and k not in self.cached]
         if missing:
             raise MissingFeatures(missing)
-        for k, b in refs:
-            if b is not None:
-                self.cached[k] = len(b)
-        self.calls.append(("verify", len(queries), [k for k, b in refs if b is not None]))
-        return [[10 * len(q) + self.cached[k] for k, _ in refs] for q in queries]
+        for k, img, obs in refs:
+            if img is not None:
+                self.cached[k] = len(img)
+        self.calls.append(("pose", len(queries), [k for k, img, _ in refs if img is not None]))
+        return [{"inliers": 10 * len(q) + sum(self.cached[k] for k, _, _ in refs)} for q in queries]
 
     def detect_language(self, path, model):
         return {"en": 0.8, "es": 0.2}
@@ -287,32 +288,32 @@ def test_live_frames_go_in_the_live_lane(host):
     assert seen == [(1, 0), (0, 1)]
 
 
-def test_live_verification_sends_memory_frames_only_when_the_host_lacks_them(host):
+def test_live_pose_sends_memory_frames_only_when_the_host_lacks_them(host):
     stub, client, http = host
     gpu, seen = http.app.state.gpu, []
-    verify = stub.verify
+    pose = stub.pose
 
     def spy(queries, refs):
         seen.append(gpu.live_pending)
-        return verify(queries, refs)
+        return pose(queries, refs)
 
-    stub.verify = spy
+    stub.pose = spy
     loads = []
 
     def ref(key, size):
-        return key, lambda: loads.append(key) or b"r" * size
+        return key, (lambda: loads.append(key) or b"r" * size), (lambda: np.ones((3, 5), np.float32))
 
-    got = client.verify_live([b"ab", b"abc"], [ref("m/b/m0001", 5), ref("m/b/m0002", 7)], deadline_s=2)
-    assert got == [[25, 27], [35, 37]] and loads == ["m/b/m0001", "m/b/m0002"]
-    got = client.verify_live([b"a"], [ref("m/b/m0002", 7), ref("m/b/m0003", 1)], deadline_s=2)
-    assert got == [[17, 11]] and loads[2:] == ["m/b/m0003"]  # m0002 was cached: only m0003 travels
-    assert [c for c in stub.calls if c[0] == "verify"] == [("verify", 2, ["m/b/m0001", "m/b/m0002"]),
-                                                            ("verify", 1, ["m/b/m0003"])]
+    got = client.pose_live([b"ab", b"abc"], [ref("m/b/m0001", 5), ref("m/b/m0002", 7)], deadline_s=2)
+    assert got == [{"inliers": 32}, {"inliers": 42}] and loads == ["m/b/m0001", "m/b/m0002"]
+    got = client.pose_live([b"a"], [ref("m/b/m0002", 7), ref("m/b/m0003", 1)], deadline_s=2)
+    assert got == [{"inliers": 18}] and loads[2:] == ["m/b/m0003"]  # m0002 was cached: only m0003 travels
+    assert [c for c in stub.calls if c[0] == "pose"] == [("pose", 2, ["m/b/m0001", "m/b/m0002"]),
+                                                          ("pose", 1, ["m/b/m0003"])]
     assert seen and all(n == 1 for n in seen)  # the live lane
-    r = http.post("/infer/v1/verify", data={"refs": "[]"}, files=[("queries", ("q.jpg", b"x", "image/jpeg"))])
+    r = http.post("/infer/v1/pose", data={"refs": "[]"}, files=[("queries", ("q.jpg", b"x", "image/jpeg"))])
     assert r.status_code == 422
-    r = http.post("/infer/v1/verify", data={"refs": '["k"]'}, files=[("queries", ("q.jpg", b"x", "image/jpeg")),
-                                                                      ("ref_images", ("7.jpg", b"x", "image/jpeg"))])
+    r = http.post("/infer/v1/pose", data={"refs": '["k"]'}, files=[("queries", ("q.jpg", b"x", "image/jpeg")),
+                                                                    ("ref_images", ("7.jpg", b"x", "image/jpeg"))])
     assert r.status_code == 422 and "index" in r.json()["detail"]
 
 
@@ -327,21 +328,32 @@ def test_feature_cache_drops_the_least_recently_used():
     assert c.get("b") is None and c.get("a") and c.get("c") and len(c) == 2
 
 
-def test_verify_asks_for_what_it_has_not_seen(monkeypatch):
-    from nav.infer.errors import MissingFeatures
-    from nav.mapping import models
+def test_the_pose_backend_asks_for_what_it_has_not_seen(monkeypatch):
+    import io
 
-    monkeypatch.setattr(models, "local_features", lambda img: {"n": int(img)})
-    monkeypatch.setattr(models, "_compact", lambda f: f)
-    monkeypatch.setattr(models, "_on_device", lambda c: c)
-    monkeypatch.setattr(models, "fit_long_side", lambda img, n: img)
-    monkeypatch.setattr(models, "count_inliers", lambda a, b: a["n"] * 100 + b["n"])
-    cache = models.FeatureCache()
+    from nav.infer.errors import MissingFeatures
+    from nav.infer.server import LocalBackend
+    from nav.mapping import geometry, inference
+
+    monkeypatch.setattr(inference, "load_rgb", lambda b: int(b.decode()))
+    monkeypatch.setattr(geometry, "pose_ref", lambda img, xy, xyz: (img, len(xy)))
+    monkeypatch.setattr(geometry, "solve_pose", lambda q, refs: {"q": q, "refs": refs})
+    backend = LocalBackend.__new__(LocalBackend)
+    from nav.mapping.models import FeatureCache
+
+    backend.features = FeatureCache()
+
+    def obs(n):
+        buf = io.BytesIO()
+        np.save(buf, np.zeros((n, 5), np.float32))
+        return buf.getvalue()
+
     with pytest.raises(MissingFeatures) as e:
-        models.verify([1], [("k1", None), ("k2", lambda: 2)], cache)
+        backend.pose([b"1"], [("k1", None, None), ("k2", b"2", obs(4))])
     assert e.value.keys == ["k1"]
-    assert models.verify([1, 3], [("k1", lambda: 5), ("k2", lambda: 2)], cache) == [[105, 102], [305, 302]]
-    assert models.verify([4], [("k1", None)], cache) == [[405]]  # from the cache now
+    got = backend.pose([b"1", b"3"], [("k1", b"5", obs(2)), ("k2", b"2", obs(4))])
+    assert got == [{"q": 1, "refs": [(5, 2), (2, 4)]}, {"q": 3, "refs": [(5, 2), (2, 4)]}]
+    assert backend.pose([b"4"], [("k1", None, None)]) == [{"q": 4, "refs": [(5, 2)]}]  # from the cache now
 
 
 def test_degenerate_matches_have_no_inliers_instead_of_an_error():

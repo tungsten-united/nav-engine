@@ -78,7 +78,20 @@ class LivePosition(BaseModel):
     t_ms: float
     score: float  # place-embedding cosine with it (mean over the burst)
     node: str | None = None  # the node whose region it is in (nearest node within the memory radius)
-    inliers: int | None = None  # local features matched with it in one geometry (None: not verified)
+
+
+class LivePose(BaseModel):
+    """The camera pose of the live frames from the map's 3D model (nav/mapping/geometry.py): matched against the best
+    posed memory frames, their 3D points, PnP. Map frame, metres (the review's scale applied), heading clockwise."""
+
+    x_m: float
+    y_m: float
+    heading_deg: float  # where the camera faces
+    inliers: int  # 2D-3D correspondences that fit the pose: the more, the surer (40+ confirms its node)
+    matches: int  # correspondences tried
+    focal_px: float  # the camera's focal length the pose implies, at 1024 px on the long side
+    node: str | None = None  # the nearest node within the memory radius (None: between nodes)
+    frames: list[str] = []  # the memory frames it was matched against
 
 
 class Thresholds(BaseModel):
@@ -134,5 +147,5 @@ class Localization(BaseModel):
     walked_m: float | None = None  # since `previous`: (stepCount - previous_step_count) x the map's live step length
     thresholds: Thresholds
     took_ms: dict[str, float]  # embed (the inference host), match, total
-    position: LivePosition | None = None  # with a visual memory: where the frames were taken
-    verified: dict[str, int] = {}  # memory frame id -> LightGlue inliers with the live frames (the frames checked)
+    position: LivePosition | None = None  # with a visual memory: where the frame they look most like was taken
+    pose: LivePose | None = None  # with a 3D model: where the camera is and which way it faces

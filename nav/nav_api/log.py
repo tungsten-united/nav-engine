@@ -54,7 +54,7 @@ def localized(res: Localization, who: dict) -> dict:
     what = res.status
     if top:
         what += f" {top.name} {top.score:.2f}" + (f" (±{res.margin:.2f})" if res.margin is not None else "")
-    if res.status != "confirmed":
+    if res.status != "confirmed" or not top:
         what += f": {res.reason}"
     if res.expected:
         what += f" · expected {res.expected} #{res.expected_rank}" if res.expected_rank else f" · expected {res.expected}"
@@ -65,6 +65,8 @@ def localized(res: Localization, who: dict) -> dict:
                  expectedRank=res.expected_rank, headingDeg=res.heading_map_deg, frames=res.frames,
                  framesUsed=res.frames_used, walkedM=res.walked_m, distanceM=top.distance_m if top else None,
                  plausible=top.plausible if top else None, model=res.model or None,
+                 poseInliers=res.pose.inliers if res.pose else None, poseNode=res.pose.node if res.pose else None,
+                 poseXY=[res.pose.x_m, res.pose.y_m] if res.pose else None,
                  tookMs=res.took_ms, message=f"localize {res.map_id} · {what}" + (f" · {took:.0f} ms" if took else ""),
                  severity="WARNING" if res.status == "lost" else "INFO")
 

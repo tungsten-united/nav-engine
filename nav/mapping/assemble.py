@@ -217,8 +217,8 @@ def finish(draft: MapDraft, cset: CandidateSet, layout: Layout, build: BuildInfo
                                                                                          y_m=round(pos[1], 2))))
     by_id = {n.id: n for n in nodes}
     to_stable = {v: k for k, v in lid.items() if v}
-    passes = [topology.Pass(p.rec_id, to_stable[p.a], to_stable[p.b], p.i_leave, p.i_reach, p.t_leave, p.t_reach)
-              for p in layout.passes if p.a in to_stable and p.b in to_stable]
+    passes = [topology.Pass(p.rec_id, to_stable[p.a], to_stable[p.b], p.i_leave, p.i_reach, p.t_leave, p.t_reach,
+                            p.t_arrive) for p in layout.passes if p.a in to_stable and p.b in to_stable]
 
     edges = []
     for e in draft.edges:

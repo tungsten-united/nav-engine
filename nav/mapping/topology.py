@@ -175,6 +175,7 @@ class Pass:
     i_reach: int  # first index at b
     t_leave: float
     t_reach: float
+    t_arrive: float = 0.0  # when the walk came to a (the visit's first sample)
 
     def length_m(self, path: WalkPath) -> float:
         xy = path.xy[self.i_leave:self.i_reach + 1]
@@ -217,7 +218,8 @@ def passes(paths: dict[str, WalkPath], nodes: dict[str, tuple[float, float]],
     for rec, path in paths.items():
         vs = visits(path, nodes, radius)
         for v, w in zip(vs, vs[1:]):
-            out.append(Pass(rec, v.node, w.node, v.i1, w.i0, float(path.t[v.i1]), float(path.t[w.i0])))
+            out.append(Pass(rec, v.node, w.node, v.i1, w.i0, float(path.t[v.i1]), float(path.t[w.i0]),
+                            float(path.t[v.i0])))
     return out
 
 
@@ -312,10 +314,17 @@ def edge_geometry(source: str, target: str, ps: list[Pass], paths: dict[str, Wal
         xy = xy[::-1]
     ends = [positions[source], *[(float(x), float(y)) for x, y in xy if not np.isnan(x)], positions[target]]
     pts = [Point(x_m=round(x, 2), y_m=round(y, 2)) for x, y in ends]
-    distance = min(p.length_m(paths[p.rec_id]) for p in ps)
+
+    def centre_to_centre(p: Pass) -> float:
+        a, b = (positions[p.a], positions[p.b])
+        inner = paths[p.rec_id].xy[p.i_leave:p.i_reach + 1]
+        line = np.array([a, *[q for q in inner if not np.isnan(q[0])], b], float)
+        return float(np.sum(np.hypot(*np.diff(line, axis=0).T)))
+    distance = min(centre_to_centre(p) for p in ps)  # the shortest pass, from one node's middle to the other's
     turn = dep = arr = None
     if best.a == source:
-        h_end = path.mean_heading(best.t_leave - 1000, best.t_leave)  # how you stand there
+        # how the walk stood at the source: as it came there (a turn made at the spot is the departure's turn)
+        h_end = path.mean_heading(best.t_arrive - 1000, best.t_arrive + 1000)
         h_out = path.mean_heading(best.t_leave + 1, best.t_leave + TURN_WINDOW_MS)
         if h_end is not None and h_out is not None:
             turn = round(angle_diff(h_end, h_out))
