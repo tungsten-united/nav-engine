@@ -519,6 +519,9 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+bench-metric = [
+    { name = "pycolmap" },
+]
 dev = [
     { name = "httpx" },
     { name = "pytest" },
@@ -551,6 +554,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+bench-metric = [{ name = "pycolmap", specifier = ">=4.2" }]
 dev = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "pytest", specifier = ">=8" },
@@ -853,6 +857,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/bb/e4/5bae3133b7fe04c24907a20f3bc1fba388cbbde659199e7b76445982047a/pyarrow-26.0.0-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:954d971b363b16ee41f89389a4053315dc71265f2ce5c2468eb0a910b1166268", size = 54444720, upload-time = "2026-10-09T08:14:31.214Z" },
     { url = "https://files.pythonhosted.org/packages/ba/b4/ee422493bb6dafdbef776cfe2c2a73106a1063a79bf4e78d1e5f51176885/pyarrow-26.0.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:5d5768d03426abe6526d5274adefa00abf00a7f81118c46e98b5a46390f5549e", size = 57388949, upload-time = "2026-10-09T08:14:38.964Z" },
     { url = "https://files.pythonhosted.org/packages/54/3c/1783aab1dac28e175dcf26dfc7123725efc474caecaed91e8a34cb89cad0/pyarrow-26.0.0-cp312-cp312-win_amd64.whl", hash = "sha256:cc903e1069e9dd5e9dcf780324c0112e27e051e422ecfaff574fb33ed65d9160", size = 28567581, upload-time = "2026-10-09T08:14:44.279Z" },
+]
+
+[[package]]
+name = "pycolmap"
+version = "4.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5a/1c/a3a80bb2a2b705b2e94074498fcd8a9de031f16a14fedaeb9a3628e7abb0/pycolmap-4.2.1-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:1cacb57103909bb0adec666b06122add8ea8024682d83fc5903145e01297f243", size = 20785309, upload-time = "2026-09-29T17:04:33.333Z" },
+    { url = "https://files.pythonhosted.org/packages/a5/9a/a76e54e33730eceecb5da7eca38ad939cd6c69633339b3a53cf7299f7ea9/pycolmap-4.2.1-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:711cef7bd0d30326a5d75967043371c98667f24db305b8cd5cd19339d02a7073", size = 38191187, upload-time = "2026-09-29T17:04:38.813Z" },
+    { url = "https://files.pythonhosted.org/packages/80/ab/bc60b841c8be56354bfad1b4c7b1f9b15ba92e4f2285f394b3a5dbaa27c7/pycolmap-4.2.1-cp312-cp312-win_amd64.whl", hash = "sha256:b6a562b33bcbf0757c7b28c33b9166e095fa5451f9a4b38236018cf8a8d49380", size = 23973043, upload-time = "2026-09-29T17:04:42.469Z" },
 ]
 
 [[package]]
