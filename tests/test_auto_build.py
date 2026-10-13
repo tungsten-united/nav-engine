@@ -91,3 +91,21 @@ def test_off_and_unusable_walks_build_nothing(tmp_path, webm):
         assert r.status_code == 202 and c.get(f"{API}/recordings/{rec_id}").json()["video"] is None
     time.sleep(0.3)
     assert fake.calls == [] and statuses(tmp_path) == [] and statuses(tmp_path / "b") == []
+
+
+def test_a_published_build_warms_the_hosts_pose_cache_at_once(tmp_path, webm):
+    class Warmer:
+        kicks = 0
+
+        def kick(self):
+            self.kicks += 1
+
+    published_map = SimpleNamespace(map=object(), candidates=SimpleNamespace(candidates=[]))
+    warmer = Warmer()
+    a = create_app(RecordingStore(tmp_path / "recordings"), MapStore(tmp_path / "maps"), api_token=None, web_dir=None,
+                   cache_dir=tmp_path / "cache", auto_build=True, pose_warm=warmer,
+                   build_map_fn=lambda place, **kw: published_map)
+    with TestClient(a) as c:
+        walk(c, webm)
+        wait_for(lambda: statuses(tmp_path) and statuses(tmp_path)[0]["status"] == "done")
+    assert warmer.kicks == 1 and a.state.pose_warmer is warmer

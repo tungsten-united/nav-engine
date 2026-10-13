@@ -55,6 +55,20 @@ class Stub:
         self.calls.append(("pose", len(queries), [k for k, img, _ in refs if img is not None]))
         return [{"inliers": 10 * len(q) + sum(self.cached[k] for k, _, _ in refs)} for q in queries]
 
+    def warm(self, refs):
+        """As LocalBackend.warm, on pose's cache: references given with their image are cached."""
+        self.cached = getattr(self, "cached", {})
+        self.calls.append(("warm", [k for k, img, _ in refs if img is not None]))
+        missing = []
+        for k, img, obs in refs:
+            if k in self.cached:
+                continue
+            if img is None or obs is None:
+                missing.append(k)
+            else:
+                self.cached[k] = len(img)
+        return {"missing": missing, "cached": len(self.cached), "capacity": 100}
+
     def geometry(self, work_dir):
         """Checks every frame of job.json arrived, then leaves what map_stage would: raw.npz and summary.json."""
         frames = json.loads((work_dir / "job.json").read_text())["frames"]
@@ -334,6 +348,33 @@ def test_live_pose_sends_memory_frames_only_when_the_host_lacks_them(host):
     assert r.status_code == 422 and "index" in r.json()["detail"]
 
 
+def test_warming_sends_only_the_memory_frames_the_host_lacks_behind_live_frames(host):
+    stub, client, http = host
+    gpu, lanes = http.app.state.gpu, []
+    warm = stub.warm
+
+    def spy(refs):
+        lanes.append(gpu.live_pending)
+        return warm(refs)
+
+    stub.warm = spy
+    loads = []
+    refs = [(f"m/b/m{i:04d}", (lambda i=i: loads.append(i) or b"r" * (i + 1)), (lambda: np.ones((3, 5), np.float32)))
+            for i in range(5)]
+    client.pose_live([b"q"], refs[:1], deadline_s=2)  # a live pose left m0000 cached
+    assert client.warm_poses(refs, chunk=2) == {"sent": 4, "cached": 5, "capacity": 100}
+    assert loads == [0, 1, 2, 3, 4]  # each image read once: m0000 by the live pose, the others by the warm-up
+    assert [c for c in stub.calls if c[0] == "warm"] == [("warm", []), ("warm", ["m/b/m0001", "m/b/m0002"]),
+                                                         ("warm", ["m/b/m0003", "m/b/m0004"])]
+    assert lanes == [0, 0, 0]  # batch calls, never the live lane
+    assert client.warm_poses(refs) == {"sent": 0, "cached": 5, "capacity": 100}
+    client.pose_live([b"q"], refs[3:], deadline_s=2)
+    assert loads == [0, 1, 2, 3, 4] and stub.calls[-1] == ("pose", 1, [])  # warm: the live pose sent keys only
+    r = http.post("/infer/v1/pose/warm", data={"refs": json.dumps([f"k{i}" for i in range(17)])},
+                  files=[("ref_images", (f"{i}.jpg", b"x", "image/jpeg")) for i in range(17)])
+    assert r.status_code == 422 and "16" in r.json()["detail"]
+
+
 def test_feature_cache_drops_the_least_recently_used():
     from nav.mapping.models import FeatureCache
 
@@ -371,6 +412,9 @@ def test_the_pose_backend_asks_for_what_it_has_not_seen(monkeypatch):
     got = backend.pose([b"1", b"3"], [("k1", b"5", obs(2)), ("k2", b"2", obs(4))])
     assert got == [{"q": 1, "refs": [(5, 2), (2, 4)]}, {"q": 3, "refs": [(5, 2), (2, 4)]}]
     assert backend.pose([b"4"], [("k1", None, None)]) == [{"q": 4, "refs": [(5, 2)]}]  # from the cache now
+    assert backend.warm([("k1", None, None), ("k3", None, None), ("k4", b"4", obs(3))]) == \
+        {"missing": ["k3"], "cached": 3, "capacity": 3000}
+    assert backend.pose([b"6"], [("k4", None, None)]) == [{"q": 6, "refs": [(4, 3)]}]  # warmed: no 409
 
 
 def test_degenerate_matches_have_no_inliers_instead_of_an_error():

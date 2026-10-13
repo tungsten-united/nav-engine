@@ -33,6 +33,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from nav import config, web
 from nav.infer.errors import InferenceError, InferenceUnavailable
+from nav.mapping.memory import pose_key
 from nav.nav_api import log
 from nav.nav_api.capture import Capture
 from nav.nav_api.maps import MapCache
@@ -271,7 +272,7 @@ def create_nav_app(maps: MapCache | None = None, *, place_fn=None, infer_health_
             def pose(rows: list[int], frames: list[int]) -> dict | None:
                 """The best frame's pose from the inference host; an answer without one beats none (logged)."""
                 mem, build = index.memory, index.pmap.build.build_id
-                refs = [(f"{map_id}/{build}/{mem.frames[i].id}", maps.store.dir(map_id) / mem.frames[i].image,
+                refs = [(pose_key(map_id, build, mem.frames[i].id), maps.store.dir(map_id) / mem.frames[i].image,
                          (lambda r=mem.frames[i].row: mem.geometry.obs(r))) for i in rows]
                 t = time.perf_counter()
                 try:

@@ -19,6 +19,9 @@ It shares one GPU with whatever else runs on this computer, so it protects itsel
                                -> {poses: [pose or null per query]}; live (nav-api): the camera frames posed against
                                memory frames (geometry.solve_pose), whose features stay cached by key; 409 {missing:
                                [key]} asks for the image and observations of the ones not cached
+    POST /infer/v1/pose/warm   refs: [key], ref_images[]?, ref_obs[]? (as /pose) -> {missing, cached, capacity}; batch
+                               (map-api): caches memory frames' features ahead of live poses; keys alone: which of
+                               them it lacks
     POST /infer/v1/language    audio, model                    -> {probs: {code: p}}, Whisper's language guess
     POST /infer/v1/transcribe  audio, model, language?         -> {text}
     POST /infer/v1/jobs/map-draft   job_id, place, language, model, effort, budget_usd, stage (places | routes),
@@ -60,6 +63,7 @@ MAX_IMAGES = 32  # per embed / place request
 MAX_PAIRS = 64  # per match request ...
 MAX_POSE_QUERIES = 4  # a burst
 MAX_POSE_REFS = 16
+MAX_WARM_KEYS = 10000  # keys per warm-up check (no model call)
 MAX_MATCH_IMAGES = 48  # ... over at most this many distinct images
 MAX_BODY = 16 * 1024 * 1024  # model requests
 MAX_JOB_BODY = 96 * 1024 * 1024  # map jobs (candidates + up to MAX_JOB_FRAMES frames); Cloudflare allows 100 MB
@@ -80,6 +84,7 @@ class Backend(Protocol):
     def place(self, images: list[bytes], model: str) -> np.ndarray: ...
     def match(self, images: list[bytes], pairs: list[tuple[int, int]]) -> list[int]: ...
     def pose(self, queries: list[bytes], refs: list[tuple[str, bytes | None, bytes | None]]) -> list[dict | None]: ...
+    def warm(self, refs: list[tuple[str, bytes | None, bytes | None]]) -> dict: ...
     def detect_language(self, path: Path, model: str) -> dict[str, float]: ...
     def transcribe(self, path: Path, model: str, language: str | None = None) -> str: ...
     def map_draft(self, work_dir: Path, place: str, language: str, model: str, effort: str, budget_usd: float,
@@ -130,6 +135,25 @@ class LocalBackend:
                 self.features.put(k, r)
             rs.append(r)
         return [solve_pose(load_rgb(q), rs) for q in queries]
+
+    def warm(self, refs):
+        """Memory frames' features cached ahead of live poses: those given (image and observations) are extracted,
+        -> the keys neither cached nor given, and how full the cache is."""
+        import io
+
+        from nav.mapping.geometry import pose_ref
+        from nav.mapping.inference import load_rgb
+
+        missing = []
+        for k, img, obs in refs:
+            if self.features.get(k) is not None:
+                continue
+            if img is None or obs is None:
+                missing.append(k)
+                continue
+            o = np.load(io.BytesIO(obs))
+            self.features.put(k, pose_ref(load_rgb(img), o[:, :2], o[:, 2:5]))
+        return {"missing": missing, "cached": len(self.features), "capacity": self.features.size}
 
     def detect_language(self, path, model):
         from nav.mapping.models import detect_language
@@ -376,8 +400,10 @@ def create_infer_app(backend: Backend | None = None, jobs_dir: Path | None = Non
     def health() -> dict:
         torch = sys.modules.get("torch")  # only reported once a model has loaded it
         gpu_name = torch.cuda.get_device_name(0) if torch is not None and torch.cuda.is_available() else None
+        features = getattr(backend, "features", None)
         return {"ok": True, "models": backend.models, "gpu": gpu_name, "gpu_pending": gpu.pending, "gpu_live_pending": gpu.live_pending,
-                "gpu_queue": gpu.queue, "jobs_pending": jobs.pending, "jobs_queue": jobs.queue}
+                "gpu_queue": gpu.queue, "jobs_pending": jobs.pending, "jobs_queue": jobs.queue,
+                "pose_cache": len(features) if features is not None else None}
 
     @app.post(f"{api}/embed")
     async def embed(model: str = Form(...), images: list[UploadFile] = File(...)) -> dict:
@@ -412,12 +438,36 @@ def create_infer_app(backend: Backend | None = None, jobs_dir: Path | None = Non
         from nav.infer.errors import MissingFeatures
 
         q = await read_images(queries, MAX_POSE_QUERIES)
+        keys, given = await ref_files(refs, ref_images, ref_obs, MAX_POSE_REFS)
+        try:
+            got = await gpu.run(backend.pose, q, [(k, *given.get(k, [None, None])) for k in keys], live=True)
+        except MissingFeatures as e:
+            return JSONResponse({"missing": e.keys}, status_code=409)
+        return {"poses": got}
+
+    @app.post(f"{api}/pose/warm")
+    async def pose_warm(refs: str = Form(...), ref_images: list[UploadFile] | None = File(None),
+                        ref_obs: list[UploadFile] | None = File(None)) -> dict:
+        """Batch (map-api's warm-up, behind live frames): memory frames' features cached before a live pose needs
+        them. Keys alone: which the host lacks (no model call); with their image and observations (at most
+        MAX_POSE_REFS): cached. -> {missing, cached, capacity}"""
+        keys, given = await ref_files(refs, ref_images, ref_obs, MAX_WARM_KEYS)
+        if len(given) > MAX_POSE_REFS:
+            raise HTTPException(422, f"send the files of at most {MAX_POSE_REFS} refs at a time")
+        todo = [(k, *given.get(k, [None, None])) for k in keys]
+        if not given:
+            return await run_in_threadpool(backend.warm, todo)
+        return await gpu.run(backend.warm, todo)
+
+    async def ref_files(refs: str, ref_images: list[UploadFile] | None, ref_obs: list[UploadFile] | None,
+                        limit: int) -> tuple[list[str], dict[str, list]]:
+        """The ref keys, and the image / observations sent for some of them (files named <index into refs>)."""
         try:
             keys = [str(k) for k in json.loads(refs)]
         except (ValueError, TypeError):
             raise HTTPException(422, "refs must be a JSON list of keys")
-        if not keys or len(keys) > MAX_POSE_REFS:
-            raise HTTPException(422, f"send 1..{MAX_POSE_REFS} refs")
+        if not keys or len(keys) > limit:
+            raise HTTPException(422, f"send 1..{limit} refs")
         given: dict[str, list] = {}
         for kind, files in (("image", ref_images), ("obs", ref_obs)):
             for f in files or []:
@@ -425,11 +475,7 @@ def create_infer_app(backend: Backend | None = None, jobs_dir: Path | None = Non
                     given.setdefault(keys[int(Path(f.filename or "").stem)], [None, None])[kind == "obs"] = await f.read()
                 except (ValueError, IndexError):
                     raise HTTPException(422, f"ref file {f.filename!r}: name it <index into refs>.jpg / .npy")
-        try:
-            got = await gpu.run(backend.pose, q, [(k, *given.get(k, [None, None])) for k in keys], live=True)
-        except MissingFeatures as e:
-            return JSONResponse({"missing": e.keys}, status_code=409)
-        return {"poses": got}
+        return keys, given
 
     async def on_audio(audio: UploadFile, fn: Callable, *args):
         suffix = Path(audio.filename or "clip.webm").suffix[:8] or ".webm"
