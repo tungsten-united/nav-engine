@@ -23,6 +23,14 @@ gives the published map.json:
 
 Review entries whose ids are not in the map (retired, or from a later build) are kept and reported.
 
+`seen` holds the name each node the review refers to had in the build (before the review) when the review was saved:
+its entries' nodes, merge targets, the ends of its edges and measured distances. Saving fills in the names missing
+from it. A rebuild that puts another place under one of those ids while the reviewed place is under another id now
+(its name is there) holds every entry that depends on it: not applied, reported with where the place is now (Itnig,
+2026-10-13: the first metric-1 build gave the stone wall tables' id to the judges' table, and the merge decided on
+site moved the judges' table into the centre tables, 6 m away). A place the LLM only renamed keeps its entries.
+Moving the entries to the new id, or deleting the `seen` name to confirm the place now under the id, lets them apply.
+
 Adapted from tungsten-united/demo-repository@c5dc26f (navigation, mapping/src/mapper/review.py) by LPA.
 """
 
@@ -75,6 +83,7 @@ class Review(BaseModel):
     edges: dict[str, EdgeReview] = {}
     relations: dict[str, RelationReview] = {}
     distances: list[MeasuredDistance] = []
+    seen: dict[str, str] = {}  # node id -> its name when the review was saved (see the module docstring)
 
 
 def review_path(map_dir: Path) -> Path:
@@ -86,7 +95,37 @@ def load_review(map_dir: Path) -> Review:
     return Review.model_validate_json(path.read_text()) if path.is_file() else Review()
 
 
+def _build_map(map_dir: Path) -> PlaceMap | None:
+    """The published build's own map (before the review), as build.build_map_of."""
+    published = map_dir / "map.json"
+    if not published.is_file():
+        return None
+    path = map_dir / "builds" / PlaceMap.model_validate_json(published.read_text()).build.build_id / "map.json"
+    return PlaceMap.model_validate_json(path.read_text()) if path.is_file() else None
+
+
+def referenced(pmap: PlaceMap, review: Review) -> set[str]:
+    """The node ids the review's entries depend on: their nodes, merge targets, edge ends and measured distances."""
+    ends = {e.id: (e.source, e.target) for e in pmap.edges}
+    out = set(review.nodes) | {r.merge_into for r in review.nodes.values() if r.merge_into}
+    out |= {x for i in review.edges for x in ends.get(i, ())}
+    return out | {x for d in review.distances for x in d.between}
+
+
+def with_seen(pmap: PlaceMap | None, review: Review) -> Review:
+    """The review with `seen` filled in from the build's map (`pmap`, before the review): names already there stay,
+    names of nodes it no longer refers to go."""
+    if pmap is None:
+        return review
+    names = {n.id: n.name for n in pmap.nodes}
+    refs = referenced(pmap, review)
+    seen = {i: n for i, n in review.seen.items() if i in refs}
+    seen |= {i: names[i] for i in sorted(refs) if i not in seen and i in names}
+    return review.model_copy(update={"seen": seen})
+
+
 def save_review(map_dir: Path, review: Review, by: str | None = None) -> Review:
+    review = with_seen(_build_map(map_dir), review)
     review = review.model_copy(update={"updated_at_utc": datetime.now(timezone.utc), "updated_by": by})
     tmp = map_dir / ".review.json.tmp"
     tmp.write_text(review.model_dump_json(indent=1, exclude_defaults=False))
@@ -94,11 +133,44 @@ def save_review(map_dir: Path, review: Review, by: str | None = None) -> Review:
     return review
 
 
+def _key(name: str) -> str:
+    return " ".join(name.split()).casefold()
+
+
+def moved(pmap: PlaceMap, review: Review) -> dict[str, str]:
+    """Node id -> the id the place reviewed under it has in this build: another place has the id now, and the
+    reviewed one's name (unique in the build) is elsewhere. A place renamed (its old name gone) has not moved."""
+    names = {n.id: n.name for n in pmap.nodes}
+    counts: dict[str, int] = {}
+    for n in names.values():
+        counts[_key(n)] = counts.get(_key(n), 0) + 1
+    where = {_key(n): i for i, n in names.items() if counts[_key(n)] == 1}
+    return {i: where[_key(was)] for i, was in review.seen.items()
+            if i in names and _key(names[i]) != _key(was) and where.get(_key(was), i) != i}
+
+
+def _hold(pmap: PlaceMap, review: Review, gone: dict[str, str], warnings: list[str]) -> Review:
+    """The review without the entries that depend on a node whose place moved (`moved`), each reported."""
+    names = {n.id: n.name for n in pmap.nodes}
+    ends = {e.id: (e.source, e.target) for e in pmap.edges}
+    for i, j in sorted(gone.items()):
+        warnings.append(f"review: {i} was {review.seen[i]!r} when reviewed; this build has {names[i]!r} there and "
+                        f"{review.seen[i]!r} at {j}: entries that depend on {i} are held (move them to {j}, or delete "
+                        f"seen.{i} to keep them on {names[i]!r})")
+    nodes = {i: r for i, r in review.nodes.items() if i not in gone and r.merge_into not in gone}
+    edges = {i: r for i, r in review.edges.items() if not set(ends.get(i, ())) & set(gone)}
+    distances = [d for d in review.distances if not set(d.between) & set(gone)]
+    return review.model_copy(update={"nodes": nodes, "edges": edges, "distances": distances})
+
+
 def apply_review(pmap: PlaceMap, review: Review) -> PlaceMap:
     """The map as published: the build's map with the review applied (a copy; the input is unchanged)."""
     m = pmap.model_copy(deep=True)
     if review == Review():
         return m
+    original = review
+    if gone := moved(pmap, review):
+        review = _hold(pmap, review, gone, m.warnings)
     hidden: set[str] = set()
     merged = _merges(m, review)
     if merged:
@@ -155,7 +227,7 @@ def apply_review(pmap: PlaceMap, review: Review) -> PlaceMap:
     m.hidden = sorted(hidden)
     m.reviewed_at_utc = review.updated_at_utc or datetime.now(timezone.utc)
     known = {n.id for n in pmap.nodes} | {e.id for e in pmap.edges} | {r.id for n in pmap.nodes for r in n.relations}
-    stale = sorted(i for i in [*review.nodes, *review.edges, *review.relations] if i not in known)
+    stale = sorted(i for i in [*original.nodes, *original.edges, *original.relations] if i not in known)
     if stale:
         m.warnings.append(f"review: entries for ids not in this build (kept for later): {', '.join(stale)}")
     return m
@@ -322,6 +394,9 @@ def template(pmap: PlaceMap, review: Review) -> dict:
                       '{"between": ["n0", "n2"], "meters": 7, "sigma_m": 0.3, "note": "tape"}. They set the scale '
                       "of every distance in the map (`nav map measure` adds one).",
         "distances": [d.model_dump() for d in review.distances],
+        "_seen": "Names of the nodes this review refers to when it was saved: a rebuild that moves one of those places "
+                 "to another id holds the entries that depend on it. Saving fills in missing names.",
+        "seen": dict(review.seen),
     }
 
 
@@ -334,7 +409,8 @@ def from_template(data: dict) -> Review:
     distances = [MeasuredDistance(**{f: x for f, x in d.items() if not f.startswith("_")})
                  for d in data.get("distances", [])]
     return Review(nodes=entries("nodes", NodeReview), edges=entries("edges", EdgeReview),
-                  relations=entries("relations", RelationReview), distances=distances)
+                  relations=entries("relations", RelationReview), distances=distances,
+                  seen={str(k): str(v) for k, v in data.get("seen", {}).items()})
 
 
 def dumps(data: dict) -> str:

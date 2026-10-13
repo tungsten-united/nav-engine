@@ -5,9 +5,10 @@ Every build of a place reruns the LLM over all its walks, so without help node i
 1. `previous_context`: the published map before this build, written into the build as previous.json. For every
    node it lists this build's candidates that show the same frames, so the LLM can keep the node (same name, kind,
    candidates) and only add, merge, split or drop with a reason.
-2. `stabilize`: code, not the LLM, decides ids. Each new node is matched to the previous node whose evidence
-   frames it shares most (same recording, within MATCH_S), greedily one to one. Matched nodes keep the old id; the
-   others get the next unused number. An edge keeps its id if it joins the same two nodes, and its orientation:
+2. `stabilize`: code, not the LLM, decides ids. Each new node is matched to the previous node with its name (the
+   LLM keeps the name of a place it recognises), else to the one whose evidence frames it shares most (same
+   recording, within MATCH_S), greedily one to one. Matched nodes keep the old id; the others get the next unused
+   number. An edge keeps its id if it joins the same two nodes, and its orientation:
    a two-way edge the LLM wrote the other way round (say after a walk in the opposite direction) is turned back,
    so per-direction status and review stay with the right direction. Old ids that are not kept go to `retired` and
    are never handed out again. This works because a rebuild keeps all earlier walks, so their frames come back.
@@ -51,15 +52,34 @@ def previous_context(prev: PlaceMap, cset: CandidateSet) -> dict:
             "retired": [r.model_dump() for r in prev.retired]}
 
 
+def _name(s: str) -> str:
+    return " ".join(s.split()).casefold()
+
+
 def match_previous(draft_nodes: list, cset: CandidateSet, prev: dict) -> dict[str, str]:
-    """New node id -> the previous node whose evidence frames it shares most (greedy, one to one), as stabilize."""
+    """New node id -> the previous node it continues, as stabilize: first the previous node with its name (names
+    unique in both maps), then the one whose evidence frames it shares most (greedy, one to one). The LLM keeps a name
+    when it sees the same place in previous.json; shared frames are few and often tied between neighbours (Itnig,
+    2026-10-13, the first metric-1 build: the judges' table shared 3 frames with the stone wall tables and with the
+    kitchen, and took the stone wall tables' id, so the review's merge of those tables landed on it)."""
     cands = {c.id: c for c in cset.candidates}
     new_views = {n.id: [(v.rec_id, v.t_ms) for c in n.candidates if c in cands for v in cands[c].views]
                  for n in draft_nodes}
     old_views = {n["id"]: [(r, t) for r, t in n["evidence"]] for n in prev["nodes"]}
+    out: dict[str, str] = {}
+
+    def unique(names: list[tuple[str, str]]) -> dict[str, str]:
+        counts: dict[str, int] = {}
+        for _, name in names:
+            counts[name] = counts.get(name, 0) + 1
+        return {name: i for i, name in names if counts[name] == 1}
+
+    old_by_name = unique([(n["id"], _name(n["name"])) for n in prev["nodes"]])
+    for name, a in unique([(n.id, _name(n.name)) for n in draft_nodes]).items():
+        if name in old_by_name:
+            out[a] = old_by_name[name]
     scores = sorted(((_overlap(new_views[a], old_views[b]), a, b) for a in new_views for b in old_views),
                     key=lambda s: -s[0])
-    out: dict[str, str] = {}
     for score, a, b in scores:
         if score and a not in out and b not in out.values():
             out[a] = b

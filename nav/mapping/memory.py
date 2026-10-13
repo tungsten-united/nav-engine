@@ -25,6 +25,7 @@ so a review that moves, merges, hides or rescales nodes moves the regions with i
 import json
 import logging
 import shutil
+from collections.abc import Callable
 from dataclasses import fields
 from pathlib import Path
 
@@ -192,3 +193,22 @@ class GeometryObs:
 
 def load_geometry_obs(map_dir: Path, info: MemoryInfo) -> GeometryObs | None:
     return GeometryObs(map_dir / info.geometry) if info.geometry else None
+
+
+def pose_key(map_id: str, build_id: str, frame_id: str) -> str:
+    """The inference host's cache key for a memory frame's features: nav-api's live poses, map-api's warm-up."""
+    return f"{map_id}/{build_id}/{frame_id}"
+
+
+PoseRefSource = tuple[str, Path, Callable[[], np.ndarray]]  # (cache key, image file, loader of its 3D observations)
+
+
+def pose_refs(map_id: str, map_dir: Path, pmap: PlaceMap) -> list[PoseRefSource]:
+    """Every posed memory frame of a published map, as live poses send it: (cache key, image file, loader of its 3D
+    observations). [] without a 3D model."""
+    if not pmap.memory or not pmap.memory.geometry:
+        return []
+    frames = [MemoryFrame.model_validate(f) for f in json.loads((map_dir / pmap.memory.file).read_text())["frames"]]
+    geo = load_geometry_obs(map_dir, pmap.memory)
+    return [(pose_key(map_id, pmap.build.build_id, f.id), map_dir / f.image, (lambda r=f.row: geo.obs(r)))
+            for f in frames if f.posed and f.row is not None]

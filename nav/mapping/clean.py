@@ -7,9 +7,14 @@ from the walks, after the review (review.py) and before publishing:
 2. One edge per pair of spots: the strongest (verified, walks, confidence, shorter). A weaker one stays when it was
    walked a way the stronger one wasn't (after a merge, two one-way edges can join the same spots).
 3. Edges walked by at least `min_edge_walks` walks (either way) are the core. Weaker edges come back only where the
-   map would otherwise fall apart: the strongest one joining two parts (Kruskal), flagged for review.
+   map would otherwise fall apart: the strongest one joining two parts (Kruskal), then the strongest ones without
+   which a spot would no longer reach another the way the walks went. Both are flagged for review.
 4. A core edge longer than another kept way between its ends goes.
 5. Spots left without edges go, unless protected.
+
+A spot is a node, or a part of an area the review merged (review.py): routes go in and out of an area at the same
+part (route.py), so every check here (duplicates, pieces, reach, the way around) is over parts, not nodes. Cleaning
+never takes a route away: whatever spot reached another the way the walks went before cleaning still does.
 
 Nodes and edges are kept or left out whole, never rewritten: an instruction is published as written (or as the review
 corrected it). Folding a weak spot into one edge between its neighbours (Itnig, 2026-10-10) joined two instructions
@@ -29,6 +34,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 from nav.mapping.review import NodeReview, Review
+from nav.navigation.route import edge_parts
 from nav.schemas.map import CleanInfo, PlaceEdge, PlaceMap
 
 RANK: dict[str, int] = {"inferred": 0, "observed": 1, "verified": 2}
@@ -61,12 +67,12 @@ def _score(e: PlaceEdge) -> tuple:
 
 def _ends(e: PlaceEdge) -> frozenset:
     """The spots an edge joins: two edges to different parts of a merged area are not duplicates."""
-    return frozenset((e.source_part or e.source, e.target_part or e.target))
+    return frozenset(edge_parts(e))
 
 
 def _ways(e: PlaceEdge) -> set[tuple[str, str]]:
     """The directions an edge was walked (or verified), as (from spot, to spot)."""
-    a, b = e.source_part or e.source, e.target_part or e.target
+    a, b = edge_parts(e)
     out = {(a, b)} if e.status in ("observed", "verified") else set()
     if e.bidirectional and e.reverse_status in ("observed", "verified"):
         out.add((b, a))
@@ -77,42 +83,22 @@ def _union(a: list, b: list) -> list:
     return list(dict.fromkeys([*a, *b]))
 
 
-def _parts(nodes, edges: list[PlaceEdge]) -> int:
-    """How many strongly connected parts the spots make, over the directions that were walked (or verified)."""
-    walked = {"observed", "verified"}
-    out: dict[str, list[str]] = {n: [] for n in nodes}
+def _reach(edges: list[PlaceEdge]) -> set[tuple[str, str]]:
+    """Which spot reaches which over the directions walked (or verified): route.py's routes with trust observed."""
+    out: dict[str, set[str]] = {}
     for e in edges:
-        if e.status in walked:
-            out[e.source].append(e.target)
-        if e.bidirectional and e.reverse_status in walked:
-            out[e.target].append(e.source)
-    index: dict[str, int] = {}
-    low: dict[str, int] = {}
-    stack: list[str] = []
-    on: set[str] = set()
-    count = 0
-
-    def visit(v: str) -> None:  # Tarjan, small graphs
-        nonlocal count
-        index[v] = low[v] = len(index)
-        stack.append(v)
-        on.add(v)
-        for w in out[v]:
-            if w not in index:
-                visit(w)
-                low[v] = min(low[v], low[w])
-            elif w in on:
-                low[v] = min(low[v], index[w])
-        if low[v] == index[v]:
-            count += 1
-            while (w := stack.pop()) != v:
-                on.discard(w)
-            on.discard(v)
-
-    for v in out:
-        if v not in index:
-            visit(v)
-    return count
+        for a, b in _ways(e):
+            out.setdefault(a, set()).add(b)
+    pairs = set()
+    for s in out:
+        seen, todo = set(), [s]
+        while todo:
+            for w in out.get(todo.pop(), ()):
+                if w not in seen:
+                    seen.add(w)
+                    todo.append(w)
+        pairs |= {(s, t) for t in seen if t != s}
+    return pairs
 
 
 class _Cleaner:
@@ -158,7 +144,7 @@ class _Cleaner:
     def connect(self) -> None:
         core = [e for e in self.edges if self.safe(e) or edge_walks(e) >= self.p.min_edge_walks]
         rest = sorted((e for e in self.edges if e not in core), key=_score, reverse=True)
-        parent = {i: i for i in self.nodes}
+        parent = {i: i for i in [*self.nodes, *(s for e in self.edges for s in edge_parts(e))]}
 
         def find(x: str) -> str:
             while parent[x] != x:
@@ -167,10 +153,11 @@ class _Cleaner:
             return x
 
         for e in core:
-            parent[find(e.source)] = find(e.target)
+            a, b = edge_parts(e)
+            parent[find(a)] = find(b)
         keep = list(core)
         for e in rest:
-            a, b = find(e.source), find(e.target)
+            a, b = (find(s) for s in edge_parts(e))
             if self.p.connect and a != b:
                 parent[a] = b
                 n = edge_walks(e)
@@ -185,33 +172,39 @@ class _Cleaner:
 
     def walkable(self, keep: list[PlaceEdge], rest: list[PlaceEdge]) -> None:
         """Routes go only the way edges were walked (route.py, trust observed): bring back the strongest weak
-        edges that let more spots reach each other that way (fewer strongly connected parts)."""
-        before = _parts(self.nodes, keep)
+        edges that let a spot reach one it no longer would. One pass does it: an edge that adds nothing when its turn
+        comes joins two spots that already reach each other, and only gains more company later."""
+        have = _reach(keep)
         for e in rest:
-            after = _parts(self.nodes, [*keep, e])
-            if after < before:
+            more = _reach([*keep, e])
+            if len(more) > len(have):
                 n = edge_walks(e)
                 e.review_flags = _union(e.review_flags, [f"kept so the walked way reaches every spot: walked {n} "
                                                          f"time{'s' * (n != 1)}"])
                 keep.append(e)
                 self.pruned.pop(e.id, None)
-                before = after
+                have = more
 
     def shortcuts(self) -> None:
-        """A core edge no shorter than another kept way between its ends, in each direction it was walked, goes."""
+        """A core edge no shorter than another kept way between its ends, in each direction it was walked, goes.
+        The way around starts and ends at the parts the edge does (an area is left at the part it was entered)."""
         from nav.navigation.route import TRUSTED, plan_route
 
+        areas = set(self.m.merged.values())
         for e in sorted(self.edges, key=_score):
             if self.safe(e) or e.distance_m is None:
                 continue
             others = self.m.model_copy(update={"edges": [x for x in self.edges if x.id != e.id],
                                                "nodes": list(self.nodes.values())})
-            ways = [(e.source, e.target, e.status), (e.target, e.source, e.reverse_status if e.bidirectional else None)]
+            sp, tp = edge_parts(e)
+            ways = [(e.source, sp, e.target, tp, e.status),
+                    (e.target, tp, e.source, sp, e.reverse_status if e.bidirectional else None)]
             arounds = []
-            for a, b, status in ways:
+            for a, ap, b, bp, status in ways:
                 if status not in TRUSTED["observed"]:
                     continue
-                route = plan_route(others, a, b, trust="observed")
+                route = plan_route(others, a, b, trust="observed", start_part=ap if a in areas else None,
+                                   goal_part=bp if b in areas else None)
                 around = sum(h.length_m for h in route) if route and all(h.length_m is not None for h in route) \
                     else None
                 arounds.append(around)

@@ -213,3 +213,53 @@ def test_without_the_pose_host_the_answer_has_no_pose(tmp_path):
 def unit_of(*axes: int) -> np.ndarray:
     v = sum(axis(a) for a in axes)
     return v / np.linalg.norm(v)
+
+
+class WarmHost:
+    """Stands in for InferenceClient.warm_poses: a cache of keys with a capacity."""
+
+    def __init__(self, capacity: int = 100):
+        self.cached, self.capacity, self.sent = set(), capacity, []
+
+    def warm_poses(self, refs):
+        todo = [(k, img, obs) for k, img, obs in refs if k not in self.cached]
+        for k, img, obs in todo:
+            assert img().startswith(b"\xff\xd8") and obs().shape == (2, 5)  # the frame's image and its 2 observations
+            self.cached.add(k)
+        self.sent.append([k for k, _, _ in todo])
+        return {"sent": len(todo), "cached": len(self.cached), "capacity": self.capacity}
+
+
+def test_map_api_keeps_the_hosts_feature_cache_holding_every_posed_memory_frame(tmp_path):
+    import os
+    import shutil
+
+    from nav.map_api.warm import PoseWarmer
+    from nav.mapping.memory import pose_key
+    from nav.mapping.store import MapStore
+
+    map_id = publish(tmp_path)
+    add_memory(tmp_path, map_id, geometry=True)
+    host = WarmHost()
+    warmer = PoseWarmer(MapStore(tmp_path), 300, client_fn=lambda: host)
+    assert warmer.warm_once() == {map_id: 3}
+    assert host.sent == [[pose_key(map_id, BUILD.build_id, f) for f in MEMORY]]  # the keys nav-api's poses use
+    assert warmer.warm_once() == {map_id: 0}  # the host has them: keys only
+    host.cached.clear()  # the host restarted
+    assert warmer.warm_once() == {map_id: 3}
+    shutil.copytree(tmp_path / map_id, tmp_path / "older")  # an older map, past what the host keeps
+    old = tmp_path / "older" / "map.json"
+    os.utime(old, (old.stat().st_mtime - 60,) * 2)
+    host.capacity = 4
+    assert warmer.warm_once() == {map_id: 0}  # newest first; the older map would push it out
+    assert PoseWarmer(MapStore(tmp_path), 300, client_fn=lambda: None).warm_once() == {}  # no inference host
+
+
+def test_a_map_without_a_3d_model_has_nothing_to_warm(tmp_path):
+    from nav.map_api.warm import PoseWarmer
+    from nav.mapping.store import MapStore
+
+    map_id = publish(tmp_path)
+    add_memory(tmp_path, map_id)
+    host = WarmHost()
+    assert PoseWarmer(MapStore(tmp_path), 300, client_fn=lambda: host).warm_once() == {} and host.sent == []

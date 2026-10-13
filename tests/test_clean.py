@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from nav.map_api.app import create_app
 from nav.mapping.build import published_map
 from nav.mapping.clean import CleanParams, clean_map
-from nav.mapping.review import EdgeReview, NodeReview, Review, save_review
+from nav.mapping.review import EdgeReview, NodeReview, Review, apply_review, save_review
 from nav.navigation.localize import RefIndex
 from nav.mapping.store import MapStore
 from nav.navigation.route import plan_route
@@ -189,7 +189,39 @@ def test_cleaning_keeps_what_it_publishes_as_written_and_never_moves_spots(seed,
     assert geometry(clean, kept) == geometry(raw, kept)  # localization measures the same, cleaned or not
 
 
+def random_review(m: PlaceMap, seed: int) -> Review:
+    """Up to two merges between random spots (none for some seeds)."""
+    rng = random.Random(seed + 10_000)
+    ids = [n.id for n in m.nodes]
+    nodes: dict[str, NodeReview] = {}
+    for _ in range(rng.randint(0, 2)):
+        a, b = rng.sample(ids, 2)
+        if a not in nodes and b not in nodes and a not in {r.merge_into for r in nodes.values()}:
+            nodes[a] = NodeReview(merge_into=b)
+    return Review(nodes=nodes)
+
+
+def reach(m: PlaceMap) -> set[tuple[str, str]]:
+    """Every (from, to) pair of nodes with a route the way the walks went (route.py, trust observed)."""
+    ids = [n.id for n in m.nodes]
+    return {(a, b) for a in ids for b in ids if a != b and plan_route(m, a, b, "observed") is not None}
+
+
+@pytest.mark.parametrize("seed", range(200))
+def test_cleaning_never_takes_a_route_away(seed):
+    """Whatever node reached another the way the walks went still does once cleaned, merged areas included. Before:
+    1% of such maps lost a route (a one-way link between two groups of spots pruned: the count of strongly connected
+    parts didn't change), 13% with merges (the way around an edge looked for from any part of an area)."""
+    m = random_map(seed)
+    review = random_review(m, seed)
+    reviewed = apply_review(m, review)
+    clean = clean_map(reviewed, review)
+    kept = {n.id for n in clean.nodes}
+    assert {(a, b) for a, b in reach(reviewed) if a in kept and b in kept} <= reach(clean)
+
+
 FIXTURE = Path(__file__).parent / "fixtures" / "itnig"
+METRIC = Path(__file__).parent / "fixtures" / "itnig-metric"
 
 
 def test_itnig_as_published_on_2026_10_10(tmp_path):
@@ -241,3 +273,19 @@ def test_glories_basement_walked_once_routes_back_only_over_any(tmp_path):
     assert all(h.instruction and len(h.instruction) <= MAX_INSTRUCTION_CHARS for h in back)
     way_in = [h.edge for h in plan_route(m, "n1", "n16", "observed")]
     assert [h.edge for h in plan_route(m, "n1", "n16", "any")] == way_in and len(way_in) == 15
+
+
+def test_itnig_merges_decided_on_site_keep_every_route_in_the_metric_build(tmp_path):
+    """Itnig's first metric-1 build (20261013T062115Z; tracks, paths and images stripped) with the merges decided on
+    site on 2026-10-10, on the ids this build gives those places: Stone wall tables (n15) into Centre tables (n10),
+    Stage corridor (n4) into the Drinks area (n14). The stone wall tables and the centre tables are a 5.3 m walk
+    apart, so they stay two parts of the area. Looking for a way around e24 (stone wall tables -> stage), the cleaner
+    started from any part, took the centre tables' 2 m edge, and pruned the only way onto the stage from the rest of
+    the hall: 18 routes gone, to and from the stage."""
+    build = PlaceMap.model_validate_json((METRIC / "map.json").read_text())
+    save_review(tmp_path, Review(nodes={"n15": NodeReview(merge_into="n10"), "n4": NodeReview(merge_into="n14")}))
+    m = published_map(tmp_path, build, clean=True)
+    assert m.merged == {"n15": "n10", "n4": "n14"} and "e24" not in m.pruned
+    assert len(reach(m)) == len(m.nodes) * (len(m.nodes) - 1)
+    hops = plan_route(m, "n1", "n8", "observed")
+    assert [h.edge for h in hops][-1] == "e24" and hops[-2].target == "n10"  # onto the stage from the stone wall

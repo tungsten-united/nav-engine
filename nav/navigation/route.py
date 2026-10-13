@@ -46,10 +46,12 @@ def edge_parts(e: PlaceEdge) -> tuple[str, str]:
     return e.source_part or e.source, e.target_part or e.target
 
 
-def plan_route(pmap: PlaceMap, start: str, goal: str, trust: str = "verified") -> list[Hop] | None:
+def plan_route(pmap: PlaceMap, start: str, goal: str, trust: str = "verified", start_part: str | None = None,
+               goal_part: str | None = None) -> list[Hop] | None:
     """The shortest route by distance (Dijkstra) from `start` to `goal`, or None if trusted edges don't connect
     them. [] when start == goal. Through a node the review merged others into (an area), only in and out of the same
-    part: its edges lead to different parts of it, and the walk from one to another isn't in the map."""
+    part: its edges lead to different parts of it, and the walk from one to another isn't in the map. `start_part` /
+    `goal_part`: leave from / arrive at that part of an area (edge_parts' names) rather than any."""
     allowed = TRUSTED[trust]
     areas = set(pmap.merged.values())
     parts = {e.id: edge_parts(e) for e in pmap.edges}
@@ -64,14 +66,14 @@ def plan_route(pmap: PlaceMap, start: str, goal: str, trust: str = "verified") -
             if h.status in allowed:
                 graph.setdefault(h.source, []).append(h)
     # a state is (node, the part of it the route came in at, "" outside areas)
-    first = (start, "")
+    first = (start, start_part or "")
     best = {first: 0.0}
     came: dict[tuple, tuple[Hop, tuple]] = {}
     queue = [(0.0, first)]
     while queue:
         d, state = heapq.heappop(queue)
         node, part = state
-        if node == goal:
+        if node == goal and (goal_part is None or part == goal_part):
             route = []
             while state != first:
                 h, state = came[state]

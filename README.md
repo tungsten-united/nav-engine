@@ -241,8 +241,9 @@ uv run nav map loc-bench nati-house --live [--since 2026-10-11]                 
    **More walks of a place** improve the same map rather than making a new one: the model places every walk in one
    frame, so a walk in the opposite direction lands on the same spots.
 5. **Finish**: **stable ids** ([`continuity.py`](nav/mapping/continuity.py)): code, not the LLM, assigns them. A node
-   that shares the most evidence frames with a previous node (same recording, within 3 s) keeps its id, new nodes
-   get the next unused number, edges keep theirs when they join the same two nodes, and ids that disappear go to
+   keeps the id of the previous node with its name (the places pass keeps a name when it sees the same place; names
+   unique in both maps), else of the one it shares the most evidence frames with (same recording, within 3 s), new
+   nodes get the next unused number, edges keep theirs when they join the same two nodes, and ids that disappear go to
    `retired` (never reused). Then check node, edge and candidate ids and flag visual words left in spoken text (both go into
    `warnings`), attach evidence (recording, time,
    frame) to every node, place it at the mean of its spots, give each edge the walked path, distance (node middle to
@@ -272,7 +273,10 @@ uv run nav map loc-bench nati-house --live [--since 2026-10-11]                 
    direction), renames, fixes instructions or hides what is wrong, with `nav map review` or the viewer's buttons
    (`PUT /api/v1/maps/<map_id>/review`). The review is `review.json` next to the builds, keyed by stable ids, so it
    survives rebuilds; the published `map.json` is the latest build with it applied (the build's own copy keeps
-   everything). **Routes use verified edges only, unless the caller asks for less**
+   everything). It also remembers the name each node it refers to had when it was saved (`seen`): a rebuild that
+   puts another place under one of those ids, while the reviewed place's name is under another id now, holds every
+   entry that depends on it (a `warnings` line says where the place went) instead of applying it to the wrong place.
+   **Routes use verified edges only, unless the caller asks for less**
    ([`route.py`](nav/navigation/route.py)). Orient's orchestrator asks for `observed` edges (its `NAV_TRUST`) until
    the demo route is verified, so for now it guides over edges nobody has checked.
    Distances measured on site (`distances` in the review, `nav map measure`) fit one scale factor, by least squares
@@ -284,8 +288,10 @@ uv run nav map loc-bench nati-house --live [--since 2026-10-11]                 
    `confidence` doesn't follow the evidence (Itnig: a "high" bathroom seen once by one walk), so code decides:
    inferred edges go; one edge per pair of spots, the strongest; edges walked by
    at least 2 walks (either way) are the core, and weaker ones come back only where the map would otherwise fall
-   apart or a spot could no longer be reached the way it was walked (flagged in `review_flags`); a core edge no
-   shorter than the walked way around goes; spots left without edges go. Entrances, destinations, rooms, verified
+   apart or a spot could no longer reach another the way the walks went (flagged in `review_flags`); a core edge no
+   shorter than the walked way around goes; spots left without edges go. Cleaning never takes a route away, and a
+   part of an area the review merged counts as a spot of its own (routes go in and out of an area at one part).
+   Entrances, destinations, rooms, verified
    items and anything the review touched are never pruned; the review's `keep` rescues an item. `pruned` in
    map.json lists what was left out and why, `clean` the counts. The build's own map.json keeps everything, and the
    next build starts from it, so a spot more walks back up comes back with its id. Nodes and edges are kept or left
@@ -382,7 +388,12 @@ solve the camera pose (PnP + RANSAC, the focal length estimated: a live phone's 
 result's `pose` says where the camera is and which way it faces, how many inliers, and the node whose region it is in;
 from `NAV_LOC_POSE_INLIERS` (40) inliers it confirms that node, through the walked-distance gate below. About 250 ms
 on the GPU (`NAV_LIVE_POSE_DEADLINE_S`, 3 s: then no pose). Scores and candidates stay the embeddings', for the
-orchestrator's belief, which puts all of itself on a pose-confirmed node.
+orchestrator's belief, which puts all of itself on a pose-confirmed node. A memory frame the host lacks costs a round
+trip with its image first (Itnig: 1.2-1.9 s a call instead of ~0.3 s), so map-api keeps the host's cache holding
+every posed memory frame of the published maps ([`warm.py`](nav/map_api/warm.py), `NAV_POSE_WARM`): after each build
+and every 5 minutes (a restarted host has none) it asks which frames the host lacks (`/infer/v1/pose/warm`) and sends
+only those, in batch calls behind live frames, newest maps first up to the cache's 3000 frames
+(`NAV_INFER_FEATURE_CACHE`, ~0.6 MB each on the host's CPU).
 
 **With the phone's motion** (optional, [contract](https://github.com/tungsten-united/project-description/blob/main/docs/contracts.md#post-mapsmap_idlocalize)):
 one `motion` part per image, in the same order, the Orient app's `Motion` JSON (`null` for a frame without one),

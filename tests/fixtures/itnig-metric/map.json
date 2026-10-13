@@ -1,0 +1,3601 @@
+{
+ "place": "Itnig",
+ "language": "en",
+ "summary": "Itnig is one long open hall, about 25 metres from the entrance to the far end. The concrete floor is smooth but cracked, and the high roof makes the hall echo. You come in from a covered porch through a glass double door with push bars. Just inside, the hackathon tables start on your left along a rough stone wall, and the drinks area is ahead on your right. One narrow central aisle, the corridor to the stage, runs down the hall between tables on both sides. At the far end the aisle opens out. Along the right-hand wall are the bathroom door and then the long kitchen counter, with a long judges' table in front of the kitchen. The low stage is ahead and slightly left, and more tables stand by the stone wall on the left. During events it is busy and noisy, with bags and cables on the floor.",
+ "nodes": [
+  {
+   "id": "n1",
+   "name": "Main entrance",
+   "kind": "entrance",
+   "description": "The glass double door at the near end of the hall, with a metal frame and a push bar across each leaf at hip height. Inside, the floor is smooth concrete and the long hall opens out ahead. A high round bar table stands a couple of metres in, slightly to the right, and a small table on wheels is just inside to the left. Street noise is likely behind you and the hall's chatter ahead.",
+   "landmarks": [
+    "Push bar across the glass door at hip height",
+    "Metal door frame and threshold underfoot",
+    "High round bar table with a single post and a wide foot, about 2 metres in",
+    "Hall echo and voices ahead, street noise behind"
+   ],
+   "hazards": [
+    "Glass doors",
+    "Small table on wheels just inside the door",
+    "Cracked, uneven patches in the concrete floor",
+    "Bags on the floor near the first tables"
+   ],
+   "visual_cues": [
+    "Exit sign reading SORTIDA above the glass door",
+    "Red rope barrier across part of the door",
+    "Rough stone wall with string lights on the left",
+    "Projection screen at the far end of the hall"
+   ],
+   "floor": "ground",
+   "candidates": [
+    "c01",
+    "c02"
+   ],
+   "relations": [
+    {
+     "id": "n1:entrance-porch",
+     "subject": "Entrance porch",
+     "candidate": "c01",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 147456.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c01.jpg",
+     "viewpoint_heading_deg": 100.3,
+     "bearing_deg": -163.7,
+     "heading_deg": 296.6,
+     "arrival_heading_deg": 99.4,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n1:hackathon-tables",
+     "subject": "Hackathon tables",
+     "candidate": "c01",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 147456.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c01.jpg",
+     "viewpoint_heading_deg": 100.3,
+     "bearing_deg": 34.2,
+     "heading_deg": 134.5,
+     "arrival_heading_deg": 99.4,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n1:drinks-area",
+     "subject": "Drinks area",
+     "candidate": "c01",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 147456.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c01.jpg",
+     "viewpoint_heading_deg": 100.3,
+     "bearing_deg": 47.6,
+     "heading_deg": 147.9,
+     "arrival_heading_deg": 99.4,
+     "direction": "right",
+     "status": "observed"
+    },
+    {
+     "id": "n1:stage-corridor",
+     "subject": "Stage corridor",
+     "candidate": "c01",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 147456.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c01.jpg",
+     "viewpoint_heading_deg": 100.3,
+     "bearing_deg": 33.1,
+     "heading_deg": 133.4,
+     "arrival_heading_deg": 99.4,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n1:right-side-tables",
+     "subject": "Right-side tables",
+     "candidate": "c01",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 147456.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c01.jpg",
+     "viewpoint_heading_deg": 100.3,
+     "bearing_deg": 29.7,
+     "heading_deg": 130.0,
+     "arrival_heading_deg": 99.4,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n1:corridor-end",
+     "subject": "Corridor end",
+     "candidate": "c01",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 147456.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c01.jpg",
+     "viewpoint_heading_deg": 100.3,
+     "bearing_deg": 30.8,
+     "heading_deg": 131.1,
+     "arrival_heading_deg": 99.4,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n1:high-bar-table",
+     "subject": "High bar table",
+     "candidate": "c01",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 147456.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c01.jpg",
+     "viewpoint_heading_deg": 100.3,
+     "bearing_deg": 8.6,
+     "heading_deg": 108.9,
+     "arrival_heading_deg": 132.8,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n1:door-push-bar",
+     "subject": "Door push bar",
+     "candidate": "c01",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 147456.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c01.jpg",
+     "viewpoint_heading_deg": 100.3,
+     "bearing_deg": -15.6,
+     "heading_deg": 84.7,
+     "arrival_heading_deg": 132.8,
+     "direction": "left",
+     "status": "observed"
+    }
+   ],
+   "confidence": "high",
+   "quality": {
+    "visual_p": 0.38,
+    "usable": 3.0,
+    "turn_agrees_p": null,
+    "flags": []
+   },
+   "evidence": [
+    {
+     "candidate": "c01",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 147456.4,
+     "image": ""
+    },
+    {
+     "candidate": "c01",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 1044.2,
+     "image": ""
+    },
+    {
+     "candidate": "c01",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 10526.3,
+     "image": ""
+    },
+    {
+     "candidate": "c01",
+     "rec_id": "20261010T130629Z_ddb1",
+     "t_ms": 7322.7,
+     "image": ""
+    },
+    {
+     "candidate": "c02",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 673.3,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 1.08,
+    "y_m": -1.06
+   },
+   "status": "observed",
+   "review_flags": [],
+   "references": []
+  },
+  {
+   "id": "n11",
+   "name": "Entrance porch",
+   "kind": "destination",
+   "description": "The covered porch just outside the main door, between the door and the street. Woven armchairs stand against the building's glass front, with a potted plant in the corner, and high bar stools stand at a counter to one side. Street and traffic noise are likely.",
+   "landmarks": [
+    "Woven armchairs against the glass front",
+    "Large potted plant in the corner by the glass",
+    "Open air and street sounds",
+    "Glass double door with push bars leading inside"
+   ],
+   "hazards": [
+    "Glass walls and doors",
+    "Armchairs and stools along the front"
+   ],
+   "visual_cues": [
+    "Woven rattan armchairs",
+    "Potted ficus beside the glass",
+    "Lounge with brown sofas visible through the glass"
+   ],
+   "floor": "ground",
+   "candidates": [
+    "c20"
+   ],
+   "relations": [
+    {
+     "id": "n11:main-entrance",
+     "subject": "Main entrance",
+     "candidate": "c20",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 143946.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c20.jpg",
+     "viewpoint_heading_deg": 164.2,
+     "bearing_deg": -47.6,
+     "heading_deg": 116.6,
+     "arrival_heading_deg": 296.9,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n11:hackathon-tables",
+     "subject": "Hackathon tables",
+     "candidate": "c20",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 143946.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c20.jpg",
+     "viewpoint_heading_deg": 164.2,
+     "bearing_deg": -37.2,
+     "heading_deg": 127.0,
+     "arrival_heading_deg": 296.9,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n11:drinks-area",
+     "subject": "Drinks area",
+     "candidate": "c20",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 143946.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c20.jpg",
+     "viewpoint_heading_deg": 164.2,
+     "bearing_deg": -26.7,
+     "heading_deg": 137.5,
+     "arrival_heading_deg": 296.9,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n11:stage-corridor",
+     "subject": "Stage corridor",
+     "candidate": "c20",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 143946.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c20.jpg",
+     "viewpoint_heading_deg": 164.2,
+     "bearing_deg": -35.6,
+     "heading_deg": 128.6,
+     "arrival_heading_deg": 296.9,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n11:right-side-tables",
+     "subject": "Right-side tables",
+     "candidate": "c20",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 143946.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c20.jpg",
+     "viewpoint_heading_deg": 164.2,
+     "bearing_deg": -37.2,
+     "heading_deg": 127.0,
+     "arrival_heading_deg": 296.9,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n11:corridor-end",
+     "subject": "Corridor end",
+     "candidate": "c20",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 143946.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c20.jpg",
+     "viewpoint_heading_deg": 164.2,
+     "bearing_deg": -35.5,
+     "heading_deg": 128.7,
+     "arrival_heading_deg": 296.9,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n11:woven-armchair",
+     "subject": "Woven armchair",
+     "candidate": "c20",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 143946.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c20.jpg",
+     "viewpoint_heading_deg": 164.2,
+     "bearing_deg": -3.7,
+     "heading_deg": 160.5,
+     "arrival_heading_deg": 291.8,
+     "direction": "left",
+     "status": "observed"
+    },
+    {
+     "id": "n11:potted-plant",
+     "subject": "Potted plant",
+     "candidate": "c20",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 143946.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c20.jpg",
+     "viewpoint_heading_deg": 164.2,
+     "bearing_deg": 13.0,
+     "heading_deg": 177.2,
+     "arrival_heading_deg": 291.8,
+     "direction": "left",
+     "status": "observed"
+    }
+   ],
+   "confidence": "high",
+   "quality": {
+    "visual_p": 0.42,
+    "usable": 2.97,
+    "turn_agrees_p": null,
+    "flags": []
+   },
+   "evidence": [
+    {
+     "candidate": "c20",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 143946.4,
+     "image": ""
+    },
+    {
+     "candidate": "c20",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 1905.3,
+     "image": ""
+    },
+    {
+     "candidate": "c20",
+     "rec_id": "20261010T130629Z_ddb1",
+     "t_ms": 847.7,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": -1.14,
+    "y_m": 0.05
+   },
+   "status": "observed",
+   "review_flags": [],
+   "references": []
+  },
+  {
+   "id": "n2",
+   "name": "Hackathon tables",
+   "kind": "open_area",
+   "description": "Rows of work tables starting just inside the entrance, on your left as you walk into the hall, along the rough stone wall. The walker said there are a lot of tables for the hackathon here, all pushed together. It is busy, with people talking and typing.",
+   "landmarks": [
+    "Rough stone wall on the left",
+    "High round bar table near the start of the tables",
+    "Edges of the tables to your left as you walk in",
+    "Steady chatter and typing"
+   ],
+   "hazards": [
+    "Bags, chairs and cables sticking out into the walkway",
+    "Cracked floor"
+   ],
+   "visual_cues": [
+    "Stone wall with string lights and a black speaker",
+    "Long white tables full of laptops",
+    "Projection screen reading Barcelona AI Hackathon at the far end"
+   ],
+   "floor": "ground",
+   "candidates": [
+    "c19",
+    "c04"
+   ],
+   "relations": [
+    {
+     "id": "n2:drinks-area",
+     "subject": "Drinks area",
+     "candidate": "c19",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 20426.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c19.jpg",
+     "viewpoint_heading_deg": 101.8,
+     "bearing_deg": 73.4,
+     "heading_deg": 175.2,
+     "arrival_heading_deg": 131.5,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n2:stage-corridor",
+     "subject": "Stage corridor",
+     "candidate": "c19",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 20426.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c19.jpg",
+     "viewpoint_heading_deg": 101.8,
+     "bearing_deg": 30.2,
+     "heading_deg": 132.0,
+     "arrival_heading_deg": 131.5,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n2:main-entrance",
+     "subject": "Main entrance",
+     "candidate": "c19",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 20426.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c19.jpg",
+     "viewpoint_heading_deg": 101.8,
+     "bearing_deg": -147.3,
+     "heading_deg": 314.5,
+     "arrival_heading_deg": 131.5,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n2:right-side-tables",
+     "subject": "Right-side tables",
+     "candidate": "c19",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 20426.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c19.jpg",
+     "viewpoint_heading_deg": 101.8,
+     "bearing_deg": 25.1,
+     "heading_deg": 126.9,
+     "arrival_heading_deg": 131.5,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n2:entrance-porch",
+     "subject": "Entrance porch",
+     "candidate": "c19",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 20426.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c19.jpg",
+     "viewpoint_heading_deg": 101.8,
+     "bearing_deg": -154.8,
+     "heading_deg": 307.0,
+     "arrival_heading_deg": 131.5,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n2:corridor-end",
+     "subject": "Corridor end",
+     "candidate": "c19",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 20426.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c19.jpg",
+     "viewpoint_heading_deg": 101.8,
+     "bearing_deg": 28.0,
+     "heading_deg": 129.8,
+     "arrival_heading_deg": 131.5,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n2:stone-wall",
+     "subject": "Stone wall",
+     "candidate": "c19",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 20426.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c19.jpg",
+     "viewpoint_heading_deg": 101.8,
+     "bearing_deg": -13.2,
+     "heading_deg": 88.6,
+     "arrival_heading_deg": 103.6,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n2:high-bar-table",
+     "subject": "High bar table",
+     "candidate": "c19",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 20426.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c19.jpg",
+     "viewpoint_heading_deg": 101.8,
+     "bearing_deg": -11.3,
+     "heading_deg": 90.5,
+     "arrival_heading_deg": 103.6,
+     "direction": "ahead",
+     "status": "observed"
+    }
+   ],
+   "confidence": "medium",
+   "quality": {
+    "visual_p": 0.28,
+    "usable": 2.99,
+    "turn_agrees_p": null,
+    "flags": []
+   },
+   "evidence": [
+    {
+     "candidate": "c19",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 20426.3,
+     "image": ""
+    },
+    {
+     "candidate": "c19",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 119384.4,
+     "image": ""
+    },
+    {
+     "candidate": "c19",
+     "rec_id": "20261010T130629Z_ddb1",
+     "t_ms": 18717.7,
+     "image": ""
+    },
+    {
+     "candidate": "c19",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 8318.3,
+     "image": ""
+    },
+    {
+     "candidate": "c04",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 29853.2,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 3.54,
+    "y_m": -3.49
+   },
+   "status": "observed",
+   "review_flags": [
+    "medium confidence"
+   ],
+   "references": []
+  },
+  {
+   "id": "n14",
+   "name": "Drinks area",
+   "kind": "landmark",
+   "description": "The drinks area is on your right a few metres in from the entrance, before the central aisle starts. The walker stressed that this is the drinks area, not the kitchen. There are high tables and chairs here, and the hackathon tables begin to your left.",
+   "landmarks": [
+    "About 4 metres in from the door, to the right",
+    "High tables and chairs on the right-hand side",
+    "Start of the narrow aisle just beyond"
+   ],
+   "hazards": [
+    "Chairs and bags sticking out from the tables",
+    "Flush floor socket covers and cables on the floor",
+    "Cracked floor"
+   ],
+   "visual_cues": [
+    "Drinks cooler and high tables on the right-hand side",
+    "Metal floor socket plate",
+    "Projection screen visible straight ahead"
+   ],
+   "floor": "ground",
+   "candidates": [
+    "c03"
+   ],
+   "relations": [
+    {
+     "id": "n14:hackathon-tables",
+     "subject": "Hackathon tables",
+     "candidate": "c03",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 41678.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c03.jpg",
+     "viewpoint_heading_deg": 105.1,
+     "bearing_deg": -109.9,
+     "heading_deg": 355.2,
+     "arrival_heading_deg": 166.1,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n14:stage-corridor",
+     "subject": "Stage corridor",
+     "candidate": "c03",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 41678.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c03.jpg",
+     "viewpoint_heading_deg": 105.1,
+     "bearing_deg": -10.4,
+     "heading_deg": 94.7,
+     "arrival_heading_deg": 166.1,
+     "direction": "left",
+     "status": "observed"
+    },
+    {
+     "id": "n14:right-side-tables",
+     "subject": "Right-side tables",
+     "candidate": "c03",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 41678.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c03.jpg",
+     "viewpoint_heading_deg": 105.1,
+     "bearing_deg": 3.0,
+     "heading_deg": 108.1,
+     "arrival_heading_deg": 166.1,
+     "direction": "left",
+     "status": "observed"
+    },
+    {
+     "id": "n14:main-entrance",
+     "subject": "Main entrance",
+     "candidate": "c03",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 41678.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c03.jpg",
+     "viewpoint_heading_deg": 105.1,
+     "bearing_deg": -137.2,
+     "heading_deg": 327.9,
+     "arrival_heading_deg": 166.1,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n14:entrance-porch",
+     "subject": "Entrance porch",
+     "candidate": "c03",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 41678.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c03.jpg",
+     "viewpoint_heading_deg": 105.1,
+     "bearing_deg": -147.6,
+     "heading_deg": 317.5,
+     "arrival_heading_deg": 166.1,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n14:corridor-end",
+     "subject": "Corridor end",
+     "candidate": "c03",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 41678.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c03.jpg",
+     "viewpoint_heading_deg": 105.1,
+     "bearing_deg": 15.4,
+     "heading_deg": 120.5,
+     "arrival_heading_deg": 166.1,
+     "direction": "left",
+     "status": "observed"
+    },
+    {
+     "id": "n14:floor-socket-plate",
+     "subject": "Floor socket plate",
+     "candidate": "c03",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 41678.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c03.jpg",
+     "viewpoint_heading_deg": 105.1,
+     "bearing_deg": -10.5,
+     "heading_deg": 94.6,
+     "arrival_heading_deg": 152.7,
+     "direction": "left",
+     "status": "observed"
+    }
+   ],
+   "confidence": "medium",
+   "quality": {
+    "visual_p": 0.2,
+    "usable": 2.89,
+    "turn_agrees_p": null,
+    "flags": []
+   },
+   "evidence": [
+    {
+     "candidate": "c03",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 41678.3,
+     "image": ""
+    },
+    {
+     "candidate": "c03",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 17124.2,
+     "image": ""
+    },
+    {
+     "candidate": "c03",
+     "rec_id": "20261010T130629Z_ddb1",
+     "t_ms": 29785.7,
+     "image": ""
+    },
+    {
+     "candidate": "c03",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 14801.3,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 3.69,
+    "y_m": -5.22
+   },
+   "status": "observed",
+   "review_flags": [
+    "medium confidence"
+   ],
+   "references": []
+  },
+  {
+   "id": "n4",
+   "name": "Stage corridor",
+   "kind": "corridor",
+   "description": "The start of the single central aisle, which runs the length of the hall with tables on both sides. The walker called it the corridor to the stage, where presentations take place, and stressed that it is very thin. The floor is cracked concrete, and the stage is straight ahead at the far end.",
+   "landmarks": [
+    "Table edges close on both sides",
+    "Long straight walkway",
+    "Voices on both sides; more open, echoing space ahead"
+   ],
+   "hazards": [
+    "Very narrow aisle",
+    "Bags, chair legs and cables in the aisle",
+    "Floor socket boxes"
+   ],
+   "visual_cues": [
+    "Projection screen hanging at the far end",
+    "Skylights and silver ducts overhead",
+    "Wooden meeting rooms at the far end"
+   ],
+   "floor": "ground",
+   "candidates": [
+    "c05"
+   ],
+   "relations": [
+    {
+     "id": "n4:drinks-area",
+     "subject": "Drinks area",
+     "candidate": "c05",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 109360.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c05.jpg",
+     "viewpoint_heading_deg": 118.7,
+     "bearing_deg": 156.0,
+     "heading_deg": 274.7,
+     "arrival_heading_deg": 109.2,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n4:right-side-tables",
+     "subject": "Right-side tables",
+     "candidate": "c05",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 109360.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c05.jpg",
+     "viewpoint_heading_deg": 118.7,
+     "bearing_deg": 1.5,
+     "heading_deg": 120.2,
+     "arrival_heading_deg": 109.2,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n4:hackathon-tables",
+     "subject": "Hackathon tables",
+     "candidate": "c05",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 109360.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c05.jpg",
+     "viewpoint_heading_deg": 118.7,
+     "bearing_deg": -166.7,
+     "heading_deg": 312.0,
+     "arrival_heading_deg": 109.2,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n4:corridor-end",
+     "subject": "Corridor end",
+     "candidate": "c05",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 109360.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c05.jpg",
+     "viewpoint_heading_deg": 118.7,
+     "bearing_deg": 10.1,
+     "heading_deg": 128.8,
+     "arrival_heading_deg": 109.2,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n4:main-entrance",
+     "subject": "Main entrance",
+     "candidate": "c05",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 109360.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c05.jpg",
+     "viewpoint_heading_deg": 118.7,
+     "bearing_deg": -165.3,
+     "heading_deg": 313.4,
+     "arrival_heading_deg": 109.2,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n4:entrance-porch",
+     "subject": "Entrance porch",
+     "candidate": "c05",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 109360.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c05.jpg",
+     "viewpoint_heading_deg": 118.7,
+     "bearing_deg": -170.1,
+     "heading_deg": 308.6,
+     "arrival_heading_deg": 109.2,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n4:projection-screen",
+     "subject": "Projection screen",
+     "candidate": "c05",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 109360.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c05.jpg",
+     "viewpoint_heading_deg": 118.7,
+     "bearing_deg": 1.9,
+     "heading_deg": 120.6,
+     "arrival_heading_deg": 249.1,
+     "direction": "left",
+     "status": "observed"
+    }
+   ],
+   "confidence": "high",
+   "quality": {
+    "visual_p": 0.29,
+    "usable": 3.0,
+    "turn_agrees_p": null,
+    "flags": []
+   },
+   "evidence": [
+    {
+     "candidate": "c05",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 109360.4,
+     "image": ""
+    },
+    {
+     "candidate": "c05",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 38222.2,
+     "image": ""
+    },
+    {
+     "candidate": "c05",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 50197.3,
+     "image": ""
+    },
+    {
+     "candidate": "c05",
+     "rec_id": "20261010T130629Z_ddb1",
+     "t_ms": 169218.7,
+     "image": ""
+    },
+    {
+     "candidate": "c05",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 44583.3,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 5.65,
+    "y_m": -5.38
+   },
+   "status": "observed",
+   "review_flags": [],
+   "references": []
+  },
+  {
+   "id": "n5",
+   "name": "Right-side tables",
+   "kind": "open_area",
+   "description": "About a third of the way down the hall, a group of work tables stands on your right as you walk towards the stage. The narrow aisle carries on straight ahead. Facing back towards the entrance, the glass front and door are ahead, with low armchairs to their left.",
+   "landmarks": [
+    "Tables on the right of the aisle",
+    "Glass front and door a few metres away when facing back",
+    "Hall chatter"
+   ],
+   "hazards": [
+    "Narrow aisle",
+    "Chairs and bags",
+    "Cracked floor with flush floor sockets"
+   ],
+   "visual_cues": [
+    "Glass front with exit sign above the doors",
+    "Woven armchairs and a high table by the glass"
+   ],
+   "floor": "ground",
+   "candidates": [
+    "c06"
+   ],
+   "relations": [
+    {
+     "id": "n5:stage-corridor",
+     "subject": "Stage corridor",
+     "candidate": "c06",
+     "rec_id": "20261010T130629Z_ddb1",
+     "t_ms": 166874.7,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c06.jpg",
+     "viewpoint_heading_deg": 302.3,
+     "bearing_deg": -2.1,
+     "heading_deg": 300.2,
+     "arrival_heading_deg": 133.2,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n5:corridor-end",
+     "subject": "Corridor end",
+     "candidate": "c06",
+     "rec_id": "20261010T130629Z_ddb1",
+     "t_ms": 166874.7,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c06.jpg",
+     "viewpoint_heading_deg": 302.3,
+     "bearing_deg": -168.6,
+     "heading_deg": 133.7,
+     "arrival_heading_deg": 133.2,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n5:drinks-area",
+     "subject": "Drinks area",
+     "candidate": "c06",
+     "rec_id": "20261010T130629Z_ddb1",
+     "t_ms": 166874.7,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c06.jpg",
+     "viewpoint_heading_deg": 302.3,
+     "bearing_deg": -14.2,
+     "heading_deg": 288.1,
+     "arrival_heading_deg": 133.2,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n5:hackathon-tables",
+     "subject": "Hackathon tables",
+     "candidate": "c06",
+     "rec_id": "20261010T130629Z_ddb1",
+     "t_ms": 166874.7,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c06.jpg",
+     "viewpoint_heading_deg": 302.3,
+     "bearing_deg": 4.6,
+     "heading_deg": 306.9,
+     "arrival_heading_deg": 133.2,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n5:bathroom",
+     "subject": "Bathroom",
+     "candidate": "c06",
+     "rec_id": "20261010T130629Z_ddb1",
+     "t_ms": 166874.7,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c06.jpg",
+     "viewpoint_heading_deg": 302.3,
+     "bearing_deg": -170.7,
+     "heading_deg": 131.6,
+     "arrival_heading_deg": 133.2,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n5:main-entrance",
+     "subject": "Main entrance",
+     "candidate": "c06",
+     "rec_id": "20261010T130629Z_ddb1",
+     "t_ms": 166874.7,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c06.jpg",
+     "viewpoint_heading_deg": 302.3,
+     "bearing_deg": 7.7,
+     "heading_deg": 310.0,
+     "arrival_heading_deg": 133.2,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n5:woven-armchairs",
+     "subject": "Woven armchairs",
+     "candidate": "c06",
+     "rec_id": "20261010T130629Z_ddb1",
+     "t_ms": 166874.7,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c06.jpg",
+     "viewpoint_heading_deg": 302.3,
+     "bearing_deg": -4.6,
+     "heading_deg": 297.7,
+     "arrival_heading_deg": 305.2,
+     "direction": "ahead",
+     "status": "observed"
+    }
+   ],
+   "confidence": "medium",
+   "quality": {
+    "visual_p": 0.47,
+    "usable": 2.95,
+    "turn_agrees_p": null,
+    "flags": []
+   },
+   "evidence": [
+    {
+     "candidate": "c06",
+     "rec_id": "20261010T130629Z_ddb1",
+     "t_ms": 166874.7,
+     "image": ""
+    },
+    {
+     "candidate": "c06",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 48104.2,
+     "image": ""
+    },
+    {
+     "candidate": "c06",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 87665.4,
+     "image": ""
+    },
+    {
+     "candidate": "c06",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 61025.3,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 7.54,
+    "y_m": -6.48
+   },
+   "status": "observed",
+   "review_flags": [
+    "medium confidence"
+   ],
+   "references": []
+  },
+  {
+   "id": "n6",
+   "name": "Corridor end",
+   "kind": "junction",
+   "description": "The stage end of the central aisle, where the hall opens out into a wider space. Facing the stage: the bathroom door and then the kitchen counter are ahead on the right, a long judges' table stands ahead in front of the kitchen, the stage is ahead to the left, and tables by the stone wall are on your left. A fire extinguisher hangs on the right-hand wall.",
+   "landmarks": [
+    "The aisle's table edges end and the space widens",
+    "Fire extinguisher on the right-hand wall",
+    "Kitchen sounds ahead and to the right"
+   ],
+   "hazards": [
+    "Chairs often placed here, partly blocking the aisle",
+    "Bags and cables on the floor"
+   ],
+   "visual_cues": [
+    "Large projection screen with a projector hanging above",
+    "Wooden OSB meeting rooms behind the stage",
+    "Painted mural on the right-hand wall"
+   ],
+   "floor": "ground",
+   "candidates": [
+    "c07",
+    "c18",
+    "c08"
+   ],
+   "relations": [
+    {
+     "id": "n6:bathroom",
+     "subject": "Bathroom",
+     "candidate": "c07",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 69954.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c07.jpg",
+     "viewpoint_heading_deg": 293.9,
+     "bearing_deg": -164.5,
+     "heading_deg": 129.4,
+     "arrival_heading_deg": 154.0,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n6:right-side-tables",
+     "subject": "Right-side tables",
+     "candidate": "c07",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 69954.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c07.jpg",
+     "viewpoint_heading_deg": 293.9,
+     "bearing_deg": 19.8,
+     "heading_deg": 313.7,
+     "arrival_heading_deg": 154.0,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n6:judges-table",
+     "subject": "Judges' table",
+     "candidate": "c07",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 69954.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c07.jpg",
+     "viewpoint_heading_deg": 293.9,
+     "bearing_deg": -157.6,
+     "heading_deg": 136.3,
+     "arrival_heading_deg": 154.0,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n6:stage-corridor",
+     "subject": "Stage corridor",
+     "candidate": "c07",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 69954.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c07.jpg",
+     "viewpoint_heading_deg": 293.9,
+     "bearing_deg": 14.9,
+     "heading_deg": 308.8,
+     "arrival_heading_deg": 154.0,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n6:stone-wall-tables",
+     "subject": "Stone wall tables",
+     "candidate": "c07",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 69954.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c07.jpg",
+     "viewpoint_heading_deg": 293.9,
+     "bearing_deg": -163.9,
+     "heading_deg": 130.0,
+     "arrival_heading_deg": 154.0,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n6:kitchen",
+     "subject": "Kitchen",
+     "candidate": "c07",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 69954.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c07.jpg",
+     "viewpoint_heading_deg": 293.9,
+     "bearing_deg": -150.5,
+     "heading_deg": 143.4,
+     "arrival_heading_deg": 154.0,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n6:projection-screen",
+     "subject": "Projection screen",
+     "candidate": "c08",
+     "rec_id": "20261010T140614Z_b6a0",
+     "t_ms": 37951.0,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c08.jpg",
+     "viewpoint_heading_deg": 114.7,
+     "bearing_deg": -6.6,
+     "heading_deg": 108.1,
+     "arrival_heading_deg": 129.8,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n6:wooden-meeting-room",
+     "subject": "Wooden meeting room",
+     "candidate": "c08",
+     "rec_id": "20261010T140614Z_b6a0",
+     "t_ms": 37951.0,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c08.jpg",
+     "viewpoint_heading_deg": 114.7,
+     "bearing_deg": 13.5,
+     "heading_deg": 128.2,
+     "arrival_heading_deg": 129.8,
+     "direction": "ahead",
+     "status": "observed"
+    }
+   ],
+   "confidence": "high",
+   "quality": {
+    "visual_p": 0.33,
+    "usable": 2.99,
+    "turn_agrees_p": null,
+    "flags": []
+   },
+   "evidence": [
+    {
+     "candidate": "c07",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 69954.4,
+     "image": ""
+    },
+    {
+     "candidate": "c07",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 57527.2,
+     "image": ""
+    },
+    {
+     "candidate": "c07",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 61295.3,
+     "image": ""
+    },
+    {
+     "candidate": "c07",
+     "rec_id": "20261010T130629Z_ddb1",
+     "t_ms": 50804.7,
+     "image": ""
+    },
+    {
+     "candidate": "c07",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 64802.3,
+     "image": ""
+    },
+    {
+     "candidate": "c08",
+     "rec_id": "20261010T140614Z_b6a0",
+     "t_ms": 37951.0,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 10.29,
+    "y_m": -9.1
+   },
+   "status": "observed",
+   "review_flags": [],
+   "references": []
+  },
+  {
+   "id": "n12",
+   "name": "Bathroom",
+   "kind": "destination",
+   "description": "The bathroom door is in the right-hand wall at the stage end of the corridor, just before the kitchen counter starts. The walker said it is next to the fire extinguisher, with the kitchen just to its left. It is a plain door with a round knob at hip height.",
+   "landmarks": [
+    "Round door knob at hip height",
+    "Fire extinguisher on the wall nearby",
+    "Kitchen counter starts just to the left"
+   ],
+   "hazards": [
+    "Judges' table on wheels close by"
+   ],
+   "visual_cues": [
+    "Plain white door in the white wall",
+    "Fire extinguisher sign"
+   ],
+   "floor": "ground",
+   "candidates": [
+    "c17"
+   ],
+   "relations": [
+    {
+     "id": "n12:judges-table",
+     "subject": "Judges' table",
+     "candidate": "c17",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 83248.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c17.jpg",
+     "viewpoint_heading_deg": 128.0,
+     "bearing_deg": 23.6,
+     "heading_deg": 151.6,
+     "arrival_heading_deg": 134.6,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n12:corridor-end",
+     "subject": "Corridor end",
+     "candidate": "c17",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 83248.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c17.jpg",
+     "viewpoint_heading_deg": 128.0,
+     "bearing_deg": -178.6,
+     "heading_deg": 309.4,
+     "arrival_heading_deg": 134.6,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n12:stone-wall-tables",
+     "subject": "Stone wall tables",
+     "candidate": "c17",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 83248.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c17.jpg",
+     "viewpoint_heading_deg": 128.0,
+     "bearing_deg": 2.6,
+     "heading_deg": 130.6,
+     "arrival_heading_deg": 134.6,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n12:kitchen",
+     "subject": "Kitchen",
+     "candidate": "c17",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 83248.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c17.jpg",
+     "viewpoint_heading_deg": 128.0,
+     "bearing_deg": 28.2,
+     "heading_deg": 156.2,
+     "arrival_heading_deg": 134.6,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n12:centre-tables",
+     "subject": "Centre tables",
+     "candidate": "c17",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 83248.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c17.jpg",
+     "viewpoint_heading_deg": 128.0,
+     "bearing_deg": -22.5,
+     "heading_deg": 105.5,
+     "arrival_heading_deg": 134.6,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n12:right-side-tables",
+     "subject": "Right-side tables",
+     "candidate": "c17",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 83248.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c17.jpg",
+     "viewpoint_heading_deg": 128.0,
+     "bearing_deg": -176.4,
+     "heading_deg": 311.6,
+     "arrival_heading_deg": 134.6,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n12:drinks-fridge",
+     "subject": "Drinks fridge",
+     "candidate": "c17",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 83248.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c17.jpg",
+     "viewpoint_heading_deg": 128.0,
+     "bearing_deg": 6.7,
+     "heading_deg": 134.7,
+     "arrival_heading_deg": 121.9,
+     "direction": "ahead",
+     "status": "observed"
+    }
+   ],
+   "confidence": "medium",
+   "quality": {
+    "visual_p": 0.45,
+    "usable": 2.96,
+    "turn_agrees_p": null,
+    "flags": []
+   },
+   "evidence": [
+    {
+     "candidate": "c17",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 83248.3,
+     "image": ""
+    },
+    {
+     "candidate": "c17",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 61330.4,
+     "image": ""
+    },
+    {
+     "candidate": "c17",
+     "rec_id": "20261010T130629Z_ddb1",
+     "t_ms": 61530.7,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 12.94,
+    "y_m": -11.28
+   },
+   "status": "observed",
+   "review_flags": [
+    "medium confidence"
+   ],
+   "references": []
+  },
+  {
+   "id": "n9",
+   "name": "Judges' table",
+   "kind": "landmark",
+   "description": "A long table on wheels stands in front of the kitchen counter, between the end of the corridor and the stage, with chairs along it. The walker said this is the only way onto the stage, and the gap between it and the other tables is very narrow.",
+   "landmarks": [
+    "Long table edge at waist height",
+    "Table legs on wheels",
+    "Stage edge a few steps beyond it"
+   ],
+   "hazards": [
+    "Very narrow gap between the judges' table and the stone wall tables",
+    "Table on wheels can move",
+    "Chairs along the side"
+   ],
+   "visual_cues": [
+    "Long grey-green table with drink cans and papers",
+    "White perforated chairs",
+    "Black itnig drinks fridges behind it"
+   ],
+   "floor": "ground",
+   "candidates": [
+    "c09"
+   ],
+   "relations": [
+    {
+     "id": "n9:bathroom",
+     "subject": "Bathroom",
+     "candidate": "c09",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 91939.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c09.jpg",
+     "viewpoint_heading_deg": 119.4,
+     "bearing_deg": -147.8,
+     "heading_deg": 331.6,
+     "arrival_heading_deg": 189.8,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n9:stone-wall-tables",
+     "subject": "Stone wall tables",
+     "candidate": "c09",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 91939.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c09.jpg",
+     "viewpoint_heading_deg": 119.4,
+     "bearing_deg": -3.8,
+     "heading_deg": 115.6,
+     "arrival_heading_deg": 189.8,
+     "direction": "left",
+     "status": "observed"
+    },
+    {
+     "id": "n9:kitchen",
+     "subject": "Kitchen",
+     "candidate": "c09",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 91939.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c09.jpg",
+     "viewpoint_heading_deg": 119.4,
+     "bearing_deg": 40.0,
+     "heading_deg": 159.4,
+     "arrival_heading_deg": 189.8,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n9:corridor-end",
+     "subject": "Corridor end",
+     "candidate": "c09",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 91939.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c09.jpg",
+     "viewpoint_heading_deg": 119.4,
+     "bearing_deg": -163.1,
+     "heading_deg": 316.3,
+     "arrival_heading_deg": 189.8,
+     "direction": "right",
+     "status": "observed"
+    },
+    {
+     "id": "n9:centre-tables",
+     "subject": "Centre tables",
+     "candidate": "c09",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 91939.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c09.jpg",
+     "viewpoint_heading_deg": 119.4,
+     "bearing_deg": -24.8,
+     "heading_deg": 94.6,
+     "arrival_heading_deg": 189.8,
+     "direction": "left",
+     "status": "observed"
+    },
+    {
+     "id": "n9:stage",
+     "subject": "Stage",
+     "candidate": "c09",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 91939.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c09.jpg",
+     "viewpoint_heading_deg": 119.4,
+     "bearing_deg": -7.9,
+     "heading_deg": 111.5,
+     "arrival_heading_deg": 189.8,
+     "direction": "left",
+     "status": "observed"
+    },
+    {
+     "id": "n9:drinks-fridge",
+     "subject": "Drinks fridge",
+     "candidate": "c09",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 91939.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c09.jpg",
+     "viewpoint_heading_deg": 119.4,
+     "bearing_deg": 11.2,
+     "heading_deg": 130.6,
+     "arrival_heading_deg": 149.8,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n9:wooden-meeting-room",
+     "subject": "Wooden meeting room",
+     "candidate": "c09",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 91939.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c09.jpg",
+     "viewpoint_heading_deg": 119.4,
+     "bearing_deg": 6.7,
+     "heading_deg": 126.1,
+     "arrival_heading_deg": 149.8,
+     "direction": "ahead",
+     "status": "observed"
+    }
+   ],
+   "confidence": "high",
+   "quality": {
+    "visual_p": 0.24,
+    "usable": 2.98,
+    "turn_agrees_p": null,
+    "flags": []
+   },
+   "evidence": [
+    {
+     "candidate": "c09",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 91939.3,
+     "image": ""
+    },
+    {
+     "candidate": "c09",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 66509.2,
+     "image": ""
+    },
+    {
+     "candidate": "c09",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 55814.4,
+     "image": ""
+    },
+    {
+     "candidate": "c09",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 70785.3,
+     "image": ""
+    },
+    {
+     "candidate": "c09",
+     "rec_id": "20261010T130629Z_ddb1",
+     "t_ms": 74298.7,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 13.68,
+    "y_m": -12.65
+   },
+   "status": "observed",
+   "review_flags": [],
+   "references": []
+  },
+  {
+   "id": "n7",
+   "name": "Kitchen",
+   "kind": "room",
+   "description": "A long, waist-high kitchen counter runs along the right-hand wall as you face the stage, with a tiled wall behind it. The water dispenser and a drinks fridge are at the near end. Along the counter are a deep sink, rubbish bins and built-in microwaves, with cupboards underneath. The counter is easy to trail with your hand.",
+   "landmarks": [
+    "Counter edge at waist height",
+    "Deep metal sink with a tall tap",
+    "Recycling bins under the counter",
+    "Built-in microwaves at knee height",
+    "Fridge hum (likely)"
+   ],
+   "hazards": [
+    "Bins sticking out from under the counter",
+    "People queuing for food"
+   ],
+   "visual_cues": [
+    "Light wood counter and cream wall tiles",
+    "Yellow, blue and black recycling bins",
+    "Bowls of snacks and bottles on the counter",
+    "Black itnig fridge"
+   ],
+   "floor": "ground",
+   "candidates": [
+    "c10",
+    "c16"
+   ],
+   "relations": [
+    {
+     "id": "n7:stone-wall-tables",
+     "subject": "Stone wall tables",
+     "candidate": "c10",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 80578.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c10.jpg",
+     "viewpoint_heading_deg": 145.4,
+     "bearing_deg": -99.5,
+     "heading_deg": 45.9,
+     "arrival_heading_deg": 182.0,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n7:judges-table",
+     "subject": "Judges' table",
+     "candidate": "c10",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 80578.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c10.jpg",
+     "viewpoint_heading_deg": 145.4,
+     "bearing_deg": -166.0,
+     "heading_deg": 339.4,
+     "arrival_heading_deg": 182.0,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n7:bathroom",
+     "subject": "Bathroom",
+     "candidate": "c10",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 80578.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c10.jpg",
+     "viewpoint_heading_deg": 145.4,
+     "bearing_deg": -169.2,
+     "heading_deg": 336.2,
+     "arrival_heading_deg": 182.0,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n7:stage",
+     "subject": "Stage",
+     "candidate": "c10",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 80578.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c10.jpg",
+     "viewpoint_heading_deg": 145.4,
+     "bearing_deg": -53.8,
+     "heading_deg": 91.6,
+     "arrival_heading_deg": 182.0,
+     "direction": "left",
+     "status": "observed"
+    },
+    {
+     "id": "n7:centre-tables",
+     "subject": "Centre tables",
+     "candidate": "c10",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 80578.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c10.jpg",
+     "viewpoint_heading_deg": 145.4,
+     "bearing_deg": -72.7,
+     "heading_deg": 72.7,
+     "arrival_heading_deg": 182.0,
+     "direction": "left",
+     "status": "observed"
+    },
+    {
+     "id": "n7:corridor-end",
+     "subject": "Corridor end",
+     "candidate": "c10",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 80578.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c10.jpg",
+     "viewpoint_heading_deg": 145.4,
+     "bearing_deg": 178.0,
+     "heading_deg": 323.4,
+     "arrival_heading_deg": 182.0,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n7:sink",
+     "subject": "Sink",
+     "candidate": "c10",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 80578.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c10.jpg",
+     "viewpoint_heading_deg": 145.4,
+     "bearing_deg": -2.6,
+     "heading_deg": 142.8,
+     "arrival_heading_deg": 156.0,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n7:microwaves",
+     "subject": "Microwaves",
+     "candidate": "c10",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 80578.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c10.jpg",
+     "viewpoint_heading_deg": 145.4,
+     "bearing_deg": 11.3,
+     "heading_deg": 156.7,
+     "arrival_heading_deg": 156.0,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n7:water-dispenser",
+     "subject": "Water dispenser",
+     "candidate": "c10",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 80578.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c10.jpg",
+     "viewpoint_heading_deg": 145.4,
+     "bearing_deg": -6.4,
+     "heading_deg": 139.0,
+     "arrival_heading_deg": 156.0,
+     "direction": "ahead",
+     "status": "observed"
+    }
+   ],
+   "confidence": "high",
+   "quality": {
+    "visual_p": 0.4,
+    "usable": 3.0,
+    "turn_agrees_p": null,
+    "flags": []
+   },
+   "evidence": [
+    {
+     "candidate": "c10",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 80578.2,
+     "image": ""
+    },
+    {
+     "candidate": "c10",
+     "rec_id": "20261010T124519Z_6b88",
+     "t_ms": 77068.3,
+     "image": ""
+    },
+    {
+     "candidate": "c16",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 36402.4,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 14.46,
+    "y_m": -14.71
+   },
+   "status": "observed",
+   "review_flags": [],
+   "references": []
+  },
+  {
+   "id": "n15",
+   "name": "Stone wall tables",
+   "kind": "open_area",
+   "description": "Work tables along the rough stone wall at the far end of the hall, across from the judges' table and kitchen. The passage between these tables and the judges' table is very narrow. The stage is just beyond.",
+   "landmarks": [
+    "Rough stone wall on the far side of the tables",
+    "Narrow gap with table edges on both sides"
+   ],
+   "hazards": [
+    "Very narrow passage",
+    "Chairs and bags in the way"
+   ],
+   "visual_cues": [
+    "Exposed stone and brick wall with a white pipe",
+    "White tables with laptops"
+   ],
+   "floor": "ground",
+   "candidates": [
+    "c11",
+    "c21"
+   ],
+   "relations": [
+    {
+     "id": "n15:kitchen",
+     "subject": "Kitchen",
+     "candidate": "c11",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 49841.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c11.jpg",
+     "viewpoint_heading_deg": 27.3,
+     "bearing_deg": -161.4,
+     "heading_deg": 225.9,
+     "arrival_heading_deg": 331.9,
+     "direction": "left",
+     "status": "observed"
+    },
+    {
+     "id": "n15:judges-table",
+     "subject": "Judges' table",
+     "candidate": "c11",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 49841.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c11.jpg",
+     "viewpoint_heading_deg": 27.3,
+     "bearing_deg": -91.7,
+     "heading_deg": 295.6,
+     "arrival_heading_deg": 331.9,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n15:bathroom",
+     "subject": "Bathroom",
+     "candidate": "c11",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 49841.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c11.jpg",
+     "viewpoint_heading_deg": 27.3,
+     "bearing_deg": -76.7,
+     "heading_deg": 310.6,
+     "arrival_heading_deg": 331.9,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n15:stage",
+     "subject": "Stage",
+     "candidate": "c11",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 49841.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c11.jpg",
+     "viewpoint_heading_deg": 27.3,
+     "bearing_deg": 81.8,
+     "heading_deg": 109.1,
+     "arrival_heading_deg": 331.9,
+     "direction": "behind",
+     "status": "observed"
+    },
+    {
+     "id": "n15:centre-tables",
+     "subject": "Centre tables",
+     "candidate": "c11",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 49841.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c11.jpg",
+     "viewpoint_heading_deg": 27.3,
+     "bearing_deg": 56.0,
+     "heading_deg": 83.3,
+     "arrival_heading_deg": 331.9,
+     "direction": "right",
+     "status": "observed"
+    },
+    {
+     "id": "n15:corridor-end",
+     "subject": "Corridor end",
+     "candidate": "c11",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 49841.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c11.jpg",
+     "viewpoint_heading_deg": 27.3,
+     "bearing_deg": -77.3,
+     "heading_deg": 310.0,
+     "arrival_heading_deg": 331.9,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n15:stone-wall",
+     "subject": "Stone wall",
+     "candidate": "c11",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 49841.4,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c11.jpg",
+     "viewpoint_heading_deg": 27.3,
+     "bearing_deg": 0.0,
+     "heading_deg": 27.3,
+     "arrival_heading_deg": 284.6,
+     "direction": "right",
+     "status": "observed"
+    }
+   ],
+   "confidence": "low",
+   "quality": {
+    "visual_p": 0.23,
+    "usable": 2.92,
+    "turn_agrees_p": null,
+    "flags": []
+   },
+   "evidence": [
+    {
+     "candidate": "c11",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 49841.4,
+     "image": ""
+    },
+    {
+     "candidate": "c11",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 87229.2,
+     "image": ""
+    },
+    {
+     "candidate": "c11",
+     "rec_id": "20261010T130629Z_ddb1",
+     "t_ms": 96189.7,
+     "image": ""
+    },
+    {
+     "candidate": "c21",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 112558.3,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 15.62,
+    "y_m": -13.58
+   },
+   "status": "observed",
+   "review_flags": [
+    "low confidence"
+   ],
+   "references": []
+  },
+  {
+   "id": "n8",
+   "name": "Stage",
+   "kind": "destination",
+   "description": "A low raised stage platform at the far end of the hall, to the left of the kitchen, where presentations take place. Its top is carpeted with a wooden edge, and there are steps down. A tree grows up through the floor beside it, and a lectern stands at its stone-wall end. Wooden meeting rooms stand behind it. Step down carefully when you leave it.",
+   "landmarks": [
+    "Step edge of the platform",
+    "Carpet underfoot on the stage, concrete off it",
+    "Tree trunk beside the stage",
+    "Lectern near the stone wall",
+    "Microphone and speaker sound during talks"
+   ],
+   "hazards": [
+    "Step up onto and down from the platform",
+    "Cables near the lectern",
+    "Tree trunk and potted plants"
+   ],
+   "visual_cues": [
+    "Dark carpet on a wooden platform",
+    "Large projection screen above",
+    "Black metal lectern",
+    "Wooden OSB meeting room with a glass front",
+    "Green emergency exit sign on the stone wall"
+   ],
+   "floor": "ground",
+   "candidates": [
+    "c12",
+    "c14",
+    "c22",
+    "c15"
+   ],
+   "relations": [
+    {
+     "id": "n8:centre-tables",
+     "subject": "Centre tables",
+     "candidate": "c12",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 95585.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c12.jpg",
+     "viewpoint_heading_deg": 136.5,
+     "bearing_deg": -126.5,
+     "heading_deg": 10.0,
+     "arrival_heading_deg": 333.1,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n8:stone-wall-tables",
+     "subject": "Stone wall tables",
+     "candidate": "c12",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 95585.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c12.jpg",
+     "viewpoint_heading_deg": 136.5,
+     "bearing_deg": 152.6,
+     "heading_deg": 289.1,
+     "arrival_heading_deg": 333.1,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n8:kitchen",
+     "subject": "Kitchen",
+     "candidate": "c12",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 95585.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c12.jpg",
+     "viewpoint_heading_deg": 136.5,
+     "bearing_deg": 135.1,
+     "heading_deg": 271.6,
+     "arrival_heading_deg": 333.1,
+     "direction": "left",
+     "status": "observed"
+    },
+    {
+     "id": "n8:judges-table",
+     "subject": "Judges' table",
+     "candidate": "c12",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 95585.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c12.jpg",
+     "viewpoint_heading_deg": 136.5,
+     "bearing_deg": 155.0,
+     "heading_deg": 291.5,
+     "arrival_heading_deg": 333.1,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n8:bathroom",
+     "subject": "Bathroom",
+     "candidate": "c12",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 95585.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c12.jpg",
+     "viewpoint_heading_deg": 136.5,
+     "bearing_deg": 162.9,
+     "heading_deg": 299.4,
+     "arrival_heading_deg": 333.1,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n8:corridor-end",
+     "subject": "Corridor end",
+     "candidate": "c12",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 95585.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c12.jpg",
+     "viewpoint_heading_deg": 136.5,
+     "bearing_deg": 166.1,
+     "heading_deg": 302.6,
+     "arrival_heading_deg": 333.1,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n8:lectern",
+     "subject": "Lectern",
+     "candidate": "c22",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 139666.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c22.jpg",
+     "viewpoint_heading_deg": 8.8,
+     "bearing_deg": 13.8,
+     "heading_deg": 22.6,
+     "arrival_heading_deg": 98.9,
+     "direction": "left",
+     "status": "observed"
+    },
+    {
+     "id": "n8:emergency-exit-sign",
+     "subject": "Emergency exit sign",
+     "candidate": "c22",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 139666.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c22.jpg",
+     "viewpoint_heading_deg": 8.8,
+     "bearing_deg": -4.8,
+     "heading_deg": 4.0,
+     "arrival_heading_deg": 98.9,
+     "direction": "left",
+     "status": "observed"
+    },
+    {
+     "id": "n8:tree",
+     "subject": "Tree",
+     "candidate": "c15",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 122420.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c15.jpg",
+     "viewpoint_heading_deg": 122.3,
+     "bearing_deg": -14.9,
+     "heading_deg": 107.4,
+     "arrival_heading_deg": 98.9,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n8:wooden-meeting-room",
+     "subject": "Wooden meeting room",
+     "candidate": "c15",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 122420.3,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c15.jpg",
+     "viewpoint_heading_deg": 122.3,
+     "bearing_deg": 9.3,
+     "heading_deg": 131.6,
+     "arrival_heading_deg": 98.9,
+     "direction": "ahead",
+     "status": "observed"
+    }
+   ],
+   "confidence": "high",
+   "quality": {
+    "visual_p": 0.58,
+    "usable": 3.0,
+    "turn_agrees_p": null,
+    "flags": []
+   },
+   "evidence": [
+    {
+     "candidate": "c12",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 95585.2,
+     "image": ""
+    },
+    {
+     "candidate": "c12",
+     "rec_id": "20261010T133220Z_9258",
+     "t_ms": 129873.3,
+     "image": ""
+    },
+    {
+     "candidate": "c14",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 1372.4,
+     "image": ""
+    },
+    {
+     "candidate": "c14",
+     "rec_id": "20261010T130629Z_ddb1",
+     "t_ms": 119483.7,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 19.26,
+    "y_m": -14.84
+   },
+   "status": "observed",
+   "review_flags": [],
+   "references": []
+  },
+  {
+   "id": "n10",
+   "name": "Centre tables",
+   "kind": "open_area",
+   "description": "Tables in the middle of the far part of the hall, near the stage. Facing back towards the entrance, the long side wall of the hall is on your left. It is busy and noisy.",
+   "landmarks": [
+    "Table edges and chairs all around",
+    "Side wall to the left when facing the entrance"
+   ],
+   "hazards": [
+    "Chairs and bags in the way",
+    "Low chair legs"
+   ],
+   "visual_cues": [
+    "Colourful painted mural on the wall",
+    "Glass front visible at the far end"
+   ],
+   "floor": "ground",
+   "candidates": [
+    "c13"
+   ],
+   "relations": [
+    {
+     "id": "n10:stage",
+     "subject": "Stage",
+     "candidate": "c13",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 113275.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c13.jpg",
+     "viewpoint_heading_deg": 278.0,
+     "bearing_deg": -88.0,
+     "heading_deg": 190.0,
+     "arrival_heading_deg": 302.9,
+     "direction": "left",
+     "status": "observed"
+    },
+    {
+     "id": "n10:stone-wall-tables",
+     "subject": "Stone wall tables",
+     "candidate": "c13",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 113275.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c13.jpg",
+     "viewpoint_heading_deg": 278.0,
+     "bearing_deg": -14.7,
+     "heading_deg": 263.3,
+     "arrival_heading_deg": 302.9,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n10:kitchen",
+     "subject": "Kitchen",
+     "candidate": "c13",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 113275.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c13.jpg",
+     "viewpoint_heading_deg": 278.0,
+     "bearing_deg": -25.3,
+     "heading_deg": 252.7,
+     "arrival_heading_deg": 302.9,
+     "direction": "left",
+     "status": "observed"
+    },
+    {
+     "id": "n10:judges-table",
+     "subject": "Judges' table",
+     "candidate": "c13",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 113275.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c13.jpg",
+     "viewpoint_heading_deg": 278.0,
+     "bearing_deg": -3.4,
+     "heading_deg": 274.6,
+     "arrival_heading_deg": 302.9,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n10:bathroom",
+     "subject": "Bathroom",
+     "candidate": "c13",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 113275.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c13.jpg",
+     "viewpoint_heading_deg": 278.0,
+     "bearing_deg": 7.5,
+     "heading_deg": 285.5,
+     "arrival_heading_deg": 302.9,
+     "direction": "ahead",
+     "status": "observed"
+    },
+    {
+     "id": "n10:corridor-end",
+     "subject": "Corridor end",
+     "candidate": "c13",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 113275.2,
+     "viewpoint_image": "builds/20261013T062115Z/frames/c13.jpg",
+     "viewpoint_heading_deg": 278.0,
+     "bearing_deg": 15.4,
+     "heading_deg": 293.4,
+     "arrival_heading_deg": 302.9,
+     "direction": "ahead",
+     "status": "observed"
+    }
+   ],
+   "confidence": "medium",
+   "quality": {
+    "visual_p": 0.13,
+    "usable": 2.89,
+    "turn_agrees_p": null,
+    "flags": []
+   },
+   "evidence": [
+    {
+     "candidate": "c13",
+     "rec_id": "20261009T202101Z_7f42",
+     "t_ms": 113275.2,
+     "image": ""
+    },
+    {
+     "candidate": "c13",
+     "rec_id": "20261010T110802Z_601a",
+     "t_ms": 27645.4,
+     "image": ""
+    },
+    {
+     "candidate": "c13",
+     "rec_id": "20261010T130629Z_ddb1",
+     "t_ms": 137800.7,
+     "image": ""
+    }
+   ],
+   "position": {
+    "x_m": 19.56,
+    "y_m": -13.12
+   },
+   "status": "observed",
+   "review_flags": [
+    "medium confidence"
+   ],
+   "references": []
+  }
+ ],
+ "edges": [
+  {
+   "id": "e15",
+   "source": "n1",
+   "target": "n11",
+   "kind": "door",
+   "bidirectional": true,
+   "basis": "walked",
+   "steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 2.5,
+     "along": "woven armchairs against the glass front on one side",
+     "until": null
+    }
+   ],
+   "instruction": "Turn around so the hall's voices are behind you and walk about 3 metres to the glass door; push the bar and step out onto the porch, into open air and street sounds.",
+   "reverse_instruction": "From the porch, walk straight about 3 metres to the glass double door, push the bar at hip height and go inside; the floor turns to smooth concrete and the hall's voices open up ahead.",
+   "landmarks": [
+    "Woven armchairs against the glass front",
+    "Push bar across the glass door at hip height",
+    "Metal threshold underfoot",
+    "Smooth concrete floor inside"
+   ],
+   "hazards": [
+    "Glass door: push bar at hip height",
+    "Metal threshold at the door",
+    "Armchairs and bar stools on the porch"
+   ],
+   "visual_cues": [
+    "Glass double door with metal frame",
+    "'SORTIDA' exit sign above the door inside",
+    "Woven armchairs and potted plant on the porch"
+   ],
+   "candidates": [],
+   "confidence": "high",
+   "distance_m": 2.5,
+   "measured_distance_m": 2.5,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 2.5,
+     "along": "woven armchairs against the glass front on one side",
+     "until": "Push bar across the glass door at hip height"
+    }
+   ],
+   "path": [],
+   "walked_at_ms": 134891.4,
+   "walked_in": "20261010T110802Z_601a",
+   "walked": true,
+   "turn_deg": 55.0,
+   "quality": {
+    "visual_p": 0.21,
+    "usable": 2.98,
+    "turn_agrees_p": null,
+    "flags": []
+   },
+   "status": "observed",
+   "reverse_status": "observed",
+   "review_flags": [],
+   "instruction_kind": "turn_right",
+   "departure_heading_deg": 13.8,
+   "arrival_heading_deg": 296.9,
+   "reference_views": [],
+   "walked_forward": 1,
+   "walked_back": 4,
+   "source_part": null,
+   "target_part": null
+  },
+  {
+   "id": "e1",
+   "source": "n1",
+   "target": "n2",
+   "kind": "walk",
+   "bidirectional": true,
+   "basis": "walked",
+   "steps": [
+    {
+     "action": "straight",
+     "distance_m": 3.5,
+     "along": "high round bar table on your right",
+     "until": "until table edges are on your left, along the rough stone wall, with steady typing and chatter"
+    }
+   ],
+   "instruction": "From the main door, walk straight about 3.5 metres into the hall, passing the high round bar table on your right. The hackathon tables are on your left, along the rough stone wall, with steady chatter and typing.",
+   "reverse_instruction": "Turn around and walk straight about 3.5 metres, passing the high bar table on your left, until your hand finds the glass door's push bar; street noise grows ahead.",
+   "landmarks": [
+    "High round bar table with a single post and wide foot",
+    "Table edges on the left",
+    "Rough stone wall beyond the tables",
+    "Chatter and typing"
+   ],
+   "hazards": [
+    "Small table on wheels just inside the door on the left",
+    "Wide foot of the bar table"
+   ],
+   "visual_cues": [
+    "Rows of hackathon tables pushed together along the stone wall",
+    "High round bar table near the door"
+   ],
+   "candidates": [],
+   "confidence": "medium",
+   "distance_m": 3.5,
+   "measured_distance_m": 3.5,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 3.5,
+     "along": "high round bar table on your left",
+     "until": "Push bar across the glass door at hip height"
+    }
+   ],
+   "path": [],
+   "walked_at_ms": 5612.3,
+   "walked_in": "20261010T133220Z_9258",
+   "walked": true,
+   "turn_deg": 10.0,
+   "quality": {
+    "visual_p": 0.23,
+    "usable": 2.99,
+    "turn_agrees_p": null,
+    "flags": []
+   },
+   "status": "observed",
+   "reverse_status": "observed",
+   "review_flags": [],
+   "instruction_kind": "straight",
+   "departure_heading_deg": 155.8,
+   "arrival_heading_deg": 136.6,
+   "reference_views": [],
+   "walked_forward": 4,
+   "walked_back": 2,
+   "source_part": null,
+   "target_part": null
+  },
+  {
+   "id": "e17",
+   "source": "n6",
+   "target": "n12",
+   "kind": "walk",
+   "bidirectional": true,
+   "basis": "walked",
+   "steps": [
+    {
+     "action": "straight",
+     "distance_m": 3.0,
+     "along": "right-hand wall close on your right",
+     "until": "until your hand finds the bathroom door's round knob at hip height, next to the fire extinguisher"
+    }
+   ],
+   "instruction": "From the end of the corridor, walk straight about 3 metres, keeping to the right; the bathroom door is in the right-hand wall by the fire extinguisher, with a round knob at hip height and the kitchen counter just beyond.",
+   "reverse_instruction": "Turn around so the kitchen is behind you and walk straight about 3 metres until table edges close in on both sides: you are at the end of the narrow aisle.",
+   "landmarks": [
+    "Right-hand wall",
+    "Fire extinguisher on the wall",
+    "Round door knob at hip height",
+    "Start of the kitchen counter just beyond the door"
+   ],
+   "hazards": [
+    "Chairs at the end of the aisle tables"
+   ],
+   "visual_cues": [
+    "Fire extinguisher on the right-hand wall",
+    "Plain bathroom door just before the kitchen counter"
+   ],
+   "candidates": [],
+   "confidence": "medium",
+   "distance_m": 3.4,
+   "measured_distance_m": 3.4,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 3.0,
+     "along": "left-hand wall close on your left",
+     "until": "The aisle's table edges end and the space widens"
+    }
+   ],
+   "path": [],
+   "walked_at_ms": 59891.2,
+   "walked_in": "20261009T202101Z_7f42",
+   "walked": true,
+   "turn_deg": 2.0,
+   "quality": {
+    "visual_p": 0.45,
+    "usable": 2.99,
+    "turn_agrees_p": null,
+    "flags": []
+   },
+   "status": "observed",
+   "reverse_status": "observed",
+   "review_flags": [],
+   "instruction_kind": "straight",
+   "departure_heading_deg": 134.3,
+   "arrival_heading_deg": 122.8,
+   "reference_views": [],
+   "walked_forward": 5,
+   "walked_back": 3,
+   "source_part": null,
+   "target_part": null
+  },
+  {
+   "id": "e22",
+   "source": "n2",
+   "target": "n14",
+   "kind": "walk",
+   "bidirectional": true,
+   "basis": "walked",
+   "steps": [
+    {
+     "action": "bear_right",
+     "distance_m": 1.5,
+     "along": "hackathon tables falling behind on your left",
+     "until": "until high tables and chairs are on your right"
+    }
+   ],
+   "instruction": "Bear right and walk about 1.5 metres away from the tables. You are in the drinks area when high tables and chairs are on your right; the narrow aisle starts just ahead.",
+   "reverse_instruction": "Turn around and walk back about 1.5 metres until the edges of the hackathon tables are beside you, with the rough stone wall beyond them.",
+   "landmarks": [
+    "High tables and chairs on the right",
+    "Start of the narrow aisle ahead"
+   ],
+   "hazards": [
+    "High table feet and chairs"
+   ],
+   "visual_cues": [
+    "High tables and chairs of the drinks area, not the kitchen"
+   ],
+   "candidates": [],
+   "confidence": "medium",
+   "distance_m": 1.8,
+   "measured_distance_m": 1.8,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 1.5,
+     "along": "hackathon tables falling behind on your right",
+     "until": "Rough stone wall on the left"
+    }
+   ],
+   "path": [],
+   "walked_at_ms": 36330.3,
+   "walked_in": "20261010T124519Z_6b88",
+   "walked": true,
+   "turn_deg": 42.0,
+   "quality": {
+    "visual_p": 0.15,
+    "usable": 2.95,
+    "turn_agrees_p": 0.98,
+    "flags": []
+   },
+   "status": "observed",
+   "reverse_status": "observed",
+   "review_flags": [],
+   "instruction_kind": "turn_right",
+   "departure_heading_deg": 149.0,
+   "arrival_heading_deg": 171.0,
+   "reference_views": [],
+   "walked_forward": 5,
+   "walked_back": 1,
+   "source_part": null,
+   "target_part": null
+  },
+  {
+   "id": "e23",
+   "source": "n8",
+   "target": "n10",
+   "kind": "walk",
+   "bidirectional": true,
+   "basis": "walked",
+   "steps": [
+    {
+     "action": "turn_left",
+     "distance_m": 1.5,
+     "along": "stage edge behind you after stepping down",
+     "until": "until table edges and chairs are around you and the chatter is close"
+    }
+   ],
+   "instruction": "Step down carefully off the stage onto the concrete, then turn left and walk about 1.5 metres until table edges and chairs surround you, with busy chatter all around.",
+   "reverse_instruction": "Turn around and walk about 1.5 metres, then turn right; the stage's raised edge is just ahead. Find it with your cane and step up onto the carpet.",
+   "landmarks": [
+    "Stage step edge",
+    "Carpet on the stage, concrete off it",
+    "Table edges and chairs"
+   ],
+   "hazards": [
+    "Step down off the stage",
+    "Chairs sticking out from the tables"
+   ],
+   "visual_cues": [
+    "Low carpeted stage with wooden edge",
+    "Tables in the middle of the far hall"
+   ],
+   "candidates": [],
+   "confidence": "low",
+   "distance_m": 2.0,
+   "measured_distance_m": 2.0,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 1.5,
+     "along": "stage edge behind you after stepping down",
+     "until": "Step edge of the platform"
+    }
+   ],
+   "path": [],
+   "walked_at_ms": 101466.2,
+   "walked_in": "20261009T202101Z_7f42",
+   "walked": true,
+   "turn_deg": -102.0,
+   "quality": {
+    "visual_p": 0.17,
+    "usable": 2.99,
+    "turn_agrees_p": 0.98,
+    "flags": []
+   },
+   "status": "observed",
+   "reverse_status": "observed",
+   "review_flags": [],
+   "instruction_kind": "turn_left",
+   "departure_heading_deg": 346.1,
+   "arrival_heading_deg": 24.9,
+   "reference_views": [],
+   "walked_forward": 4,
+   "walked_back": 2,
+   "source_part": null,
+   "target_part": null
+  },
+  {
+   "id": "e24",
+   "source": "n15",
+   "target": "n8",
+   "kind": "walk",
+   "bidirectional": true,
+   "basis": "walked",
+   "steps": [
+    {
+     "action": "turn_right",
+     "distance_m": 3.5,
+     "along": "table edges beside you in the narrow gap",
+     "until": "until your cane finds the raised edge of the stage; step up onto the carpet"
+    }
+   ],
+   "instruction": "Turn right and walk about 3.5 metres through the narrow gap, keeping the table edges beside you, until your cane finds the low edge of the stage. Step up onto the carpet.",
+   "reverse_instruction": "Step down carefully off the stage onto the concrete, turn around if needed and walk about 3.5 metres back through the narrow gap until the tables along the rough stone wall are beside you.",
+   "landmarks": [
+    "Narrow gap between table edges",
+    "Stage edge with carpet on top",
+    "Tree trunk beside the stage",
+    "Lectern near the stone wall"
+   ],
+   "hazards": [
+    "Very narrow gap with chairs",
+    "Step up onto the stage"
+   ],
+   "visual_cues": [
+    "Low stage with wooden edge and dark carpet",
+    "Tree growing beside the stage",
+    "Projection screen above the stage"
+   ],
+   "candidates": [],
+   "confidence": "low",
+   "distance_m": 3.9,
+   "measured_distance_m": 3.9,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 3.5,
+     "along": "table edges beside you in the narrow gap",
+     "until": "Rough stone wall on the far side of the tables"
+    }
+   ],
+   "path": [],
+   "walked_at_ms": 120716.3,
+   "walked_in": "20261010T133220Z_9258",
+   "walked": true,
+   "turn_deg": 80.0,
+   "quality": {
+    "visual_p": 0.23,
+    "usable": 3.0,
+    "turn_agrees_p": 0.99,
+    "flags": []
+   },
+   "status": "observed",
+   "reverse_status": "observed",
+   "review_flags": [],
+   "instruction_kind": "turn_right",
+   "departure_heading_deg": 178.2,
+   "arrival_heading_deg": 86.9,
+   "reference_views": [],
+   "walked_forward": 4,
+   "walked_back": 2,
+   "source_part": null,
+   "target_part": null
+  },
+  {
+   "id": "e25",
+   "source": "n14",
+   "target": "n4",
+   "kind": "walk",
+   "bidirectional": true,
+   "basis": "walked",
+   "steps": [
+    {
+     "action": "bear_left",
+     "distance_m": 1.5,
+     "along": "high tables of the drinks area falling behind on your right",
+     "until": "until table edges close in on both sides"
+    }
+   ],
+   "instruction": "Bear left and walk about 1.5 metres into the start of the narrow central aisle. Table edges close in on both sides and the hall opens out ahead; keep your cane close, it is very thin.",
+   "reverse_instruction": "Turn around and walk about 1.5 metres out of the aisle; as the table edges end, the drinks area's high tables are on your left and street noise is ahead.",
+   "landmarks": [
+    "Table edges on both sides",
+    "Voices on both sides",
+    "Cracked concrete floor"
+   ],
+   "hazards": [
+    "Very narrow aisle",
+    "Chairs sticking out into the aisle"
+   ],
+   "visual_cues": [
+    "Single central aisle with tables on both sides running to the stage"
+   ],
+   "candidates": [],
+   "confidence": "medium",
+   "distance_m": 2.0,
+   "measured_distance_m": 2.0,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 1.5,
+     "along": "high tables of the drinks area falling behind on your left",
+     "until": "About 4 metres in from the door, to the right"
+    }
+   ],
+   "path": [],
+   "walked_at_ms": 46320.3,
+   "walked_in": "20261010T124519Z_6b88",
+   "walked": true,
+   "turn_deg": -39.0,
+   "quality": {
+    "visual_p": 0.11,
+    "usable": 2.9,
+    "turn_agrees_p": 0.98,
+    "flags": []
+   },
+   "status": "observed",
+   "reverse_status": "inferred",
+   "review_flags": [
+    "the way back was not walked"
+   ],
+   "instruction_kind": "turn_left",
+   "departure_heading_deg": 128.4,
+   "arrival_heading_deg": 113.5,
+   "reference_views": [],
+   "walked_forward": 4,
+   "walked_back": 0,
+   "source_part": null,
+   "target_part": null
+  },
+  {
+   "id": "e4",
+   "source": "n4",
+   "target": "n5",
+   "kind": "walk",
+   "bidirectional": true,
+   "basis": "walked",
+   "steps": [
+    {
+     "action": "bear_right",
+     "distance_m": 2.0,
+     "along": "table edges close on both sides",
+     "until": "until a group of tables is on your right"
+    }
+   ],
+   "instruction": "Bear right slightly and keep down the narrow aisle for about 2 metres until a group of tables is on your right.",
+   "reverse_instruction": "Turn around and walk back about 2 metres up the narrow aisle, towards the street noise, to where it starts just inside the entrance.",
+   "landmarks": [
+    "Table edges on both sides",
+    "Group of tables on the right",
+    "Hall chatter"
+   ],
+   "hazards": [
+    "Chairs sticking out into the narrow aisle"
+   ],
+   "visual_cues": [
+    "Group of work tables on the right of the aisle"
+   ],
+   "candidates": [],
+   "confidence": "medium",
+   "distance_m": 2.2,
+   "measured_distance_m": 2.2,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 2.0,
+     "along": "table edges close on both sides",
+     "until": "Table edges close on both sides"
+    }
+   ],
+   "path": [],
+   "walked_at_ms": 45197.2,
+   "walked_in": "20261009T202101Z_7f42",
+   "walked": true,
+   "turn_deg": 45.0,
+   "quality": {
+    "visual_p": 0.19,
+    "usable": 2.98,
+    "turn_agrees_p": 0.98,
+    "flags": []
+   },
+   "status": "observed",
+   "reverse_status": "observed",
+   "review_flags": [],
+   "instruction_kind": "turn_right",
+   "departure_heading_deg": 141.5,
+   "arrival_heading_deg": 119.5,
+   "reference_views": [],
+   "walked_forward": 4,
+   "walked_back": 2,
+   "source_part": null,
+   "target_part": null
+  },
+  {
+   "id": "e5",
+   "source": "n5",
+   "target": "n6",
+   "kind": "walk",
+   "bidirectional": true,
+   "basis": "walked",
+   "steps": [
+    {
+     "action": "straight",
+     "distance_m": 3.5,
+     "along": "table edges close on both sides",
+     "until": "until the table edges end and the space widens, with a fire extinguisher on the wall on your right"
+    }
+   ],
+   "instruction": "Keep straight about 3.5 metres down the aisle until it opens out into a wider space; a fire extinguisher hangs on the wall on your right, and kitchen sounds are likely ahead to the right.",
+   "reverse_instruction": "Turn around and walk straight about 3.5 metres back into the narrow aisle, table edges close on both sides, until a group of tables is on your left.",
+   "landmarks": [
+    "Table edges on both sides",
+    "Space widens at the end",
+    "Fire extinguisher on the right-hand wall",
+    "Kitchen sounds (likely)"
+   ],
+   "hazards": [
+    "Chairs sticking out into the narrow aisle"
+   ],
+   "visual_cues": [
+    "Fire extinguisher on the right wall",
+    "Stage and judges' table ahead"
+   ],
+   "candidates": [],
+   "confidence": "medium",
+   "distance_m": 3.8,
+   "measured_distance_m": 3.8,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 3.5,
+     "along": "table edges close on both sides",
+     "until": "Tables on the right of the aisle"
+    }
+   ],
+   "path": [],
+   "walked_at_ms": 53548.2,
+   "walked_in": "20261009T202101Z_7f42",
+   "walked": true,
+   "turn_deg": 3.0,
+   "quality": {
+    "visual_p": 0.5,
+    "usable": 2.99,
+    "turn_agrees_p": null,
+    "flags": []
+   },
+   "status": "observed",
+   "reverse_status": "observed",
+   "review_flags": [],
+   "instruction_kind": "straight",
+   "departure_heading_deg": 123.9,
+   "arrival_heading_deg": 148.4,
+   "reference_views": [],
+   "walked_forward": 4,
+   "walked_back": 2,
+   "source_part": null,
+   "target_part": null
+  },
+  {
+   "id": "e26",
+   "source": "n9",
+   "target": "n15",
+   "kind": "walk",
+   "bidirectional": true,
+   "basis": "walked",
+   "steps": [
+    {
+     "action": "turn_left",
+     "distance_m": 2.0,
+     "along": "judges' table behind you",
+     "until": "until your cane meets the tables along the rough stone wall"
+    }
+   ],
+   "instruction": "Turn left and walk about 2 metres across the very narrow gap until your cane meets the tables along the rough stone wall. Mind chairs sticking out on both sides.",
+   "reverse_instruction": "Turn around and walk about 2 metres back across the narrow gap until your cane meets the long judges' table on wheels.",
+   "landmarks": [
+    "Long judges' table edge",
+    "Narrow gap with table edges on both sides",
+    "Rough stone wall beyond the tables"
+   ],
+   "hazards": [
+    "Very narrow gap",
+    "Chairs sticking out on both sides"
+   ],
+   "visual_cues": [
+    "Long grey judges' table on wheels",
+    "Tables along the stone wall"
+   ],
+   "candidates": [],
+   "confidence": "medium",
+   "distance_m": 2.2,
+   "measured_distance_m": 2.2,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 2.0,
+     "along": "judges' table behind you",
+     "until": "Long table edge at waist height"
+    }
+   ],
+   "path": [],
+   "walked_at_ms": 92545.7,
+   "walked_in": "20261010T130629Z_ddb1",
+   "walked": true,
+   "turn_deg": -70.0,
+   "quality": {
+    "visual_p": 0.08,
+    "usable": 2.99,
+    "turn_agrees_p": 0.99,
+    "flags": []
+   },
+   "status": "observed",
+   "reverse_status": "observed",
+   "review_flags": [],
+   "instruction_kind": "turn_left",
+   "departure_heading_deg": 128.8,
+   "arrival_heading_deg": 107.2,
+   "reference_views": [],
+   "walked_forward": 3,
+   "walked_back": 2,
+   "source_part": null,
+   "target_part": null
+  },
+  {
+   "id": "e27",
+   "source": "n12",
+   "target": "n9",
+   "kind": "walk",
+   "bidirectional": true,
+   "basis": "walked",
+   "steps": [
+    {
+     "action": "bear_right",
+     "distance_m": 1.5,
+     "along": "kitchen counter on your right",
+     "until": "until your cane meets the long judges' table on wheels at waist height"
+    }
+   ],
+   "instruction": "Bear right and walk about 1.5 metres with the kitchen counter on your right, until your cane meets the long judges' table on wheels, at waist height, with chairs along it. The stage is a few steps beyond.",
+   "reverse_instruction": "Turn around and walk back about 1.5 metres, keeping the kitchen counter on your left, to the bathroom door with its round knob, next to the fire extinguisher.",
+   "landmarks": [
+    "Kitchen counter on the right",
+    "Long table edge at waist height",
+    "Table legs on wheels",
+    "Chairs along the table"
+   ],
+   "hazards": [
+    "Wheeled table base with low feet",
+    "Chairs along the judges' table"
+   ],
+   "visual_cues": [
+    "Long grey-green table on wheels with white chairs on its right",
+    "Drink cans and papers on the table",
+    "Stage with projection screen and wooden meeting rooms beyond"
+   ],
+   "candidates": [
+    "c09"
+   ],
+   "confidence": "high",
+   "distance_m": 1.7,
+   "measured_distance_m": 1.7,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 1.5,
+     "along": "kitchen counter on your left",
+     "until": "Round door knob at hip height"
+    }
+   ],
+   "path": [],
+   "walked_at_ms": 65872.2,
+   "walked_in": "20261009T202101Z_7f42",
+   "walked": true,
+   "turn_deg": 44.0,
+   "quality": {
+    "visual_p": 0.12,
+    "usable": 2.99,
+    "turn_agrees_p": 0.98,
+    "flags": []
+   },
+   "status": "observed",
+   "reverse_status": "observed",
+   "review_flags": [],
+   "instruction_kind": "turn_right",
+   "departure_heading_deg": 167.0,
+   "arrival_heading_deg": 143.7,
+   "reference_views": [],
+   "walked_forward": 4,
+   "walked_back": 2,
+   "source_part": null,
+   "target_part": null
+  },
+  {
+   "id": "e28",
+   "source": "n15",
+   "target": "n7",
+   "kind": "walk",
+   "bidirectional": true,
+   "basis": "walked",
+   "steps": [
+    {
+     "action": "bear_left",
+     "distance_m": 2.0,
+     "along": "table edges close on both sides in the narrow gap",
+     "until": "until the gap ends"
+    },
+    {
+     "action": "turn_right",
+     "distance_m": 2.0,
+     "along": null,
+     "until": "until your hand finds the waist-high kitchen counter"
+    }
+   ],
+   "instruction": "Bear left and walk about 2 metres through the narrow gap, then turn right and walk about 2 metres until your hand finds the waist-high kitchen counter; a fridge hum is likely.",
+   "reverse_instruction": "Turn around from the counter and walk about 2 metres, then turn left and walk about 2 metres, bearing right, through the narrow gap until the tables along the rough stone wall are beside you.",
+   "landmarks": [
+    "Narrow gap between table edges",
+    "Counter edge at waist height",
+    "Fridge hum (likely)"
+   ],
+   "hazards": [
+    "Very narrow gap with chairs",
+    "Judges' table on wheels nearby"
+   ],
+   "visual_cues": [
+    "Long kitchen counter with tiled wall",
+    "Water dispenser and drinks fridge"
+   ],
+   "candidates": [],
+   "confidence": "low",
+   "distance_m": 2.0,
+   "measured_distance_m": 2.0,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 2.0,
+     "along": null,
+     "until": "until the gap ends"
+    },
+    {
+     "action": "turn_left",
+     "distance_m": 2.0,
+     "along": "table edges close on both sides in the narrow gap",
+     "until": "Rough stone wall on the far side of the tables"
+    }
+   ],
+   "path": [],
+   "walked_at_ms": 35861.4,
+   "walked_in": "20261010T110802Z_601a",
+   "walked": true,
+   "turn_deg": -29.0,
+   "quality": {
+    "visual_p": 0.05,
+    "usable": 3.0,
+    "turn_agrees_p": 0.97,
+    "flags": []
+   },
+   "status": "observed",
+   "reverse_status": "observed",
+   "review_flags": [],
+   "instruction_kind": "straight",
+   "departure_heading_deg": 190.6,
+   "arrival_heading_deg": 216.1,
+   "reference_views": [],
+   "walked_forward": 1,
+   "walked_back": 1,
+   "source_part": null,
+   "target_part": null
+  },
+  {
+   "id": "e16",
+   "source": "n2",
+   "target": "n4",
+   "kind": "walk",
+   "bidirectional": true,
+   "basis": "walked",
+   "steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 2.5,
+     "along": "aisle table edges ending behind you",
+     "until": null
+    }
+   ],
+   "instruction": "Turn around so the street noise is behind you and walk about 2.5 metres, bearing left, into the narrow aisle until table edges close in on both sides.",
+   "reverse_instruction": "With the entrance ahead, bear right and walk about 2.5 metres out of the aisle until the hackathon tables are on your right along the rough stone wall; street noise and the glass door are just ahead.",
+   "landmarks": [
+    "End of the aisle's table edges",
+    "Hackathon tables along the rough stone wall",
+    "Street noise from the door ahead"
+   ],
+   "hazards": [
+    "Wide foot of the high bar table",
+    "Armchairs by the glass front, left of the door"
+   ],
+   "visual_cues": [
+    "Glass double door with 'SORTIDA' sign",
+    "Woven armchairs inside the glass front on the left",
+    "Cracked white concrete floor"
+   ],
+   "candidates": [
+    "c04"
+   ],
+   "confidence": "medium",
+   "distance_m": 2.8,
+   "measured_distance_m": 2.8,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 2.5,
+     "along": "aisle table edges ending behind you",
+     "until": "Rough stone wall on the left"
+    }
+   ],
+   "path": [],
+   "walked_at_ms": 115339.4,
+   "walked_in": "20261010T110802Z_601a",
+   "walked": true,
+   "turn_deg": null,
+   "quality": {
+    "visual_p": 0.15,
+    "usable": 2.79,
+    "turn_agrees_p": null,
+    "flags": []
+   },
+   "status": "inferred",
+   "reverse_status": "observed",
+   "review_flags": [
+    "only walked from the target to the source"
+   ],
+   "instruction_kind": "turn_around",
+   "departure_heading_deg": 120.9,
+   "arrival_heading_deg": 137.5,
+   "reference_views": [],
+   "walked_forward": 0,
+   "walked_back": 2,
+   "source_part": null,
+   "target_part": null
+  },
+  {
+   "id": "e11",
+   "source": "n7",
+   "target": "n9",
+   "kind": "walk",
+   "bidirectional": true,
+   "basis": "walked",
+   "steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 1.5,
+     "along": null,
+     "until": "until you are past the end of the judges' table"
+    },
+    {
+     "action": "turn_right",
+     "distance_m": 1.5,
+     "along": "end of the judges' table",
+     "until": null
+    }
+   ],
+   "instruction": "Turn around from the counter and walk about 1.5 metres, then turn right and bear right about 1.5 metres until your hand finds the long judges' table.",
+   "reverse_instruction": "Bear left about 1.5 metres around the end of the judges' table, then turn left and walk about 1.5 metres until your hand finds the waist-high kitchen counter.",
+   "landmarks": [
+    "Judges' table edge",
+    "Counter edge at waist height",
+    "Fridge hum (likely)"
+   ],
+   "hazards": [
+    "Chairs along the judges' table",
+    "Wheeled table feet"
+   ],
+   "visual_cues": [
+    "Long kitchen counter with tiled wall behind",
+    "Judges' table in front of the kitchen"
+   ],
+   "candidates": [],
+   "confidence": "low",
+   "distance_m": 3.1,
+   "measured_distance_m": 3.1,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 1.5,
+     "along": "end of the judges' table",
+     "until": "until you are past the end of the judges' table"
+    },
+    {
+     "action": "turn_left",
+     "distance_m": 1.5,
+     "along": null,
+     "until": "Counter edge at waist height"
+    }
+   ],
+   "path": [],
+   "walked_at_ms": 79075.3,
+   "walked_in": "20261010T124519Z_6b88",
+   "walked": true,
+   "turn_deg": null,
+   "quality": {
+    "visual_p": 0.04,
+    "usable": 2.98,
+    "turn_agrees_p": null,
+    "flags": []
+   },
+   "status": "inferred",
+   "reverse_status": "observed",
+   "review_flags": [
+    "only walked from the target to the source"
+   ],
+   "instruction_kind": "turn_around",
+   "departure_heading_deg": 327.9,
+   "arrival_heading_deg": 311.7,
+   "reference_views": [],
+   "walked_forward": 0,
+   "walked_back": 1,
+   "source_part": null,
+   "target_part": null
+  },
+  {
+   "id": "e29",
+   "source": "n10",
+   "target": "n15",
+   "kind": "walk",
+   "bidirectional": true,
+   "basis": "walked",
+   "steps": [
+    {
+     "action": "turn_right",
+     "distance_m": 2.5,
+     "along": "table edges and chairs around you",
+     "until": "until you are clear of the centre tables"
+    },
+    {
+     "action": "turn_right",
+     "distance_m": 2.0,
+     "along": null,
+     "until": "until the tables along the rough stone wall are beside you in the narrow gap"
+    }
+   ],
+   "instruction": "Turn right and walk about 2.5 metres between the tables, then turn right again and walk about 2 metres until the tables along the rough stone wall are beside you, in a narrow gap.",
+   "reverse_instruction": "Turn around and walk about 2 metres, then turn left and walk about 2.5 metres between the tables until chairs and table edges are all around you and the chatter is close.",
+   "landmarks": [
+    "Table edges and chairs",
+    "Narrow gap",
+    "Rough stone wall beyond the tables"
+   ],
+   "hazards": [
+    "Chairs sticking out between tables",
+    "Very narrow gap"
+   ],
+   "visual_cues": [
+    "Tables along the stone wall near the stage"
+   ],
+   "candidates": [],
+   "confidence": "low",
+   "distance_m": 5.3,
+   "measured_distance_m": 5.3,
+   "reverse_steps": [
+    {
+     "action": "turn_around",
+     "distance_m": 2.0,
+     "along": null,
+     "until": "until you are clear of the centre tables"
+    },
+    {
+     "action": "turn_left",
+     "distance_m": 2.5,
+     "along": "table edges and chairs around you",
+     "until": "Table edges and chairs all around"
+    }
+   ],
+   "path": [],
+   "walked_at_ms": 138840.7,
+   "walked_in": "20261010T130629Z_ddb1",
+   "walked": true,
+   "turn_deg": 121.0,
+   "quality": {
+    "visual_p": 0.17,
+    "usable": 2.99,
+    "turn_agrees_p": 0.98,
+    "flags": []
+   },
+   "status": "observed",
+   "reverse_status": "inferred",
+   "review_flags": [
+    "the way back was not walked"
+   ],
+   "instruction_kind": "turn_right",
+   "departure_heading_deg": 83.7,
+   "arrival_heading_deg": 310.3,
+   "reference_views": [],
+   "walked_forward": 1,
+   "walked_back": 0,
+   "source_part": null,
+   "target_part": null
+  }
+ ],
+ "notes": [
+  "The entrance cluster was redistributed so that nodes stay at least 1.5 m apart. Main entrance now cites c01 and c02 (it previously also cited c19 and c04). Hackathon tables now cites c19 and c04. Drinks area now cites only c03 (its earlier extra candidates overlapped with other nodes). Stage corridor now cites only c05. c19 also carries a door mark; it is next to the door.",
+  "No photo clearly shows the drinks cooler. Drinks area is placed from the voice notes ('drinks area on the right when you enter'). Re-record it facing the cooler.",
+  "Bathroom (c17): the photo shows the judges' table and kitchen, not the bathroom door. The node rests on voice notes only. The white door at the left edge of c13 may be the bathroom door. Record a close view of the door.",
+  "Stone wall tables now cites c11 and c21; c21's photo mostly shows the stage area. It was moved away from c09/c13/c14/c15, which now belong to Judges' table, Centre tables and Stage. Confidence is low; record the tables by the stone wall at the far end.",
+  "Judges' table cites only c09, and Kitchen now cites c10 and c16 without c09.",
+  "c18's voice note ('Plugging in') is unrelated; it was grouped into Corridor end by position.",
+  "Rec 9258's 'jazz table', 'dance table' and 'yacht's table', and rec ddb1's 'Yaltin table', are read as speech-recognition errors for 'judges' table'.",
+  "e2 and e13: the previous wording described a drinks cooler and a bear right, which no longer matches these edges (Main entrance to Hackathon tables, straight; Stage corridor to Hackathon tables). Both were rewritten.",
+  "e3: the previous wording said 'turn right', but the computed step is straight. It now says walk straight, keeping to the right. Walk this again to check which way you face at the corridor end.",
+  "e14: the previous wording ('turn around') did not match the bear left then turn left steps. 'Around the end of the judges' table' is a guess. This edge was walked forward only once and should be walked again.",
+  "e12 and e15 were walked only once (e15 forward only), and there are no photos for either. The turns are reproduced but the landmarks are thin, so walk them again.",
+  "e13: the only photo faces the glass door, so 'with the entrance ahead' was added to orient the bear right. Check that this matches how the walker faced at the Stage corridor.",
+  "e5 and e6: the stage step up and step down are mentioned in the text, but the step actions stay as the given turns. Check how high the stage edge is and where its steps are.",
+  "Most edges have no photos (only e11 and e13 do), so most landmarks come from the node descriptions."
+ ],
+ "schema_version": 1,
+ "map_id": "itnig",
+ "recordings": [
+  "20261009T202101Z_7f42",
+  "20261010T110802Z_601a",
+  "20261010T124519Z_6b88",
+  "20261010T130629Z_ddb1",
+  "20261010T133220Z_9258",
+  "20261010T140614Z_b6a0"
+ ],
+ "build": {
+  "build_id": "20261013T062115Z",
+  "built_at_utc": "2026-10-13T06:21:15Z",
+  "pipeline_version": "metric-1",
+  "params": {
+   "fps": 1.0,
+   "image_long_side": 768,
+   "min_sharpness_rel": 0.35,
+   "min_brightness": 25,
+   "max_brightness": 235,
+   "max_abs_pitch_deg": 55,
+   "novelty_sim": 0.8,
+   "min_gap_m": 2.0,
+   "turn_deg": 60,
+   "max_gap_m": 10.0,
+   "anchor_before_s": 2.0,
+   "anchor_after_s": 4.0,
+   "dup_sim": 0.92,
+   "hint_sim": 0.45,
+   "retrieve_k": 10,
+   "min_inliers": 300,
+   "revisit_min_s": 30,
+   "max_candidates": 60,
+   "calibrate": true,
+   "odometry": true
+  },
+  "embed_model": "facebook/dinov2-base",
+  "embed_dim": 1536,
+  "place_model": "gmberton/MegaLoc:5fe0dd697c4a70ba3e23607f6716ab3c606b16db",
+  "transcribe_model": "openai/whisper-large-v3-turbo",
+  "transcribe_languages": {
+   "20261009T202101Z_7f42": "en",
+   "20261010T110802Z_601a": "en",
+   "20261010T124519Z_6b88": "en",
+   "20261010T130629Z_ddb1": "en",
+   "20261010T133220Z_9258": "en",
+   "20261010T140614Z_b6a0": "en"
+  },
+  "llm": {
+   "backend": "claude_code",
+   "model": "claude-opus-5-5",
+   "effort": "medium",
+   "cost_usd": 1.5501,
+   "duration_s": 250.4,
+   "session_id": "4cb7ca2d-dbb2-4df8-b002-9df2d848e17b"
+  },
+  "candidates": 22
+ },
+ "quality": {
+  "checker": "typesafe",
+  "model": "jev-latest",
+  "checked_at_utc": "2026-10-13T06:58:49.662633Z",
+  "input_tokens": 17813,
+  "flagged": 0,
+  "skipped": null
+ },
+ "tracks": [],
+ "warnings": [
+  "previous nodes not in this build (retired; their review entries wait): n3 (Hackathon tables), n13 (Judges' table). Check the notes: a rebuild should keep them."
+ ],
+ "retired": [
+  {
+   "id": "e10",
+   "kind": "edge",
+   "name": "Hackathon tables - Stone wall tables",
+   "build_id": "20261010T061415Z"
+  },
+  {
+   "id": "n3",
+   "kind": "node",
+   "name": "Hackathon tables",
+   "build_id": "20261013T062115Z"
+  },
+  {
+   "id": "n13",
+   "kind": "node",
+   "name": "Judges' table",
+   "build_id": "20261013T062115Z"
+  },
+  {
+   "id": "e2",
+   "kind": "edge",
+   "name": "Drinks area - Hackathon tables",
+   "build_id": "20261013T062115Z"
+  },
+  {
+   "id": "e3",
+   "kind": "edge",
+   "name": "Hackathon tables - Stage corridor",
+   "build_id": "20261013T062115Z"
+  },
+  {
+   "id": "e6",
+   "kind": "edge",
+   "name": "Corridor end - Kitchen",
+   "build_id": "20261013T062115Z"
+  },
+  {
+   "id": "e7",
+   "kind": "edge",
+   "name": "Kitchen - Stage",
+   "build_id": "20261013T062115Z"
+  },
+  {
+   "id": "e8",
+   "kind": "edge",
+   "name": "Stage - Stone wall tables",
+   "build_id": "20261013T062115Z"
+  },
+  {
+   "id": "e9",
+   "kind": "edge",
+   "name": "Stone wall tables - Centre tables",
+   "build_id": "20261013T062115Z"
+  },
+  {
+   "id": "e12",
+   "kind": "edge",
+   "name": "Centre tables - Corridor end",
+   "build_id": "20261013T062115Z"
+  },
+  {
+   "id": "e13",
+   "kind": "edge",
+   "name": "Right-side tables - Drinks area",
+   "build_id": "20261013T062115Z"
+  },
+  {
+   "id": "e14",
+   "kind": "edge",
+   "name": "Stage corridor - Main entrance",
+   "build_id": "20261013T062115Z"
+  },
+  {
+   "id": "e18",
+   "kind": "edge",
+   "name": "Bathroom - Kitchen",
+   "build_id": "20261013T062115Z"
+  },
+  {
+   "id": "e19",
+   "kind": "edge",
+   "name": "Kitchen - Judges' table",
+   "build_id": "20261013T062115Z"
+  },
+  {
+   "id": "e20",
+   "kind": "edge",
+   "name": "Judges' table - Stone wall tables",
+   "build_id": "20261013T062115Z"
+  },
+  {
+   "id": "e21",
+   "kind": "edge",
+   "name": "Stone wall tables - Corridor end",
+   "build_id": "20261013T062115Z"
+  }
+ ],
+ "frame": {
+  "heading_source": "compass",
+  "heading_zero_abs_deg": 0.0,
+  "step_length_m": 0.26,
+  "live_step_length_m": 0.31,
+  "note": "3D model of the walks' video (structure from motion), scaled by the walks' floor odometry and turned to their compass headings; where it has no pose, dead reckoning",
+  "distance_scale": 1.0,
+  "measured_distances": []
+ },
+ "references": [],
+ "embedding": {
+  "model": "gmberton/MegaLoc:5fe0dd697c4a70ba3e23607f6716ab3c606b16db",
+  "dim": 8448,
+  "file": "builds/20261013T062115Z/embeddings.npy"
+ },
+ "memory": null,
+ "reviewed_at_utc": null,
+ "hidden": [],
+ "merged": {},
+ "pruned": {},
+ "clean": null,
+ "links": [],
+ "geometry": {
+  "version": 1,
+  "fps": 2.0,
+  "frames": 1423,
+  "posed": 1417,
+  "points": 65693,
+  "scale": 2.1317,
+  "pieces": [
+   {
+    "frames": 1422,
+    "scale": 2.1317,
+    "yaw_deg": 123.9
+   }
+  ],
+  "walks": {
+   "20261009T202101Z_7f42": {
+    "frames": 227,
+    "posed": 227,
+    "distrusted": 0
+   },
+   "20261010T110802Z_601a": {
+    "frames": 310,
+    "posed": 309,
+    "distrusted": 1
+   },
+   "20261010T124519Z_6b88": {
+    "frames": 160,
+    "posed": 159,
+    "distrusted": 0
+   },
+   "20261010T130629Z_ddb1": {
+    "frames": 351,
+    "posed": 347,
+    "distrusted": 4
+   },
+   "20261010T133220Z_9258": {
+    "frames": 299,
+    "posed": 299,
+    "distrusted": 0
+   },
+   "20261010T140614Z_b6a0": {
+    "frames": 76,
+    "posed": 76,
+    "distrusted": 0
+   }
+  },
+  "summary": {
+   "frames": 1423,
+   "pairs": 18382,
+   "registered": 1422,
+   "points": 65718,
+   "mapper": "global",
+   "global_jumpy": 0.012,
+   "components": [
+    1422
+   ],
+   "mapping_s": 250
+  }
+ }
+}

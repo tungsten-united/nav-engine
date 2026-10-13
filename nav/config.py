@@ -67,6 +67,11 @@ INFER_JOBS_DIR = Path(os.environ.get("NAV_INFER_JOBS_DIR", DATA_DIR / "infer-job
 INFER_QUEUE = int(os.environ.get("NAV_INFER_QUEUE", "4"))  # model requests waiting for the GPU before 503
 INFER_JOB_QUEUE = int(os.environ.get("NAV_INFER_JOB_QUEUE", "2"))  # map jobs waiting behind the running one
 INFER_FEATURE_CACHE = int(os.environ.get("NAV_INFER_FEATURE_CACHE", "3000"))  # memory frames' local features kept
+# map-api keeps the inference host's feature cache holding the published maps' posed memory frames, so a live pose
+# never waits for them (nav/map_api/warm.py): checked after each build and every NAV_POSE_WARM_S. On only where set
+# (the cloud map-api): two warmers with different copies of the maps would push each other's frames out.
+POSE_WARM = os.environ.get("NAV_POSE_WARM", "0") == "1"
+POSE_WARM_S = float(os.environ.get("NAV_POSE_WARM_S", "300"))
 
 # Which service `nav serve` runs: map-api (recordings, map builds, review, the debugging frontend) or nav-api (the
 # live side for Orient's orchestrator: published maps, routes, localization; read-only on the data).

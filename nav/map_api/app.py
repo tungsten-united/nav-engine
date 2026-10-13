@@ -68,9 +68,10 @@ class BuildRequest(BaseModel):
 
 def create_app(store: RecordingStore | None = None, maps: MapStore | None = None, *, web_dir=_DEFAULT,
                api_token=_DEFAULT, cors_origins=_DEFAULT, cors_origin_regex=_DEFAULT, allow_delete=_DEFAULT,
-               cache_dir: Path | None = None, auto_build=_DEFAULT, build_map_fn=None) -> FastAPI:
+               cache_dir: Path | None = None, auto_build=_DEFAULT, build_map_fn=None, pose_warm=_DEFAULT) -> FastAPI:
     """Settings default to nav/config.py (environment); tests pass them explicitly. `build_map_fn` stands in for
-    nav.mapping.build.build_map in tests."""
+    nav.mapping.build.build_map in tests. `pose_warm`: keep the inference host's feature cache warm for live poses
+    (warm.py; a PoseWarmer, True / False; default NAV_POSE_WARM, only with NAV_INFER_URL)."""
     store = store or RecordingStore(config.RECORDINGS_DIR)
     maps = maps or MapStore(config.MAPS_DIR)
     web_dir = config.WEB_DIR if web_dir is _DEFAULT else web_dir
@@ -80,8 +81,15 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
     allow_delete = config.ALLOW_DELETE if allow_delete is _DEFAULT else allow_delete
     auto_build = config.AUTO_BUILD if auto_build is _DEFAULT else auto_build
     cache_dir = cache_dir or config.CACHE_DIR
+    if pose_warm is _DEFAULT:
+        pose_warm = config.POSE_WARM and config.INFER_URL is not None
+    if pose_warm is True:
+        from nav.map_api.warm import PoseWarmer
+
+        pose_warm = PoseWarmer(maps, config.POSE_WARM_S).start()
     app = FastAPI(title="nav-engine map-api", version=f"schema-{SCHEMA_VERSION}")
     app.state.store = store
+    app.state.pose_warmer = pose_warm or None
 
     web.setup(app, api_token=api_token, cors_origins=cors_origins, cors_origin_regex=cors_origin_regex)
 
@@ -272,6 +280,8 @@ def create_app(store: RecordingStore | None = None, maps: MapStore | None = None
                             build_id=build_id)
             result = {"status": "done", "published": res.map is not None,
                       "candidates": len(res.candidates.candidates)}
+            if res.map is not None and pose_warm:
+                pose_warm.kick()
         except Exception as e:  # the status says why; the build folder keeps whatever was made
             log.exception("map build %s/%s failed", map_id, build_id)
             result = {"status": "failed", "error": f"{type(e).__name__}: {e}"}

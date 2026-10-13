@@ -146,6 +146,27 @@ class InferenceClient:
                            files=files)
         return r.json()["poses"]
 
+    def warm_poses(self, refs: list[tuple[str, Callable[[], bytes], Callable[[], object]]], chunk: int = 8) -> dict:
+        """Memory frames' features cached on the host before a live pose needs them (map-api's warm-up): asks which
+        of `refs` (as pose_live) it lacks, then sends those, `chunk` at a time, behind live frames.
+        -> {sent, cached, capacity}"""
+        import io
+
+        keys = [k for k, _, _ in refs]
+        got = self._send("POST", "/infer/v1/pose/warm", data={"refs": json.dumps(keys)}).json()
+        lacking = set(got["missing"])
+        todo = [(k, img, obs) for k, img, obs in refs if k in lacking]
+        for i in range(0, len(todo), chunk):
+            part, files = todo[i:i + chunk], []
+            for n, (_, img, obs) in enumerate(part):
+                buf = io.BytesIO()
+                np.save(buf, np.asarray(obs(), np.float32))
+                files += [("ref_images", (f"{n}.jpg", img(), "image/jpeg")),
+                          ("ref_obs", (f"{n}.npy", buf.getvalue(), "application/octet-stream"))]
+            got = self._send("POST", "/infer/v1/pose/warm", data={"refs": json.dumps([k for k, _, _ in part])},
+                             files=files).json()
+        return {"sent": len(todo), "cached": got["cached"], "capacity": got["capacity"]}
+
     def match(self, paths: list[Path], pairs: list[tuple[int, int]]) -> list[int]:
         out = [0] * len(pairs)
         for chunk in match_chunks(pairs):
