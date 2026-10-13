@@ -12,7 +12,8 @@ calls map-api directly. `frontend/` here is a debugging frontend, not Orient's a
 - Two HTTP services, one image (`nav serve --app map-api|nav-api`, env `NAV_APP`); shared bits (token, CORS,
   no-cache, files under Cloud Run's cap, cache-busted pages) in `nav/web.py`:
   - `nav/map_api/app.py` — **map-api**: recordings, map builds, review, map files + the debugging frontend; no-delete
-    for the public deployment.
+    for the public deployment. `warm.py`: keeps the inference host's feature cache holding every posed memory frame
+    of the published maps (`NAV_POSE_WARM`, on in the cloud map-api only), so a live pose never waits for one.
   - `nav/nav_api/app.py` — **nav-api**: the lean, read-only live API for Orient's orchestrator: published maps,
     routes, localization (`maps.py`: published maps + reference embeddings cached, reloaded when map.json changes).
     Formats in `nav/schemas/navigation.py`. `log.py`: one JSON line per localize/route call for Cloud Logging, `message`
@@ -43,8 +44,9 @@ calls map-api directly. `frontend/` here is a debugging frontend, not Orient's a
   "where": the model's frames with their poses and MegaLoc embeddings, or for builds without a model every usable
   frame placed by the tracks; nodes stay the "what" and get frames by position at load, so a review moves regions
   with it; `GeometryObs`: posed frames' 3D observations for live poses; `nav map memory` adds a memory to an old build), `review.py` (human review overlay
-  `maps/<id>/review.json`, incl. distances measured on site that set the scale, and `merge_into` to fold nodes into
-  one area), `clean.py` (only what the walks back up is published: ≥ 2 walks, weaker edges only to keep the map
+  `maps/<id>/review.json`, incl. distances measured on site that set the scale, `merge_into` to fold nodes into
+  one area, and `seen`: its nodes' names when saved, so entries of a place that moved id are held),
+  `clean.py` (only what the walks back up is published: ≥ 2 walks, weaker edges only to keep the map
   walkable; nodes and edges kept or left out whole; `pruned` says why; `links` keeps the connections from before it
   for localization; published map.json = latest build + review, cleaned).
 - `nav/navigation/` — the live side, small and causal: `route.py` (routes over verified edges by default) and
@@ -240,6 +242,17 @@ the live inference host out of it.
   place, nor edges, turns or distances.
 - Measure an edge's departure turn from how the walk arrived at the source: by the time it leaves the node's radius
   it already faces the new way, so "heading when leaving the radius" read every turn at a node as straight.
+- Review entries are keyed by node id, and ids come from continuity: a mistaken match puts a review on another place.
+  Itnig's first metric-1 build matched by shared frames alone, which are few and tied between neighbours: the judges'
+  table took the stone wall tables' n9, so the merge decided on site moved it into the centre tables, 6 m away. Ids
+  now go by name first (the places pass keeps a name when it sees the same place), and the review remembers its
+  nodes' names (`seen`): an id now holding another place, with the reviewed one's name elsewhere, holds the entries.
+- An area the review merged is entered and left at one part (route.py), so every cleaner check must use parts: looking
+  for a way around Itnig's stone wall tables -> stage edge from any part of the area found the centre tables' 2 m
+  edge and pruned the only way onto the stage. tests/test_clean.py checks on random maps, with random merges, that
+  cleaning never takes a route away (before: 1% of maps lost one, 13% with merges).
+- A live pose against a memory frame the inference host hasn't cached sends its image first: 1.2-1.9 s a call instead
+  of ~0.3 s. nav-api has CPU only during requests (Cloud Run throttling), so the always-on map-api warms the cache.
 
 ## Product decisions
 - A recording is a **free walk through a place**, not a route. `place` (required, whitespace-normalised,
@@ -250,7 +263,7 @@ the live inference host out of it.
   embedding + walked distance / turn from the IMU, anchors at tags and voice notes) → fold the same spot across
   walks and revisits (MegaLoc retrieval, ALIKED+LightGlue geometric check; weaker look-alikes become hints)
   → a Claude Code job writes the graph from candidates.json + frames (+ previous.json: keep the last map where it
-  holds) → code assigns stable ids by evidence overlap with the last map (continuity.py), checks ids and adds
+  holds) → code assigns stable ids by name or evidence overlap with the last map (continuity.py), checks ids and adds
   evidence, positions and distances. Voice is transcribed locally (Whisper turbo; no OpenAI key here). Later: Anthropic API with
   structured outputs instead of the Claude Code job; code proposing node/edge spans itself.
 - nav-api is for Orient's orchestrator, server to server; nav-api is stateless and the orchestrator keeps the user's
